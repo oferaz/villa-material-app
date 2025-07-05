@@ -48,7 +48,11 @@ def load_model():
 
 @st.cache_data
 def load_data():
-    df = pd.read_pickle(MAIN_CATALOG)
+    if os.path.exists(MAIN_CATALOG):
+        df = pd.read_pickle(MAIN_CATALOG)
+    else:
+        df = pd.DataFrame()  # Start with empty catalog
+
     df["embedding"] = df["embedding"].apply(np.array)
     return df
 
