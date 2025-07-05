@@ -1,0 +1,18 @@
+# Ignore virtual environments
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Ignore model and cache files (optional)
+*.pkl
+*.h5
+*.pt
+*.pth
+
+# Ignore Streamlit secrets and configs
+.streamlit/
+images/
+catalog_versions/
+products.db
+product_catalog_with_embeddings.pkl
