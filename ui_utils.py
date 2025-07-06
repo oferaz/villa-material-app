@@ -133,7 +133,7 @@ def inject_custom_css():
     )
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from PIL import Image
 import numpy as np
 
@@ -227,3 +227,102 @@ def render_add_product_form(model, image_dir, csv_path, catalog_path, version_di
         st.balloons()
 
 
+def render_edit_product_form(df, model, catalog_path, csv_path, version_dir):
+    st.subheader("✏️ Edit Existing Product")
+
+    search_query = st.text_input("🔍 Search product name to edit", help="Type partial or full product name")
+
+    # Filter products by search query
+    if search_query:
+        matching_products = df[df["product_name"].str.contains(search_query, case=False, na=False)]
+    else:
+        matching_products = df
+
+    if matching_products.empty:
+        st.warning("No matching products found.")
+        return
+
+    matching_products = matching_products.sort_values("product_name")
+    st.caption(f"Found {len(matching_products)} matching product(s)")
+
+    selected = st.selectbox("Select from matches", matching_products["product_name"].tolist())
+
+
+    product = df[df["product_name"] == selected].iloc[0]
+
+    with st.form("edit_product_form"):
+        name = st.text_input("Product Name", product["product_name"])
+        description = st.text_area("Description", product["Description"])
+        dimensions = st.text_input("Dimensions", product.get("Dimensions", ""))
+        room_choices = [
+            "Living Room", "Bedroom", "Master Bedroom",
+            "Bathroom", "Kitchen", "Outdoor", "Dining Room"
+        ]
+
+        raw_rooms = product.get("Rooms", "")
+        if isinstance(raw_rooms, str):
+            default_rooms = [r.strip() for r in raw_rooms.split(",") if r.strip() in room_choices]
+        else:
+            default_rooms = []
+
+        rooms = st.multiselect("Relevant Rooms", room_choices, default=default_rooms)
+
+        category = st.selectbox("Category", ["Tile", "Furniture", "Lighting", "Hardware", "Appliance", "Other"], index=0)
+        price = st.number_input("Price (THB)", min_value=0, value=int(product.get("Price", 0)))
+        availability = st.selectbox("Availability", ["In Stock", "Out of Stock", "Limited Stock"], index=0)
+        contact = st.text_input("Contact", product.get("Contact", ""))
+        supplier = st.text_input("Supplier", product.get("Supplier", ""))
+        link = st.text_input("Link", product.get("Link", ""))
+        image_path = product.get("ImageFile", "")
+        new_photo = st.file_uploader("Upload new image (optional)", type=["jpg", "jpeg", "png"])
+
+        submitted = st.form_submit_button("Save Changes")
+
+    if submitted:
+        if new_photo:
+            from PIL import Image
+            new_image_path = os.path.join("images", f"{name.replace(' ', '_')}_{new_photo.name}")
+            image = Image.open(new_photo)
+            image.thumbnail((512, 512))
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            image.save(new_image_path, format="JPEG")
+        else:
+            new_image_path = image_path
+
+        updated = {
+            "product_name": name,
+            "Description": description,
+            "Dimensions": dimensions,
+            "Rooms": ", ".join(rooms),
+            "Category": category,
+            "Price": price,
+            "Availability": availability,
+            "Contact": contact,
+            "Supplier": supplier,
+            "Link": link,
+            "ImageFile": new_image_path,
+            "DateAdded": date.today().isoformat(),
+        }
+
+        embedding_input = f"{name} {description}"
+        updated["embedding"] = model.encode(embedding_input, convert_to_numpy=True)
+
+        mask = df["product_name"] == selected
+        for key in updated:
+            df.loc[mask, key] = None  # clear first (avoids shape mismatch)
+
+        # Direct row assignment using `.at[]`
+        index = df[mask].index[0]
+        for key, value in updated.items():
+            df.at[index, key] = value
+
+        df.to_pickle(catalog_path)
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        df.to_pickle(os.path.join(version_dir, f"product_catalog_{timestamp}.pkl"))
+
+        if os.path.exists(csv_path):
+            df.to_csv(csv_path, index=False)
+
+        st.success("✅ Product updated successfully!")
