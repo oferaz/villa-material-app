@@ -4,12 +4,14 @@ import pandas as pd
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 import urllib.parse
-from ui_utils import inject_custom_css
+from ui_utils import inject_custom_css, apply_custom_css, render_product_card
 
 # --- Setup page ---
 st.set_page_config(page_title="Villa Material Search", layout="wide")
 
 inject_custom_css()
+
+apply_custom_css()
 
 st.markdown(
     """
@@ -82,38 +84,10 @@ if query:
     results = df.iloc[top_k_idx]
 
     for i, (_, row) in enumerate(results.iterrows()):
-        col1, col2 = st.columns([4, 2])
-        image_path = row.get("ImageFile", "")
-        if isinstance(image_path, str) and image_path and os.path.exists(image_path):
-            st.image(image_path, width=300, caption=row["product_name"])
-            with st.expander("🔍 Click to view full image"):
-                st.image(image_path, use_container_width=True)
-        with col1:
-            st.subheader(row.get("product_name", "Unnamed Product"))
-            st.write(f"**Description:** {row.get('Description', '')}")
-            if not pd.isna(row.get("Price")):
-                st.write(f"**Price:** {int(row['Price'])} THB")
-            if isinstance(row.get('Link'), str) and row['Link'].startswith("http"):
-                st.write(f"[🌐 View Product]({row['Link']})")
-
-        with col2:
-            room = st.selectbox("Assign to Room", room_options, key=f"room_{i}")
-            quantity = st.number_input("Quantity", min_value=1, value=1, key=f"qty_{i}")
-            if st.button("Add to Cart", key=f"add_{i}"):
-                product_data = {
-                    "name": row.get("product_name", "Unnamed Product"),
-                    "description": row.get("Description", ""),
-                    "price": int(row["Price"]) if not pd.isna(row.get("Price")) else 0,
-                    "room": room,
-                    "quantity": quantity,
-                    "supplier": row.get("Supplier", ""),
-                    "link": row.get("Link", ""),
-
-
-                }
-                st.session_state.cart.append(product_data)
-                st.success(f"✅ Added {quantity} × '{product_data['name']}' to {room}")
+        render_product_card(row, i, room_options)
+        st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("---")
+
 
 # --- Cart Section ---
 if st.session_state.show_cart:
