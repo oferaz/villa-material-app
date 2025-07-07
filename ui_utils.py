@@ -1,18 +1,25 @@
 # ui_utils.py
 
 import streamlit as st
-import streamlit as st
 import os
 import pandas as pd
+import uuid
+from datetime import date, datetime
+from PIL import Image
+import numpy as np
+from config import CATALOG_PKL, CSV_LOG, VERSION_DIR, IMAGE_DIR
+
 
 def render_product_card(row, i, room_options):
     col1, col2 = st.columns([4, 2])
     image_path = row.get("ImageFile", "")
-    if isinstance(image_path, str) and image_path and os.path.exists(image_path):
-        with col1:
+    with col1:
+        if isinstance(image_path, str) and image_path and os.path.exists(image_path):
             st.image(image_path, width=300, caption=row.get("product_name", "Unnamed"))
             with st.expander("🔍 Click to view full image"):
                 st.image(image_path, use_container_width=True)
+        else:
+            st.warning("⚠️ Image file not found.")
 
     with col1:
         st.subheader(row.get("product_name", "Unnamed Product"))
@@ -25,23 +32,30 @@ def render_product_card(row, i, room_options):
     with col2:
         room = st.selectbox("Assign to Room", room_options, key=f"room_{i}")
         quantity = st.number_input("Quantity", min_value=1, value=1, key=f"qty_{i}")
-        if st.button("Add to Cart", key=f"add_{i}"):
-            product_data = {
-                "name": row.get("product_name", "Unnamed Product"),
-                "description": row.get("Description", ""),
-                "price": int(row["Price"]) if not pd.isna(row.get("Price")) else 0,
-                "room": room,
-                "quantity": quantity,
-                "supplier": row.get("Supplier", ""),
-                "link": row.get("Link", ""),
-            }
-            st.session_state.cart.append(product_data)
-            st.success(f"✅ Added {quantity} × '{product_data['name']}' to {room}")
+        colA, colB = st.columns(2)
+        with colA:
+            if st.button("Add to Cart", key=f"add_{i}"):
+                product_data = {
+                    "name": row.get("product_name", "Unnamed Product"),
+                    "description": row.get("Description", ""),
+                    "price": int(row["Price"]) if not pd.isna(row.get("Price")) else 0,
+                    "room": room,
+                    "quantity": quantity,
+                    "supplier": row.get("Supplier", ""),
+                    "link": row.get("Link", ""),
+                }
+                st.session_state.cart.append(product_data)
+                st.success(f"✅ Added {quantity} × '{product_data['name']}' to {room}")
+
+        with colB:
+            if st.button("✏️ Edit", key=f"edit_{i}"):
+                st.session_state.edit_product_name = row.get("product_name", "")
+                st.switch_page("pages/Edit_Product.py")
+
 
 def apply_custom_css():
     st.markdown("""
         <style>
-            /* Rounded corners and shadows */
             .stButton>button {
                 border-radius: 12px;
                 box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
@@ -132,121 +146,37 @@ def inject_custom_css():
         unsafe_allow_html=True
     )
 
-import uuid
-from datetime import date, datetime
-from PIL import Image
-import numpy as np
+# render_add_product_form not yet updated
 
-def render_add_product_form(model, image_dir, csv_path, catalog_path, version_dir):
-    st.title("📦 Add a New Product to the Catalog")
+from config import CATALOG_PKL, CSV_LOG, VERSION_DIR, IMAGE_DIR
 
-    with st.form("product_form"):
-        name = st.text_input("Product Name")
-        description = st.text_area("Description")
-        dimensions = st.text_input("Dimensions (e.g. 100x60x5 cm)")
-        rooms = st.multiselect("Relevant Rooms", [
-            "Living Room", "Bedroom", "Master Bedroom",
-            "Bathroom", "Kitchen", "Outdoor", "Dining Room"
-        ])
-        category = st.selectbox("Category", ["Tile", "Furniture", "Lighting", "Hardware", "Appliance", "Other"])
-        price = st.number_input("Price (THB)", min_value=0)
-        availability = st.selectbox("Availability", ["In Stock", "Out of Stock", "Limited Stock"])
-        contact = st.text_input("WhatsApp / Phone Contact")
-        supplier = st.text_input("Supplier Name")
-        link = st.text_input("Optional: Product Link")
-        photo = st.file_uploader("Upload a Product Image", type=["jpg", "jpeg", "png"])
-        submit = st.form_submit_button("Submit Product")
-
-    if submit:
-        if not name or not description or not rooms:
-            st.error("Please fill in all required fields: name, description, and room(s).")
-            return
-
-        filename = ""
-        if photo:
-            image = Image.open(photo)
-            image.thumbnail((512, 512))
-            filename = os.path.join(image_dir, f"{name.replace(' ', '_')}_{uuid.uuid4().hex[:6]}.jpg")
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-            image.save(filename, format="JPEG")
-
-        new_product = {
-            "product_name": name,
-            "Description": description,
-            "Dimensions": dimensions,
-            "Rooms": ", ".join(rooms),
-            "Category": category,
-            "Price": price,
-            "Availability": availability,
-            "Contact": contact,
-            "Supplier": supplier,
-            "Link": link,
-            "ImageFile": filename,
-            "DateAdded": date.today().isoformat()
-        }
-                # --- Log to CSV (optional) ---
-        if os.path.exists(csv_path):
-            df_csv = pd.read_csv(csv_path)
-        else:
-            df_csv = pd.DataFrame()
-        df_csv = pd.concat([df_csv, pd.DataFrame([new_product])], ignore_index=True)
-        df_csv.to_csv(csv_path, index=False)
-
-        # --- Generate Embedding ---
-        embedding_input = f"{name} {description}"
-        embedding = model.encode(embedding_input, convert_to_numpy=True)
-        new_product["embedding"] = np.array(embedding)
-
-        # --- Load or Init Main Catalog ---
-        if os.path.exists(catalog_path):
-            main_df = pd.read_pickle(catalog_path)
-        else:
-            main_df = pd.DataFrame()
-
-        # --- Append New Product ---
-        main_df = pd.concat([main_df, pd.DataFrame([new_product])], ignore_index=True)
-
-        # --- Drop Duplicates Safely ---
-        if "product_name" in main_df.columns and "Supplier" in main_df.columns:
-            main_df.drop_duplicates(subset=["product_name", "Supplier"], keep="last", inplace=True)
-
-        # --- Save Current Main Catalog ---
-        main_df.to_pickle(catalog_path)
-
-        # --- Save Versioned Copy ---
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        version_path = os.path.join(version_dir, f"product_catalog_{timestamp}.pkl")
-        main_df.to_pickle(version_path)
-
-        st.cache_data.clear()
-
-        # --- Success Message ---
-        st.success("✅ Product submitted successfully!")
-        st.balloons()
-
-
-def render_edit_product_form(df, model, catalog_path, csv_path, version_dir):
+def render_edit_product_form(df, model, catalog_path=CATALOG_PKL, csv_path=CSV_LOG, version_dir=VERSION_DIR):
     st.subheader("✏️ Edit Existing Product")
 
-    search_query = st.text_input("🔍 Search product name to edit", help="Type partial or full product name")
+    if "edit_product_name" in st.session_state:
+        default_query = st.session_state.edit_product_name
+        st.session_state.pop("edit_product_name")
+    else:
+        default_query = ""
 
-    # Filter products by search query
+    search_query = st.text_input("🔍 Search product name to edit", value=default_query)
+
+
     if search_query:
         matching_products = df[df["product_name"].str.contains(search_query, case=False, na=False)]
     else:
         matching_products = df
-
+    matching_products = matching_products.sort_values("product_name")
     if matching_products.empty:
         st.warning("No matching products found.")
         return
+    if len(matching_products) == 1:
+        selected = matching_products["product_name"].iloc[0]
+    else:
+        selected = st.selectbox("Select from matches", matching_products["product_name"].tolist())
 
-    matching_products = matching_products.sort_values("product_name")
+    
     st.caption(f"Found {len(matching_products)} matching product(s)")
-
-    selected = st.selectbox("Select from matches", matching_products["product_name"].tolist())
-
 
     product = df[df["product_name"] == selected].iloc[0]
 
@@ -260,15 +190,13 @@ def render_edit_product_form(df, model, catalog_path, csv_path, version_dir):
         ]
 
         raw_rooms = product.get("Rooms", "")
-        if isinstance(raw_rooms, str):
-            default_rooms = [r.strip() for r in raw_rooms.split(",") if r.strip() in room_choices]
-        else:
-            default_rooms = []
-
+        default_rooms = [r.strip() for r in raw_rooms.split(",") if r.strip() in room_choices] if isinstance(raw_rooms, str) else []
         rooms = st.multiselect("Relevant Rooms", room_choices, default=default_rooms)
 
+        raw_price = product.get("Price", 0)
+        price = st.number_input("Price (THB)", min_value=0, value=0 if pd.isna(raw_price) else int(raw_price))
+
         category = st.selectbox("Category", ["Tile", "Furniture", "Lighting", "Hardware", "Appliance", "Other"], index=0)
-        price = st.number_input("Price (THB)", min_value=0, value=int(product.get("Price", 0)))
         availability = st.selectbox("Availability", ["In Stock", "Out of Stock", "Limited Stock"], index=0)
         contact = st.text_input("Contact", product.get("Contact", ""))
         supplier = st.text_input("Supplier", product.get("Supplier", ""))
@@ -280,8 +208,7 @@ def render_edit_product_form(df, model, catalog_path, csv_path, version_dir):
 
     if submitted:
         if new_photo:
-            from PIL import Image
-            new_image_path = os.path.join("images", f"{name.replace(' ', '_')}_{new_photo.name}")
+            new_image_path = os.path.join(IMAGE_DIR, f"{name.replace(' ', '_')}_{new_photo.name}")
             image = Image.open(new_photo)
             image.thumbnail((512, 512))
             if image.mode != "RGB":
@@ -310,15 +237,13 @@ def render_edit_product_form(df, model, catalog_path, csv_path, version_dir):
 
         mask = df["product_name"] == selected
         for key in updated:
-            df.loc[mask, key] = None  # clear first (avoids shape mismatch)
+            df.loc[mask, key] = None
 
-        # Direct row assignment using `.at[]`
         index = df[mask].index[0]
         for key, value in updated.items():
             df.at[index, key] = value
 
         df.to_pickle(catalog_path)
-
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         df.to_pickle(os.path.join(version_dir, f"product_catalog_{timestamp}.pkl"))
 
@@ -326,3 +251,4 @@ def render_edit_product_form(df, model, catalog_path, csv_path, version_dir):
             df.to_csv(csv_path, index=False)
 
         st.success("✅ Product updated successfully!")
+        st.cache_data.clear()

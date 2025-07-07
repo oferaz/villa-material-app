@@ -1,29 +1,27 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
+import pickle
 import os
 from sentence_transformers import SentenceTransformer
-from datetime import date, datetime
 from ui_utils import render_edit_product_form
+from config import CATALOG_PKL, CSV_LOG, VERSION_DIR, MODEL_PATH
 
-st.set_page_config(page_title="Edit Product", layout="centered")
-st.title("🔧 Edit Product in Catalog")
+st.set_page_config(page_title="Edit Product")
 
-CATALOG = "product_catalog_with_embeddings.pkl"
-CSV_LOG = "submitted_products.csv"
-VERSION_DIR = "catalog_versions"
+# Load catalog
+if not os.path.exists(CATALOG_PKL):
+    st.error("Catalog file not found.")
+    st.stop()
 
-@st.cache_resource
-def load_model():
-    return SentenceTransformer("/home/ofer/LLM/models/all-MiniLM-L6-v2", device="cpu")
+with open(CATALOG_PKL, "rb") as f:
+    df = pickle.load(f)
 
-@st.cache_data
-def load_data():
-    df = pd.read_pickle(CATALOG)
-    df["embedding"] = df["embedding"].apply(np.array)
-    return df
+# Load model
+# Load embedding model safely
+try:
+    model = SentenceTransformer(MODEL_PATH)
+except Exception as e:
+    st.error(f"❌ Embedding model not found at configured path.\n\n**Reason:** {str(e)}")
+    st.stop()
 
-model = load_model()
-df = load_data()
-
-render_edit_product_form(df, model, CATALOG, CSV_LOG, VERSION_DIR)
+# Call the form function
+render_edit_product_form(df, model, CATALOG_PKL, CSV_LOG, VERSION_DIR)
