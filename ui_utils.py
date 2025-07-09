@@ -12,14 +12,22 @@ from config import CATALOG_PKL, CSV_LOG, VERSION_DIR, IMAGE_DIR
 
 def render_product_card(row, i, room_options):
     col1, col2 = st.columns([4, 2])
-    image_path = row.get("ImageFile", "")
+    image_url = ""
+    cloud_url = row.get("CloudURL", "")
+    local_path = row.get("ImageFile", "")
+
+    if isinstance(cloud_url, str) and cloud_url.startswith("http"):
+        image_url = cloud_url
+    elif isinstance(local_path, str) and os.path.exists(local_path):
+        image_url = local_path
+
     with col1:
-        if isinstance(image_path, str) and image_path and os.path.exists(image_path):
-            st.image(image_path, width=300, caption=row.get("product_name", "Unnamed"))
+        if image_url:
+            st.image(image_url, width=300, caption=row.get("product_name", "Unnamed"))
             with st.expander("🔍 Click to view full image"):
-                st.image(image_path, use_container_width=True)
+                st.image(image_url, use_container_width=True)
         else:
-            st.warning("⚠️ Image file not found.")
+            st.warning("⚠️ Image not found (cloud or local).")
 
     with col1:
         st.subheader(row.get("product_name", "Unnamed Product"))
@@ -149,6 +157,89 @@ def inject_custom_css():
 # render_add_product_form not yet updated
 
 from config import CATALOG_PKL, CSV_LOG, VERSION_DIR, IMAGE_DIR
+
+
+def render_add_product_form(model, image_dir, csv_path, catalog_path, version_dir):
+    st.title("📦 Add a New Product to the Catalog")
+
+    with st.form("product_form"):
+        name = st.text_input("Product Name")
+        description = st.text_area("Description")
+        dimensions = st.text_input("Dimensions (e.g. 100x60x5 cm)")
+        rooms = st.multiselect("Relevant Rooms", [
+            "Living Room", "Bedroom", "Master Bedroom",
+            "Bathroom", "Kitchen", "Outdoor", "Dining Room"
+        ])
+        category = st.selectbox("Category", ["Tile", "Furniture", "Lighting", "Hardware", "Appliance", "Other"])
+        price = st.number_input("Price (THB)", min_value=0)
+        availability = st.selectbox("Availability", ["In Stock", "Out of Stock", "Limited Stock"])
+        contact = st.text_input("WhatsApp / Phone Contact")
+        supplier = st.text_input("Supplier Name")
+        link = st.text_input("Optional: Product Link")
+        photo = st.file_uploader("Upload a Product Image", type=["jpg", "jpeg", "png"])
+        submit = st.form_submit_button("Submit Product")
+
+    if submit:
+        if not name or not description or not rooms:
+            st.error("Please fill in all required fields: name, description, and room(s).")
+            return
+
+        filename = ""
+        if photo:
+            image = Image.open(photo)
+            image.thumbnail((512, 512))
+            filename = os.path.join(image_dir, f"{name.replace(' ', '_')}_{uuid.uuid4().hex[:6]}.jpg")
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            image.save(filename, format="JPEG")
+
+        new_product = {
+            "product_name": name,
+            "Description": description,
+            "Dimensions": dimensions,
+            "Rooms": ", ".join(rooms),
+            "Category": category,
+            "Price": price,
+            "Availability": availability,
+            "Contact": contact,
+            "Supplier": supplier,
+            "Link": link,
+            "ImageFile": filename,
+            "DateAdded": date.today().isoformat()
+        }
+
+        # Log to CSV
+        if os.path.exists(csv_path):
+            df_csv = pd.read_csv(csv_path)
+        else:
+            df_csv = pd.DataFrame()
+        df_csv = pd.concat([df_csv, pd.DataFrame([new_product])], ignore_index=True)
+        df_csv.to_csv(csv_path, index=False)
+
+        # Generate embedding
+        embedding_input = f"{name} {description}"
+        embedding = model.encode(embedding_input, convert_to_numpy=True)
+        new_product["embedding"] = np.array(embedding)
+
+        # Load or create catalog
+        if os.path.exists(catalog_path):
+            main_df = pd.read_pickle(catalog_path)
+        else:
+            main_df = pd.DataFrame()
+
+        main_df = pd.concat([main_df, pd.DataFrame([new_product])], ignore_index=True)
+        main_df.drop_duplicates(subset=["product_name", "Supplier"], keep="last", inplace=True)
+
+        # Save catalog and backup version
+        main_df.to_pickle(catalog_path)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        version_path = os.path.join(version_dir, f"product_catalog_{timestamp}.pkl")
+        main_df.to_pickle(version_path)
+
+        st.cache_data.clear()
+        st.success("✅ Product submitted successfully!")
+        st.balloons()
+
 
 def render_edit_product_form(df, model, catalog_path=CATALOG_PKL, csv_path=CSV_LOG, version_dir=VERSION_DIR):
     st.subheader("✏️ Edit Existing Product")
