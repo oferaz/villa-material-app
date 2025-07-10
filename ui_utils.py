@@ -157,7 +157,9 @@ def inject_custom_css():
 # render_add_product_form not yet updated
 
 from config import CATALOG_PKL, CSV_LOG, VERSION_DIR, IMAGE_DIR
-
+import cloudinary.uploader
+import base64
+import requests
 
 def render_add_product_form(model, image_dir, csv_path, catalog_path, version_dir):
     st.title("📦 Add a New Product to the Catalog")
@@ -192,6 +194,31 @@ def render_add_product_form(model, image_dir, csv_path, catalog_path, version_di
             if image.mode != "RGB":
                 image = image.convert("RGB")
             image.save(filename, format="JPEG")
+            # Upload to Cloudinary
+
+
+            CLOUD_NAME = "dxl0cslit"
+            UPLOAD_PRESET = "ml_default"
+            CLOUDINARY_URL = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
+
+            # Upload to Cloudinary
+            with open(filename, "rb") as f:
+                file_data = base64.b64encode(f.read()).decode("utf-8")
+
+            data = {
+                "file": f"data:image/jpeg;base64,{file_data}",
+                "upload_preset": UPLOAD_PRESET,
+            }
+
+            try:
+                response = requests.post(CLOUDINARY_URL, data=data, verify=False)
+                response.raise_for_status()
+                cloud_url = response.json()["secure_url"]
+            except Exception as e:
+                st.warning(f"⚠️ Failed to upload image to Cloudinary: {e}")
+                cloud_url = ""
+
+
 
         new_product = {
             "product_name": name,
@@ -205,6 +232,7 @@ def render_add_product_form(model, image_dir, csv_path, catalog_path, version_di
             "Supplier": supplier,
             "Link": link,
             "ImageFile": filename,
+            "CloudURL": cloud_url, 
             "DateAdded": date.today().isoformat()
         }
 
@@ -252,34 +280,48 @@ def render_edit_product_form(df, model, catalog_path=CATALOG_PKL, csv_path=CSV_L
 
     search_query = st.text_input("🔍 Search product name to edit", value=default_query)
 
-
     if search_query:
         matching_products = df[df["product_name"].str.contains(search_query, case=False, na=False)]
     else:
         matching_products = df
     matching_products = matching_products.sort_values("product_name")
+
     if matching_products.empty:
         st.warning("No matching products found.")
         return
+
     if len(matching_products) == 1:
         selected = matching_products["product_name"].iloc[0]
     else:
         selected = st.selectbox("Select from matches", matching_products["product_name"].tolist())
 
-    
     st.caption(f"Found {len(matching_products)} matching product(s)")
 
     product = df[df["product_name"] == selected].iloc[0]
+
+    # Prefer CloudURL for display
+    cloud_url = product.get("CloudURL", "")
+    image_path = product.get("ImageFile", "")
+
+    display_image = cloud_url if cloud_url else image_path
+
+    if display_image:
+        if isinstance(display_image, str) and display_image.startswith("http"):
+            st.image(display_image, width=300, caption="Current Cloud Image")
+        elif isinstance(display_image, str) and os.path.exists(display_image):
+            st.image(display_image, width=300, caption="Current Local Image")
+        else:
+            st.info("⚠️ Image path is set but file not found.")
 
     with st.form("edit_product_form"):
         name = st.text_input("Product Name", product["product_name"])
         description = st.text_area("Description", product["Description"])
         dimensions = st.text_input("Dimensions", product.get("Dimensions", ""))
+
         room_choices = [
             "Living Room", "Bedroom", "Master Bedroom",
             "Bathroom", "Kitchen", "Outdoor", "Dining Room"
         ]
-
         raw_rooms = product.get("Rooms", "")
         default_rooms = [r.strip() for r in raw_rooms.split(",") if r.strip() in room_choices] if isinstance(raw_rooms, str) else []
         rooms = st.multiselect("Relevant Rooms", room_choices, default=default_rooms)
@@ -292,7 +334,7 @@ def render_edit_product_form(df, model, catalog_path=CATALOG_PKL, csv_path=CSV_L
         contact = st.text_input("Contact", product.get("Contact", ""))
         supplier = st.text_input("Supplier", product.get("Supplier", ""))
         link = st.text_input("Link", product.get("Link", ""))
-        image_path = product.get("ImageFile", "")
+        cloud_url_input = st.text_input("Cloud Image URL (optional)", cloud_url)
         new_photo = st.file_uploader("Upload new image (optional)", type=["jpg", "jpeg", "png"])
 
         submitted = st.form_submit_button("Save Changes")
@@ -320,19 +362,19 @@ def render_edit_product_form(df, model, catalog_path=CATALOG_PKL, csv_path=CSV_L
             "Supplier": supplier,
             "Link": link,
             "ImageFile": new_image_path,
+            "CloudURL": cloud_url_input,
             "DateAdded": date.today().isoformat(),
         }
 
+        # Re-generate embedding
         embedding_input = f"{name} {description}"
         updated["embedding"] = model.encode(embedding_input, convert_to_numpy=True)
 
+        # Safely update row
         mask = df["product_name"] == selected
-        for key in updated:
-            df.loc[mask, key] = None
-
         index = df[mask].index[0]
-        for key, value in updated.items():
-            df.at[index, key] = value
+        for key in updated:
+            df.at[index, key] = updated[key]
 
         df.to_pickle(catalog_path)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -343,3 +385,4 @@ def render_edit_product_form(df, model, catalog_path=CATALOG_PKL, csv_path=CSV_L
 
         st.success("✅ Product updated successfully!")
         st.cache_data.clear()
+
