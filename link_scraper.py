@@ -2,6 +2,8 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import os
+import re
+import json
 
 CATALOG_PKL = "data/catalog.pkl"
 
@@ -31,13 +33,21 @@ def extract_product_info_from_url(url):
         image = get_meta("og:image")
         price = ""
 
-        # --- Lazada-specific scraper ---
+        # --- Lazada-specific scraper using window.pageData ---
         if "lazada" in url:
-            price_tag = soup.find("span", class_="pdp-price")
-            if not price_tag:
-                price_tag = soup.find("span", class_="pdp-price_type")
-            if price_tag:
-                price = price_tag.get_text(strip=True).replace(",", "")
+            scripts = soup.find_all("script")
+            for script in scripts:
+                if script.string and "window.pageData" in script.string:
+                    match = re.search(r"window\.pageData\s*=\s*(\{.*?\});", script.string, re.DOTALL)
+                    if match:
+                        try:
+                            json_data = json.loads(match.group(1))
+                            title = json_data.get("title", title)
+                            price = json_data.get("price", price)
+                            image = json_data.get("image", image)
+                        except Exception:
+                            pass
+                    break
 
         # --- Shopee-specific scraper ---
         elif "shopee" in url:
