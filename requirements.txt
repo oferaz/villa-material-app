@@ -7,3 +7,5 @@ torch==2.2.2
 tqdm==4.67.1
 cloudinary==1.44.1
 supabase==2.6.0
+requests>=2.31.0
+beautifulsoup4>=4.12.3

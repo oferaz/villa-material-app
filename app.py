@@ -112,6 +112,9 @@ with st.sidebar:
     st.markdown("### 🔧 Tools")
     if st.button("🔄 Re-index Catalog"):
         st.switch_page("pages/Reindex_Catalog.py")
+    if st.button("🔗 Add Product from Link"):
+        st.switch_page("pages/Add_From_Link.py")
+
 
 # --- Toggle Cart ---
 if st.button("🛍️ View My Cart"):
