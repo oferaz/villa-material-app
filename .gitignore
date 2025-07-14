@@ -19,3 +19,4 @@ catalog_versions/
 products.db
 # product_catalog_with_embeddings.pkl
 
+streamlit_env/
