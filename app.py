@@ -127,8 +127,12 @@ if query:
     top_k_idx = np.argsort(-scores)[:5]
     results = df.iloc[top_k_idx]
 
+    project = next((p for p in projects if p["name"] == st.session_state.current_project), None)
+    project_rooms = project.get("rooms", []) if project else []
+
     for i, (_, row) in enumerate(results.iterrows()):
-        render_product_card(row, i, ROOM_OPTIONS)
+        render_product_card(row, i, project_rooms)
+
         st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("---")
 
