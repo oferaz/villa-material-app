@@ -2,6 +2,8 @@ import streamlit as st
 from ui_utils import render_add_product_form
 from sentence_transformers import SentenceTransformer
 import os
+from config import MODEL_PATH
+
 
 # --- Paths ---
 MAIN_CATALOG = "product_catalog_with_embeddings.pkl"
@@ -14,7 +16,7 @@ os.makedirs(VERSION_DIR, exist_ok=True)
 # --- Load model ---
 @st.cache_resource
 def load_model():
-    return SentenceTransformer("/home/ofer/LLM/models/all-MiniLM-L6-v2", device="cpu")
+    return SentenceTransformer(MODEL_PATH, device="cpu")
 
 model = load_model()
 
