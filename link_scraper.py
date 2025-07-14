@@ -67,6 +67,8 @@ def extract_product_info_from_url(url):
             "ImageFile": ""
         }
 
+        os.makedirs(os.path.dirname(CATALOG_PKL), exist_ok=True)
+
         if os.path.exists(CATALOG_PKL):
             df = pd.read_pickle(CATALOG_PKL)
         else:
