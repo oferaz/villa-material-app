@@ -4,33 +4,45 @@ import pandas as pd
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 import urllib.parse
-from ui_utils import inject_custom_css, apply_custom_css, render_product_card
+from ui_utils import inject_custom_css, apply_custom_css, render_product_card, set_background_image
 from config import CATALOG_PKL, MODEL_PATH, ROOM_OPTIONS
+from project_manager import load_projects, create_project, update_current_cart, get_current_cart
+
 
 # --- Setup page ---
 st.set_page_config(page_title="Villa Material Search", layout="wide")
 inject_custom_css()
 apply_custom_css()
 
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background-image: url("https://images.unsplash.com/photo-1507525428034-b723cf961d3e");
-        background-size: cover;
-        background-position: center;
-        background-attachment: fixed;
-    }
+set_background_image()
+# --- Project Management ---
+projects = load_projects()
+if "current_project" not in st.session_state:
+    st.session_state.current_project = projects[0]["name"] if projects else None
+    st.session_state.cart = get_current_cart(projects, st.session_state.current_project)
 
-    .main > div {
-        background-color: rgba(255, 255, 255, 0.85);
-        padding: 1rem;
-        border-radius: 10px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+st.sidebar.markdown("### 🗂️ Project")
+project_names = [p["name"] for p in projects]
+selected = st.sidebar.selectbox("Select Project", project_names, index=project_names.index(st.session_state.current_project) if st.session_state.current_project in project_names else 0)
+
+if selected != st.session_state.current_project:
+    st.session_state.current_project = selected
+    st.session_state.cart = get_current_cart(projects, selected)
+
+new_proj = st.sidebar.text_input("➕ New Project Name")
+if st.sidebar.button("Create Project"):
+    name_clean = new_proj.strip()
+    if not name_clean:
+        st.warning("⚠️ Please enter a project name.")
+    else:
+        # Create only if not exists (create_project handles warning)
+        projects = create_project(name_clean)
+        # Switch only if creation was successful
+        if any(p["name"].strip().lower() == name_clean.lower() for p in projects):
+            st.session_state.current_project = name_clean
+            st.session_state.cart = get_current_cart(projects, name_clean)
+            st.rerun()
+
 
 # --- Session state ---
 if "cart" not in st.session_state:
@@ -91,6 +103,7 @@ if query:
 if st.session_state.show_cart:
     if st.button("🩹 Clear Entire Cart"):
         st.session_state.cart = []
+        update_current_cart(st.session_state.current_project, st.session_state.cart)
         st.rerun()
 
     if st.session_state.cart:
@@ -115,6 +128,7 @@ if st.session_state.show_cart:
                 with col2:
                     if st.button("❌ Remove", key=f"remove_{room}_{idx}"):
                         st.session_state.cart.pop(idx)
+                        update_current_cart(st.session_state.current_project, st.session_state.cart)
                         st.rerun()
 
         # Grand total

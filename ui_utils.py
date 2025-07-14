@@ -8,7 +8,9 @@ from datetime import date, datetime
 from PIL import Image
 import numpy as np
 from config import CATALOG_PKL, CSV_LOG, VERSION_DIR, IMAGE_DIR
-
+import base64
+import requests
+from project_manager import update_current_cart
 
 def render_product_card(row, i, room_options):
     col1, col2 = st.columns([4, 2])
@@ -53,6 +55,7 @@ def render_product_card(row, i, room_options):
                     "link": row.get("Link", ""),
                 }
                 st.session_state.cart.append(product_data)
+                update_current_cart(st.session_state.current_project, st.session_state.cart)  # <-- Add this line
                 st.success(f"✅ Added {quantity} × '{product_data['name']}' to {room}")
 
         with colB:
@@ -60,6 +63,26 @@ def render_product_card(row, i, room_options):
                 st.session_state.edit_product_name = row.get("product_name", "")
                 st.switch_page("pages/Edit_Product.py")
 
+def set_background_image():
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background-image: url("https://images.unsplash.com/photo-1507525428034-b723cf961d3e");
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+
+        .main > div {
+            background-color: rgba(255, 255, 255, 0.85);
+            padding: 1rem;
+            border-radius: 10px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
 def apply_custom_css():
     st.markdown("""
@@ -156,10 +179,7 @@ def inject_custom_css():
 
 # render_add_product_form not yet updated
 
-from config import CATALOG_PKL, CSV_LOG, VERSION_DIR, IMAGE_DIR
-import cloudinary.uploader
-import base64
-import requests
+
 
 def render_add_product_form(model, image_dir, csv_path, catalog_path, version_dir):
     st.title("📦 Add a New Product to the Catalog")

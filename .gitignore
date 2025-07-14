@@ -5,7 +5,7 @@ __pycache__/
 .DS_Store
 
 # Ignore model and cache files (optional)
-*.pkl
+# *.pkl
 *.h5
 *.pt
 *.pth
@@ -17,5 +17,5 @@ __pycache__/
 images/
 catalog_versions/
 products.db
-product_catalog_with_embeddings.pkl
+# product_catalog_with_embeddings.pkl
 
