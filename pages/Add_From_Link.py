@@ -24,7 +24,12 @@ if st.button("Fetch Product"):
     if "error" in data:
         st.error(data["error"])
     else:
-        st.image(data["image"], width=300)
+        image_url = data.get("image", "")
+        if image_url and image_url.startswith("http"):
+            st.image(image_url, width=300)
+        else:
+            st.warning("⚠️ No valid image available from the link.")
+
         name = st.text_input("Name", value=data["name"])
         description = st.text_area("Description", value=data["description"])
         price = st.number_input("Price (THB)", min_value=0, value=0)
