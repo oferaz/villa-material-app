@@ -1,4 +1,4 @@
-# project_manager.py — with Supabase integration
+# project_manager.py — with Supabase integration and room support
 
 import streamlit as st
 from supabase_client import supabase
@@ -15,17 +15,17 @@ def load_projects():
 def save_projects(projects):
     """Overwrite all projects in Supabase."""
     try:
-        # Delete all current entries
         supabase.table("projects").delete().neq("name", "").execute()
-        # Insert each project
         for project in projects:
             supabase.table("projects").insert(project).execute()
     except Exception as e:
         st.error(f"❌ Failed to save projects to Supabase: {e}")
 
-def create_project(name):
-    """Create a new project if it doesn't exist already (case-insensitive)."""
+def create_project(name, rooms=None):
+    """Create a new project with optional rooms if it doesn't exist already."""
     name_clean = name.strip()
+    rooms = rooms or []
+
     if not name_clean:
         st.warning("⚠️ Project name cannot be empty.")
         return load_projects()
@@ -36,7 +36,11 @@ def create_project(name):
         return projects
 
     try:
-        new_project = {"name": name_clean, "cart": []}
+        new_project = {
+            "name": name_clean,
+            "cart": [],
+            "rooms": rooms
+        }
         supabase.table("projects").insert(new_project).execute()
         st.success(f"✅ Created new project: {name_clean}")
         return load_projects()

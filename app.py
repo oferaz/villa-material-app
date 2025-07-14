@@ -11,6 +11,12 @@ from project_manager import load_projects, create_project, update_current_cart, 
 
 # --- Setup page ---
 st.set_page_config(page_title="Villa Material Search", layout="wide")
+st.markdown(
+    """
+    <link rel="shortcut icon" href="assets/favicon.ico">
+    """,
+    unsafe_allow_html=True,
+)
 inject_custom_css()
 apply_custom_css()
 
@@ -29,19 +35,46 @@ if selected != st.session_state.current_project:
     st.session_state.current_project = selected
     st.session_state.cart = get_current_cart(projects, selected)
 
-new_proj = st.sidebar.text_input("➕ New Project Name")
-if st.sidebar.button("Create Project"):
-    name_clean = new_proj.strip()
-    if not name_clean:
-        st.warning("⚠️ Please enter a project name.")
-    else:
-        # Create only if not exists (create_project handles warning)
-        projects = create_project(name_clean)
-        # Switch only if creation was successful
-        if any(p["name"].strip().lower() == name_clean.lower() for p in projects):
-            st.session_state.current_project = name_clean
-            st.session_state.cart = get_current_cart(projects, name_clean)
-            st.rerun()
+with st.sidebar.expander("➕ Create New Project", expanded=False):
+    new_proj = st.text_input("Project Name")
+
+    predefined = [
+        "Living Room", "Kitchen", "Dining Room", "Bedroom", "Master Bedroom", "Guest Bedroom",
+        "Bathroom", "Guest Bathroom", "Outdoor", "Garden", "Terrace", "Balcony", "Pool Area",
+        "Entrance", "Walk-in Closet", "Pantry", "Laundry Room", "Garage", "Storage Room",
+        "Office / Study", "Kids Room", "Play Area", "Hallway"
+    ]
+
+    room_counts = {}
+    st.markdown("#### Select Predefined Rooms")
+    for room in predefined:
+        count = st.number_input(f"{room}", min_value=0, max_value=10, value=0, step=1, key=f"{room}_count")
+        if count > 0:
+            room_counts[room] = count
+
+    custom_rooms = st.text_input("Add Custom Rooms (comma-separated)", "")
+
+    if st.button("✅ Create Project"):
+        all_rooms = []
+        for room, count in room_counts.items():
+            for i in range(count):
+                label = f"{room} {i+1}" if count > 1 else room
+                all_rooms.append(label)
+
+        custom_split = [r.strip() for r in custom_rooms.split(",") if r.strip()]
+        all_rooms.extend(custom_split)
+
+        name_clean = new_proj.strip()
+        if not name_clean:
+            st.warning("⚠️ Please enter a project name.")
+        else:
+            projects = create_project(name_clean, all_rooms)
+            if any(p["name"].strip().lower() == name_clean.lower() for p in projects):
+                st.session_state.current_project = name_clean
+                st.session_state.cart = get_current_cart(projects, name_clean)
+                st.rerun()
+
+
 
 
 # --- Session state ---
