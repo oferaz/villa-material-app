@@ -1,11 +1,20 @@
 numpy==1.24.4
 pandas==2.0.3
-requests==2.32.4
 sentence-transformers==3.2.1
 streamlit==1.40.1
 torch==2.2.2
 tqdm==4.67.1
 cloudinary==1.44.1
-supabase==2.6.0
-requests>=2.31.0
+
+# Supabase client with HTTP/2 support
+supabase>=2.3.1
+httpx[http2]>=0.27.0
+h2>=4.1.0
+
+# Web scraping
 beautifulsoup4>=4.12.3
+requests>=2.32.3
+lxml>=5.2.1
+
+# Optional image handling
+Pillow>=10.3.0
