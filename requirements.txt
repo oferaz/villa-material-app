@@ -5,6 +5,7 @@ streamlit==1.40.1
 torch==2.2.2
 tqdm==4.67.1
 cloudinary==1.44.1
+python-dotenv
 
 # Supabase client with HTTP/2 support
 supabase>=2.3.1
