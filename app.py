@@ -7,6 +7,7 @@ import urllib.parse
 from ui_utils import inject_custom_css, apply_custom_css, render_product_card, set_background_image
 from config import CATALOG_PKL, MODEL_PATH, ROOM_OPTIONS
 from project_manager import load_projects, create_project, update_current_cart, get_current_cart
+from embedding import get_embedder
 
 
 # --- Setup page ---
@@ -84,9 +85,8 @@ if "show_cart" not in st.session_state:
     st.session_state.show_cart = False
 
 # --- Load Model & Data ---
-@st.cache_resource
-def load_model():
-    return SentenceTransformer(MODEL_PATH, device="cpu")
+model = get_embedder()
+
 
 @st.cache_data
 def load_data():
@@ -97,7 +97,6 @@ def load_data():
     df["embedding"] = df["embedding"].apply(np.array)
     return df
 
-model = load_model()
 df = load_data()
 embeddings = np.vstack(df["embedding"].values)
 

@@ -1,5 +1,5 @@
 import pandas as pd
-from sentence_transformers import SentenceTransformer
+from embedding import get_embedder
 
 import numpy as np
 import pickle
@@ -9,7 +9,7 @@ df = pd.read_csv("/home/ofer/LLM/DB/Adjusted_Product_Catalog.csv")
 df = df.dropna(subset=["product_name"])
 
 # Load the sentence transformer model
-model = SentenceTransformer("/home/ofer/LLM/models/all-MiniLM-L6-v2")
+model = get_embedder()
 
 # Generate embeddings
 product_names = df["product_name"].tolist()

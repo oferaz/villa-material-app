@@ -3,16 +3,12 @@ import pandas as pd
 import numpy as np
 import os
 from datetime import datetime
-from sentence_transformers import SentenceTransformer
+from embedding import get_embedder
 
 from config import CATALOG_PKL, MODEL_PATH, VERSION_DIR
 
 st.set_page_config(page_title="🔄 Reindex Catalog", layout="centered")
 st.title("🔄 Re-index Product Embeddings")
-
-@st.cache_resource
-def load_model():
-    return SentenceTransformer(MODEL_PATH)
 
 # Load catalog
 if not os.path.exists(CATALOG_PKL):
@@ -20,7 +16,7 @@ if not os.path.exists(CATALOG_PKL):
     st.stop()
 
 df = pd.read_pickle(CATALOG_PKL)
-model = load_model()
+model = get_embedder()
 
 # Backup before overwrite
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
