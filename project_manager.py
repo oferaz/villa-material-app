@@ -133,7 +133,9 @@ def update_current_cart(project_id: str, updated_cart):
 
 def load_project_rooms(project_id: str):
     sb = get_supabase(_token())
-    res = sb.table("project_rooms").select("*").eq("project_id", project_id).order("created_at").execute()
+    # Some deployments do not have project_rooms.created_at.
+    # Keep a deterministic order without relying on optional schema columns.
+    res = sb.table("project_rooms").select("*").eq("project_id", project_id).order("name").execute()
     return res.data or []
 
 
