@@ -143,15 +143,23 @@ def load_room_objects(room_id: str):
     return res.data or []
 
 
-def project_status(project_id: str):
+def room_status(room_id: str):
     sb = get_supabase(_token())
-
-    rooms = sb.table("project_rooms").select("id").eq("project_id", project_id).execute().data or []
-    room_ids = [r["id"] for r in rooms]
-    if not room_ids:
-        return {"rooms": 0, "objects": 0, "assigned": 0}
-
-    objs = sb.table("room_objects").select("id,material_id,status").in_("room_id", room_ids).execute().data or []
+    objs = sb.table("room_objects").select("id, material_id, status").eq("room_id", room_id).execute().data or []
     total = len(objs)
     assigned = sum(1 for o in objs if o.get("material_id"))
-    return {"rooms": len(room_ids), "objects": total, "assigned": assigned}
+    designer_ok = sum(1 for o in objs if o.get("status") == "designer_approved")
+    client_ok = sum(1 for o in objs if o.get("status") == "client_approved")
+    return {"total": total, "assigned": assigned, "designer_ok": designer_ok, "client_ok": client_ok}
+
+
+def project_status(project_id: str):
+    rooms = load_project_rooms(project_id)
+    totals = {"rooms": len(rooms), "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+    for r in rooms:
+        s = room_status(r["id"])
+        totals["total"] += s["total"]
+        totals["assigned"] += s["assigned"]
+        totals["designer_ok"] += s["designer_ok"]
+        totals["client_ok"] += s["client_ok"]
+    return totals

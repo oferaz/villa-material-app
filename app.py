@@ -9,7 +9,7 @@ from sentence_transformers import util
 
 from ui_utils import inject_custom_css, apply_custom_css, render_product_card, set_background_image
 from config import CATALOG_PKL, MODEL_PATH, ROOM_OPTIONS
-from project_manager import load_projects, create_project, update_current_cart, get_current_cart
+from project_manager import load_projects, load_project_rooms, load_room_objects, project_status, room_status
 from embedding import get_embedder
 
 # NEW: auth + supabase materials
@@ -206,81 +206,148 @@ else:
     else:
         embeddings = np.vstack(df["embedding"].values)
 
-
 # -----------------------------
 # Page: Projects
 # -----------------------------
 if page == "Projects":
-    st.title("🗂️ Projects")
+    st.subheader("🗂️ Projects")
 
-    if not projects:
-        st.info("Create your first project from the sidebar.")
-    else:
-        st.write("Select a project from the sidebar to work on it.")
-        st.markdown("#### Your Projects")
-        for p in projects:
-            with st.container(border=True):
-                st.markdown(f"**{p.get('name','')}**")
-                rooms = p.get("rooms", [])
-                st.caption(f"Rooms: {len(rooms)}")
+    projects = load_projects()
 
-    st.markdown("---")
-    st.subheader("🛍️ Cart (Current Project)")
-    if not st.session_state.current_project:
-        st.info("Select or create a project to see its cart.")
-    else:
-        if st.button("🛍️ View My Cart"):
-            st.session_state.show_cart = not st.session_state.show_cart
+    # pick selected project (by id)
+    if "current_project_id" not in st.session_state:
+        st.session_state.current_project_id = projects[0]["id"] if projects else None
 
-        # Cart Section (same logic as before)
-        if st.session_state.show_cart:
-            if st.button("🩹 Clear Entire Cart"):
-                st.session_state.cart = []
-                update_current_cart(st.session_state.current_project, st.session_state.cart)
-                st.rerun()
+    # 2-column layout
+    left, right = st.columns([0.35, 0.65], gap="large")
 
-            if st.session_state.cart:
-                st.subheader("📟 Cart Summary by Room")
-                cart_df = pd.DataFrame(st.session_state.cart)
-                cart_df["total"] = cart_df["price"] * cart_df["quantity"]
-                grouped = cart_df.groupby("room")
+    with left:
+        st.markdown("#### Your projects")
 
-                for room, items in grouped:
-                    st.markdown(f"### 📍 {room}")
-                    for idx in items.index:
-                        item = cart_df.loc[idx]
-                        col1, col2 = st.columns([6, 1])
-                        with col1:
-                            st.write(f"• **{item['name']}** — {item['quantity']} × {item['price']} = {item['total']} THB")
-                            if isinstance(item.get('link'), str) and item['link'].startswith("http"):
-                                st.write(f"[Product Link]({item['link']})")
-                            if isinstance(item.get('supplier'), str) and item['supplier'].startswith("+66"):
-                                msg = f"Hi, I'm interested in your product: {item['name']} from the Materia app."
-                                wa_url = f"https://wa.me/{item['supplier'].replace('+', '')}?text={urllib.parse.quote(msg)}"
-                                st.write(f"[ WhatsApp Supplier]({wa_url})")
+        if not projects:
+            st.info("No projects yet. Create one from the sidebar.")
+        else:
+            # Search/filter
+            q = st.text_input("Filter projects", placeholder="type to filter…", key="proj_filter")
+            filtered = [
+                p for p in projects
+                if (q.strip().lower() in (p.get("name","").lower())) or not q.strip()
+            ]
 
-                        with col2:
-                            if st.button("❌ Remove", key=f"remove_{room}_{idx}"):
-                                st.session_state.cart.pop(idx)
-                                update_current_cart(st.session_state.current_project, st.session_state.cart)
+            for p in filtered:
+                pid = p["id"]
+                name = p.get("name", "Untitled")
+
+                # small status line
+                ps = project_status(pid)
+                total = ps["total"]
+                assigned = ps["assigned"]
+                client_ok = ps["client_ok"]
+                pct = (assigned / total) if total else 0.0
+
+                is_current = (str(pid) == str(st.session_state.current_project_id))
+
+                # card-ish container
+                box = st.container(border=True)
+                with box:
+                    cols = st.columns([0.72, 0.28])
+                    with cols[0]:
+                        st.markdown(f"**{name}**")
+                        st.caption(f"{ps['rooms']} rooms • {assigned}/{total} assigned • {client_ok}/{total} client approved")
+                        st.progress(pct)
+                    with cols[1]:
+                        if st.button("Open", key=f"open_proj_{pid}", type=("primary" if is_current else "secondary")):
+                            st.session_state.current_project_id = pid
+                            st.session_state.current_room_id = None
+                            st.rerun()
+
+    with right:
+        pid = st.session_state.current_project_id
+        if not pid:
+            st.info("Select a project on the left.")
+        else:
+            proj = next((x for x in projects if str(x["id"]) == str(pid)), None)
+            st.markdown(f"### 📌 {proj.get('name','Project')}")
+
+            ps = project_status(pid)
+            total = ps["total"]
+            assigned = ps["assigned"]
+            designer_ok = ps["designer_ok"]
+            client_ok = ps["client_ok"]
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Rooms", ps["rooms"])
+            c2.metric("Objects", total)
+            c3.metric("Assigned", f"{assigned}/{total}" if total else "0/0")
+            c4.metric("Client OK", f"{client_ok}/{total}" if total else "0/0")
+
+            st.markdown("#### Overall progress")
+            st.progress((assigned / total) if total else 0.0)
+            st.caption(f"Designer approved: {designer_ok}/{total} • Client approved: {client_ok}/{total}")
+
+            st.markdown("---")
+            st.markdown("#### Rooms")
+
+            rooms = load_project_rooms(pid)
+            if not rooms:
+                st.info("No rooms in this project yet.")
+            else:
+                # Rooms grid
+                grid_cols = st.columns(3)
+                for i, r in enumerate(rooms):
+                    rid = r["id"]
+                    rname = r["name"]
+                    rs = room_status(rid)
+                    rt = rs["total"]
+                    ra = rs["assigned"]
+                    rc = rs["client_ok"]
+                    pct = (ra / rt) if rt else 0.0
+
+                    with grid_cols[i % 3]:
+                        card = st.container(border=True)
+                        with card:
+                            st.markdown(f"**{rname}**")
+                            st.caption(f"{ra}/{rt} assigned • {rc}/{rt} client ok")
+                            st.progress(pct)
+
+                            if st.button("Open room", key=f"open_room_{rid}"):
+                                st.session_state.current_room_id = rid
                                 st.rerun()
 
-                grand_total = cart_df["total"].sum()
-                st.success(f"💰 **Total Cart Value: {grand_total} THB**")
+            # Room detail (Objects table)
+            if st.session_state.get("current_room_id"):
+                st.markdown("---")
+                rid = st.session_state.current_room_id
+                room = next((x for x in rooms if str(x["id"]) == str(rid)), None)
+                st.markdown(f"### 🧩 Room: {room.get('name') if room else ''}")
 
-                totals_by_room = cart_df.groupby("room")["total"].sum().reset_index()
-                st.bar_chart(totals_by_room.rename(columns={"room": "index"}).set_index("index"))
+                objs = load_room_objects(rid)
+                if not objs:
+                    st.info("No objects in this room.")
+                else:
+                    for o in objs:
+                        oid = o["id"]
 
-                st.download_button(
-                    label="Download Cart as CSV",
-                    data=cart_df.to_csv(index=False).encode("utf-8"),
-                    file_name="villa_cart.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("Your cart is currently empty.")
+                        container = st.container(border=True)
+                        with container:
+                            col1, col2, col3, col4 = st.columns([3,1,1,1])
 
+                            with col1:
+                                st.markdown(f"**{o.get('object_name')}**")
+                                st.caption(f"Category: {o.get('category')} • Qty: {o.get('qty')}")
 
+                            with col2:
+                                st.markdown("Assigned")
+                                st.write("✅" if o.get("material_id") else "—")
+
+                            with col3:
+                                st.markdown("Status")
+                                st.write(o.get("status","not_started"))
+
+                            with col4:
+                                if st.button("Open", key=f"edit_obj_{oid}"):
+                                    st.session_state.current_object_id = oid
+                                    st.rerun()
 # -----------------------------
 # Page: Search Catalog (your existing search UI)
 # -----------------------------

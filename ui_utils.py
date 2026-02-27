@@ -227,6 +227,14 @@ def inject_custom_css():
         border: 1px solid rgba(0,0,0,0.15) !important;
         }
 
+        /* Make bordered containers readable */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: rgba(255,255,255,0.92) !important;
+        }
+        div[data-testid="stVerticalBlockBorderWrapper"] * {
+        color: #111827 !important;
+        }
+        
         /* Number input + selectbox container */
         div[data-baseweb="input"] input {
         background: rgba(255,255,255,0.95) !important;
