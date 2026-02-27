@@ -15,7 +15,8 @@ from embedding import get_embedder
 # NEW: auth + supabase materials
 from auth_ui import require_login, sidebar_logout
 from materials_manager import list_materials, add_private_material
-
+from profiles_manager import get_profile
+from supabase_client import get_supabase
 
 # -----------------------------
 # Page setup
@@ -35,10 +36,43 @@ set_background_image()
 # Require login (critical for RLS auth.uid())
 # -----------------------------
 require_login()
-sidebar_logout()
 
 access_token = st.session_state.sb_access_token
 user_id = st.session_state.user_id
+
+profile = get_profile(access_token, user_id) or {}
+full_name = profile.get("full_name") or (
+    st.session_state.user_email.split("@")[0] if st.session_state.get("user_email") else "User"
+)
+
+# -----------------------------
+# Sidebar: user area (name + logout + profile editor)
+# -----------------------------
+st.sidebar.markdown("---")
+st.sidebar.markdown(f"👤 Logged in as: **{full_name}**")
+
+if st.sidebar.button("🚪 Logout"):
+    for k in ["sb_access_token", "user_id", "user_email", "pending_email"]:
+        st.session_state.pop(k, None)
+    st.rerun()
+
+with st.sidebar.expander("👤 Profile", expanded=False):
+    new_name = st.text_input("Display name", value=full_name, key="profile_display_name")
+    if st.button("Save name", key="save_profile_btn"):
+        sb = get_supabase(access_token)
+        sb.table("profiles").update({"full_name": new_name.strip()}).eq("id", user_id).execute()
+        st.success("Saved.")
+        st.rerun()
+
+# -----------------------------
+# Main: welcome message
+# -----------------------------
+st.markdown(f"""
+<div class="welcome-box">
+    <h2>👋 Welcome back, {full_name}</h2>
+    <p>Pick a project to work on, or manage your materials library.</p>
+</div>
+""", unsafe_allow_html=True)
 
 # -----------------------------
 # Sidebar Navigation

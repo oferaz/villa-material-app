@@ -1,9 +1,6 @@
 import streamlit as st
 from supabase_client import get_supabase
 
-import streamlit as st
-from supabase_client import get_supabase
-
 def require_login():
     if st.session_state.get("sb_access_token"):
         return
@@ -27,22 +24,47 @@ def require_login():
             st.stop()
 
     otp = st.text_input("Code")
-    if st.button("Verify", type="primary", disabled=not otp.strip()):
-        try:
-            sb = get_supabase()
-            em = st.session_state.get("pending_email") or email.strip()
-            res = sb.auth.verify_otp({"email": em, "token": otp.strip(), "type": "email"})
-            session = res.session
-            user = res.user
-            st.session_state.sb_access_token = session.access_token
-            st.session_state.user_id = user.id
-            st.session_state.user_email = user.email
-            st.rerun()
-        except Exception as e:
-            st.exception(e)
-            st.stop()
+if st.button("Verify", type="primary", disabled=not otp.strip()):
+    try:
+        sb = get_supabase()
+        em = st.session_state.get("pending_email") or email.strip()
 
-    st.stop()
+        # --- Verify OTP ---
+        res = sb.auth.verify_otp({
+            "email": em,
+            "token": otp.strip(),
+            "type": "email"
+        })
+
+        session = res.session
+        user = res.user
+
+        # --- Store session ---
+        st.session_state.sb_access_token = session.access_token
+        st.session_state.user_id = user.id
+        st.session_state.user_email = user.email
+
+        # --- Create profile if first login ---
+        sb_authed = get_supabase(session.access_token)
+
+        profile_check = sb_authed.table("profiles") \
+            .select("id") \
+            .eq("id", user.id) \
+            .execute()
+
+        if not profile_check.data:
+            sb_authed.table("profiles").insert({
+                "id": user.id,
+                "full_name": user.email.split("@")[0]
+            }).execute()
+
+        st.rerun()
+
+    except Exception as e:
+        st.exception(e)
+        st.stop()
+
+st.stop()
 
 def sidebar_logout():
     if st.sidebar.button("Logout"):

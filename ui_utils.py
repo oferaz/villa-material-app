@@ -124,27 +124,42 @@ def inject_custom_css():
     st.markdown(
         """
         <style>
+        /* --- App base --- */
         .stApp {
             background-color: #f8f9fa;
             font-family: "Segoe UI", sans-serif;
         }
 
-        .main > div {
-            background-color: white;
-            padding: 2rem;
-            border-radius: 1rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            margin-bottom: 1rem;
+        /* Make all main content text dark and readable */
+        .main, .main * {
+            color: #1f1f1f !important;
         }
 
+        /* Captions / secondary text (Streamlit uses small gray) */
+        .main .stCaption, .main small, .main [data-testid="stCaptionContainer"] {
+            color: #4b5563 !important;
+        }
+
+        /* --- Main white cards (keep your existing style) --- */
+        .main > div {
+            background-color: rgba(255,255,255,0.92);
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+            margin-bottom: 1rem;
+            backdrop-filter: blur(6px);
+        }
+
+        /* Inputs */
         .stTextInput, .stNumberInput, .stSelectbox, .stTextArea, .stFileUploader, .stMultiSelect {
             padding: 0.5rem;
             border-radius: 0.5rem;
         }
 
+        /* Buttons */
         .stButton > button {
             background-color: #0072C6;
-            color: white;
+            color: white !important;
             border-radius: 0.5rem;
             padding: 0.4rem 1rem;
             border: none;
@@ -159,25 +174,53 @@ def inject_custom_css():
             border-radius: 0.5rem;
         }
 
+        /* Images */
         img {
             border-radius: 12px;
             max-height: 250px;
             object-fit: cover;
         }
 
+        /* Product card */
         .product-card {
             border: 1px solid #ddd;
             border-radius: 10px;
             padding: 1rem;
             margin-bottom: 1rem;
             box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            background: rgba(255,255,255,0.95);
         }
+
+        /* --- Sidebar readability --- */
+        section[data-testid="stSidebar"] * {
+            color: #111827 !important;
+        }
+        section[data-testid="stSidebar"] {
+            background: rgba(255,255,255,0.92) !important;
+            backdrop-filter: blur(6px);
+        }
+
+        /* --- Welcome banner (optional) --- */
+        .welcome-box {
+            background: rgba(255,255,255,0.88);
+            padding: 18px 22px;
+            border-radius: 16px;
+            backdrop-filter: blur(6px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+            margin-bottom: 18px;
+        }
+        .welcome-box h2 {
+            margin: 0 0 6px 0;
+        }
+        .welcome-box p {
+            margin: 0;
+            color: #4b5563 !important;
+        }
+
         </style>
         """,
         unsafe_allow_html=True
     )
-
-# render_add_product_form not yet updated
 
 
 
