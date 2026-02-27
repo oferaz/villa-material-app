@@ -3,6 +3,7 @@
 import streamlit as st
 from supabase_client import get_supabase
 from assets.villa_template import SMALL_VILLA_TEMPLATE
+import re
 
 def _token() -> str:
     tok = st.session_state.get("sb_access_token")
@@ -10,6 +11,16 @@ def _token() -> str:
         raise RuntimeError("Missing access token. User must be logged in.")
     return tok
 
+def _template_room_key(room_name: str) -> str:
+    """
+    Maps 'Living Room 1' -> 'Living Room', 'Bathroom 2' -> 'Bathroom'
+    Also trims extra spaces.
+    """
+    if not room_name:
+        return ""
+    # remove trailing " 1", " 2", etc.
+    base = re.sub(r"\s+\d+$", "", room_name.strip())
+    return base
 
 def load_projects():
     """Fetch projects visible to the logged-in user (RLS will filter later)."""
@@ -78,7 +89,8 @@ def create_project(name: str, rooms=None, template: str = "small_villa"):
             rid = room_row["id"]
             rname = room_row["name"]
 
-            for obj in SMALL_VILLA_TEMPLATE.get(rname, []):
+            tkey = _template_room_key(rname)
+            for obj in SMALL_VILLA_TEMPLATE.get(tkey, []):
                 objects_payload.append({
                     "room_id": rid,
                     "object_key": obj["key"],

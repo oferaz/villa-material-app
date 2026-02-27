@@ -217,6 +217,27 @@ def inject_custom_css():
             color: #4b5563 !important;
         }
 
+        /* Force readable input controls */
+        section[data-testid="stSidebar"] input,
+        section[data-testid="stSidebar"] textarea,
+        section[data-testid="stSidebar"] select,
+        .main input, .main textarea, .main select {
+        background: rgba(255,255,255,0.95) !important;
+        color: #111827 !important;
+        border: 1px solid rgba(0,0,0,0.15) !important;
+        }
+
+        /* Number input + selectbox container */
+        div[data-baseweb="input"] input {
+        background: rgba(255,255,255,0.95) !important;
+        color: #111827 !important;
+        }
+
+        /* Dropdown menu items */
+        div[data-baseweb="menu"] * {
+        color: #111827 !important;
+        }
+
         </style>
         """,
         unsafe_allow_html=True
