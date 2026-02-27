@@ -291,6 +291,45 @@ if page == "Projects":
                     else:
                         st.markdown(f"### 🔧 Edit: {obj.get('object_name')}")
 
+                        material_options = []
+                        material_labels = {}
+                        material_error = None
+                        if access_token:
+                            try:
+                                material_options = list_materials(access_token)
+                            except Exception as e:
+                                material_error = str(e)
+
+                        current_material_id = str(obj.get("material_id")) if obj.get("material_id") else None
+
+                        select_options = [None]
+                        for m in material_options:
+                            mid = str(m.get("id"))
+                            if not mid:
+                                continue
+                            select_options.append(mid)
+                            name = m.get("name") or "Unnamed material"
+                            category = m.get("category") or "Uncategorized"
+                            material_labels[mid] = f"{name} ({category})"
+
+                        if current_material_id and current_material_id not in material_labels:
+                            material_labels[current_material_id] = f"Current material ({current_material_id[:8]})"
+                            select_options.append(current_material_id)
+
+                        selected_index = select_options.index(current_material_id) if current_material_id in select_options else 0
+                        selected_material_id = st.selectbox(
+                            "Material",
+                            options=select_options,
+                            index=selected_index,
+                            format_func=lambda x: "None" if x is None else material_labels.get(x, x),
+                            key=f"obj_material_select_{oid}",
+                        )
+
+                        if material_error:
+                            st.warning(f"Could not load materials: {material_error}")
+                        elif not material_options:
+                            st.info("No materials available. Add materials in 'My Materials' first.")
+
                         status_options = ["unassigned", "selected", "designer_approved", "client_approved"]
                         current_status = obj.get("status") or "unassigned"
                         if current_status not in status_options:
@@ -303,7 +342,7 @@ if page == "Projects":
                             key="obj_status_select",
                         )
 
-                        col_a, col_b, col_c = st.columns([1, 1, 1])
+                        col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 1])
                         with col_a:
                             if st.button("Save Status", type="primary", key="save_obj_status"):
                                 sb = get_supabase(access_token)
@@ -311,12 +350,22 @@ if page == "Projects":
                                 st.success("Status updated.")
                                 st.rerun()
                         with col_b:
+                            assign_disabled = not (access_token and selected_material_id)
+                            if st.button("Assign Material", key="assign_obj_material", disabled=assign_disabled):
+                                sb = get_supabase(access_token)
+                                update_payload = {"material_id": selected_material_id}
+                                if (obj.get("status") or "unassigned") == "unassigned":
+                                    update_payload["status"] = "selected"
+                                sb.table("room_objects").update(update_payload).eq("id", oid).execute()
+                                st.success("Material assigned.")
+                                st.rerun()
+                        with col_c:
                             if st.button("Clear Material", key="clear_obj_material"):
                                 sb = get_supabase(access_token)
                                 sb.table("room_objects").update({"material_id": None, "status": "unassigned"}).eq("id", oid).execute()
                                 st.success("Cleared.")
                                 st.rerun()
-                        with col_c:
+                        with col_d:
                             if st.button("Close", key="close_obj_editor"):
                                 st.session_state.current_object_id = None
                                 st.rerun()
