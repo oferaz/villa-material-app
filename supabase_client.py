@@ -5,29 +5,36 @@ import streamlit as st
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# Load local .env (for dev)
 load_dotenv()
 
-# Try Streamlit secrets first (Cloud)
-SUPABASE_URL = None
-SUPABASE_KEY = None
+def get_supabase(access_token: str | None = None) -> Client:
+    """
+    Returns a Supabase client.
+    If access_token is provided, attaches it so RLS auth.uid() works.
+    """
 
-if hasattr(st, "secrets"):
-    SUPABASE_URL = st.secrets.get("SUPABASE_URL")
-    SUPABASE_KEY = st.secrets.get("SUPABASE_KEY")
+    # 1️⃣ Load credentials
+    SUPABASE_URL = None
+    SUPABASE_KEY = None
 
-# Fallback to environment variables (.env / system)
-if not SUPABASE_URL:
-    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    if hasattr(st, "secrets"):
+        SUPABASE_URL = st.secrets.get("SUPABASE_URL")
+        SUPABASE_KEY = st.secrets.get("SUPABASE_ANON_KEY")  # use ANON key
 
-if not SUPABASE_KEY:
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+    if not SUPABASE_URL:
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("❌ Supabase credentials are not set.")
-    st.info("Set SUPABASE_URL and SUPABASE_KEY in:")
-    st.info("- .streamlit/secrets.toml (for Cloud)")
-    st.info("- .env file (for local dev)")
-    st.stop()
+    if not SUPABASE_KEY:
+        SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("Supabase credentials missing")
+
+    # 2️⃣ Create client
+    sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # 3️⃣ Attach user session if available
+    if access_token:
+        sb.postgrest.auth(access_token)
+
+    return sb
