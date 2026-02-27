@@ -1,7 +1,18 @@
 import streamlit as st
+import os
 from supabase_client import get_supabase
 
+def _auth_bypass_enabled() -> bool:
+    raw = os.getenv("AUTH_BYPASS")
+    if hasattr(st, "secrets"):
+        raw = st.secrets.get("AUTH_BYPASS", raw)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
 def require_login():
+    if _auth_bypass_enabled():
+        st.session_state.setdefault("user_email", "debug@local")
+        st.session_state.setdefault("user_id", None)
+        return
 
     if st.session_state.get("sb_access_token"):
         return

@@ -45,10 +45,10 @@ set_background_image()
 # -----------------------------
 require_login()
 
-access_token = st.session_state.sb_access_token
-user_id = st.session_state.user_id
+access_token = st.session_state.get("sb_access_token")
+user_id = st.session_state.get("user_id")
 
-profile = get_profile(access_token, user_id) or {}
+profile = get_profile(access_token, user_id) if (access_token and user_id) else {}
 full_name = profile.get("full_name") or (
     st.session_state.user_email.split("@")[0] if st.session_state.get("user_email") else "User"
 )
@@ -66,7 +66,7 @@ if st.sidebar.button("🚪 Logout"):
 
 with st.sidebar.expander("👤 Profile", expanded=False):
     new_name = st.text_input("Display name", value=full_name, key="profile_display_name")
-    if st.button("Save name", key="save_profile_btn"):
+    if st.button("Save name", key="save_profile_btn", disabled=not (access_token and user_id)):
         sb = get_supabase(access_token)
         sb.table("profiles").update({"full_name": new_name.strip()}).eq("id", user_id).execute()
         st.success("Saved.")
@@ -360,7 +360,7 @@ elif page == "My Materials":
         image_url = st.text_input("Image URL", key="mat_img")
         tags_csv = st.text_input("Tags (comma separated)", placeholder="bathroom, modern, wood", key="mat_tags")
 
-        if st.button("Save", type="primary", disabled=not name.strip(), key="mat_save"):
+        if st.button("Save", type="primary", disabled=(not name.strip() or not (access_token and user_id)), key="mat_save"):
             tags = [t.strip() for t in tags_csv.split(",") if t.strip()]
             add_private_material(
                 access_token=access_token,
@@ -377,6 +377,8 @@ elif page == "My Materials":
             )
             st.success("Saved to your library.")
             st.rerun()
+        if not (access_token and user_id):
+            st.caption("Debug mode: login is bypassed, so creating private materials is disabled.")
 
     q = st.text_input("Search my library", placeholder="type to filter by name/description/tags")
 

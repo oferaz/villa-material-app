@@ -5,11 +5,9 @@ from supabase_client import get_supabase
 from assets.villa_template import SMALL_VILLA_TEMPLATE
 import re
 
-def _token() -> str:
-    tok = st.session_state.get("sb_access_token")
-    if not tok:
-        raise RuntimeError("Missing access token. User must be logged in.")
-    return tok
+def _token() -> str | None:
+    # In AUTH_BYPASS debug mode there may be no user token.
+    return st.session_state.get("sb_access_token")
 
 def _template_room_key(room_name: str) -> str:
     """
