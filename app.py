@@ -4,19 +4,27 @@ import os
 import streamlit as st
 import pandas as pd
 import numpy as np
-import urllib.parse
 from sentence_transformers import util
 
 from ui_utils import inject_custom_css, apply_custom_css, render_product_card, set_background_image
-from config import CATALOG_PKL, MODEL_PATH, ROOM_OPTIONS
-from project_manager import load_projects, load_project_rooms, load_room_objects, project_status, room_status
+from config import CATALOG_PKL
 from embedding import get_embedder
 
-# NEW: auth + supabase materials
-from auth_ui import require_login, sidebar_logout
-from materials_manager import list_materials, add_private_material
+# Auth + Supabase
+from auth_ui import require_login
 from profiles_manager import get_profile
 from supabase_client import get_supabase
+
+# Supabase-backed managers
+from materials_manager import list_materials, add_private_material
+from project_manager import (
+    load_projects,
+    create_project,
+    load_project_rooms,
+    load_room_objects,
+    project_status,
+    room_status,
+)
 
 # -----------------------------
 # Page setup
@@ -52,7 +60,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown(f"👤 Logged in as: **{full_name}**")
 
 if st.sidebar.button("🚪 Logout"):
-    for k in ["sb_access_token", "user_id", "user_email", "pending_email"]:
+    for k in ["sb_access_token", "user_id", "user_email", "pending_email", "current_project_id", "current_room_id", "current_object_id"]:
         st.session_state.pop(k, None)
     st.rerun()
 
@@ -67,12 +75,15 @@ with st.sidebar.expander("👤 Profile", expanded=False):
 # -----------------------------
 # Main: welcome message
 # -----------------------------
-st.markdown(f"""
-<div class="welcome-box">
-    <h2>👋 Welcome back, {full_name}</h2>
-    <p>Pick a project to work on, or manage your materials library.</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    f"""
+    <div class="welcome-box">
+        <h2>👋 Welcome back, {full_name}</h2>
+        <p>Pick a project to work on, or manage your materials library.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # -----------------------------
 # Sidebar Navigation
@@ -81,109 +92,9 @@ st.sidebar.markdown("### 🧭 Navigation")
 page = st.sidebar.radio("", ["Projects", "Search Catalog", "My Materials"], label_visibility="collapsed")
 
 # -----------------------------
-# Project Management (kept as-is for now)
-# (Later we migrate projects to Supabase with owner_id + RLS)
-# -----------------------------
-if "projects" not in st.session_state:
-    st.session_state.projects = load_projects()
-
-projects = st.session_state.projects
-
-if "current_project" not in st.session_state:
-    st.session_state.current_project = projects[0]["name"] if projects else None
-    st.session_state.cart = get_current_cart(projects, st.session_state.current_project) if projects else []
-
-if "cart" not in st.session_state:
-    st.session_state.cart = []
-
-if "show_cart" not in st.session_state:
-    st.session_state.show_cart = False
-
-
-def render_project_sidebar():
-    st.sidebar.markdown("### 🗂️ Project")
-
-    if not projects:
-        st.sidebar.info("No projects yet. Create one below.")
-        project_names = []
-    else:
-        project_names = [p["name"] for p in projects]
-
-    if project_names:
-        selected = st.sidebar.selectbox(
-            "Select Project",
-            project_names,
-            index=project_names.index(st.session_state.current_project)
-            if st.session_state.current_project in project_names
-            else 0
-        )
-        if selected != st.session_state.current_project:
-            st.session_state.current_project = selected
-            st.session_state.cart = get_current_cart(projects, selected)
-
-    with st.sidebar.expander("➕ Create New Project", expanded=False):
-        new_proj = st.text_input("Project Name")
-
-        predefined = [
-            "Living Room", "Kitchen", "Dining Room", "Bedroom", "Master Bedroom", "Guest Bedroom",
-            "Bathroom", "Guest Bathroom", "Outdoor", "Garden", "Terrace", "Balcony", "Pool Area",
-            "Entrance", "Walk-in Closet", "Pantry", "Laundry Room", "Garage", "Storage Room",
-            "Office / Study", "Kids Room", "Play Area", "Hallway"
-        ]
-
-        room_counts = {}
-        st.markdown("#### Select Predefined Rooms")
-        for room in predefined:
-            count = st.number_input(
-                f"{room}",
-                min_value=0,
-                max_value=10,
-                value=0,
-                step=1,
-                key=f"{room}_count"
-            )
-            if count > 0:
-                room_counts[room] = count
-
-        custom_rooms = st.text_input("Add Custom Rooms (comma-separated)", "")
-
-        if st.button("✅ Create Project"):
-            all_rooms = []
-            for room, count in room_counts.items():
-                for i in range(count):
-                    label = f"{room} {i+1}" if count > 1 else room
-                    all_rooms.append(label)
-
-            custom_split = [r.strip() for r in custom_rooms.split(",") if r.strip()]
-            all_rooms.extend(custom_split)
-
-            name_clean = new_proj.strip()
-            if not name_clean:
-                st.warning("⚠️ Please enter a project name.")
-            else:
-                updated_projects = create_project(name_clean, all_rooms)
-                # reload local cache
-                st.session_state.projects = updated_projects
-                if any(p["name"].strip().lower() == name_clean.lower() for p in projects):
-                    st.session_state.current_project = name_clean
-                    st.session_state.cart = get_current_cart(projects, name_clean)
-                    st.rerun()
-
-    with st.sidebar:
-        st.markdown("### 🔧 Tools")
-        if st.button("🔄 Re-index Catalog"):
-            st.switch_page("pages/Reindex_Catalog.py")
-        if st.button("🔗 Add Product from Link"):
-            st.switch_page("pages/Add_From_Link.py")
-
-
-render_project_sidebar()
-
-# -----------------------------
-# Load Model & Data (Catalog search)
+# Shared: Load embedding model + catalog
 # -----------------------------
 model = get_embedder()
-
 
 @st.cache_data
 def load_data():
@@ -195,16 +106,11 @@ def load_data():
         df_["embedding"] = df_["embedding"].apply(np.array)
     return df_
 
-
 df = load_data()
-if df.empty:
+if df.empty or "embedding" not in df.columns or df["embedding"].isna().all():
     embeddings = None
 else:
-    # Guard: vstack fails if embeddings column missing/empty
-    if "embedding" not in df.columns or df["embedding"].isna().all():
-        embeddings = None
-    else:
-        embeddings = np.vstack(df["embedding"].values)
+    embeddings = np.vstack(df["embedding"].values)
 
 # -----------------------------
 # Page: Projects
@@ -214,11 +120,45 @@ if page == "Projects":
 
     projects = load_projects()
 
+    # Sidebar: Create project (simple + works)
+    with st.sidebar.expander("➕ Create New Project", expanded=False):
+        new_proj = st.text_input("Project Name", key="new_proj_name")
+
+        predefined = [
+            "Living Room", "Kitchen", "Dining Room", "Bedroom", "Master Bedroom", "Guest Bedroom",
+            "Bathroom", "Guest Bathroom", "Outdoor / Terrace", "Garden", "Balcony", "Pool Area",
+            "Entrance", "Walk-in Closet", "Pantry", "Laundry Room", "Garage", "Storage Room",
+            "Office / Study", "Kids Room", "Play Area", "Hallway"
+        ]
+
+        room_counts = {}
+        st.markdown("#### Rooms")
+        for room in predefined:
+            count = st.number_input(room, min_value=0, max_value=10, value=0, step=1, key=f"cnt_{room}")
+            if count > 0:
+                room_counts[room] = count
+
+        custom_rooms = st.text_input("Custom Rooms (comma-separated)", "", key="custom_rooms")
+
+        if st.button("✅ Create", type="primary", key="create_project_btn"):
+            all_rooms = []
+            for room, count in room_counts.items():
+                for i in range(count):
+                    label = f"{room} {i+1}" if count > 1 else room
+                    all_rooms.append(label)
+
+            all_rooms.extend([r.strip() for r in custom_rooms.split(",") if r.strip()])
+
+            if not new_proj.strip():
+                st.warning("⚠️ Please enter a project name.")
+            else:
+                create_project(new_proj.strip(), all_rooms)
+                st.rerun()
+
     # pick selected project (by id)
     if "current_project_id" not in st.session_state:
         st.session_state.current_project_id = projects[0]["id"] if projects else None
 
-    # 2-column layout
     left, right = st.columns([0.35, 0.65], gap="large")
 
     with left:
@@ -227,18 +167,13 @@ if page == "Projects":
         if not projects:
             st.info("No projects yet. Create one from the sidebar.")
         else:
-            # Search/filter
             q = st.text_input("Filter projects", placeholder="type to filter…", key="proj_filter")
-            filtered = [
-                p for p in projects
-                if (q.strip().lower() in (p.get("name","").lower())) or not q.strip()
-            ]
+            filtered = [p for p in projects if (q.strip().lower() in (p.get("name", "").lower())) or not q.strip()]
 
             for p in filtered:
                 pid = p["id"]
                 name = p.get("name", "Untitled")
 
-                # small status line
                 ps = project_status(pid)
                 total = ps["total"]
                 assigned = ps["assigned"]
@@ -247,9 +182,7 @@ if page == "Projects":
 
                 is_current = (str(pid) == str(st.session_state.current_project_id))
 
-                # card-ish container
-                box = st.container(border=True)
-                with box:
+                with st.container(border=True):
                     cols = st.columns([0.72, 0.28])
                     with cols[0]:
                         st.markdown(f"**{name}**")
@@ -259,6 +192,7 @@ if page == "Projects":
                         if st.button("Open", key=f"open_proj_{pid}", type=("primary" if is_current else "secondary")):
                             st.session_state.current_project_id = pid
                             st.session_state.current_room_id = None
+                            st.session_state.current_object_id = None
                             st.rerun()
 
     with right:
@@ -291,8 +225,8 @@ if page == "Projects":
             rooms = load_project_rooms(pid)
             if not rooms:
                 st.info("No rooms in this project yet.")
+                objs = []
             else:
-                # Rooms grid
                 grid_cols = st.columns(3)
                 for i, r in enumerate(rooms):
                     rid = r["id"]
@@ -304,55 +238,94 @@ if page == "Projects":
                     pct = (ra / rt) if rt else 0.0
 
                     with grid_cols[i % 3]:
-                        card = st.container(border=True)
-                        with card:
+                        with st.container(border=True):
                             st.markdown(f"**{rname}**")
                             st.caption(f"{ra}/{rt} assigned • {rc}/{rt} client ok")
                             st.progress(pct)
 
                             if st.button("Open room", key=f"open_room_{rid}"):
                                 st.session_state.current_room_id = rid
+                                st.session_state.current_object_id = None
                                 st.rerun()
 
-            # Room detail (Objects table)
-            if st.session_state.get("current_room_id"):
+                # Room detail
                 st.markdown("---")
-                rid = st.session_state.current_room_id
-                room = next((x for x in rooms if str(x["id"]) == str(rid)), None)
-                st.markdown(f"### 🧩 Room: {room.get('name') if room else ''}")
+                objs = []
+                if st.session_state.get("current_room_id"):
+                    rid = st.session_state.current_room_id
+                    room = next((x for x in rooms if str(x["id"]) == str(rid)), None)
+                    st.markdown(f"### 🧩 Room: {room.get('name') if room else ''}")
 
-                objs = load_room_objects(rid)
-                if not objs:
-                    st.info("No objects in this room.")
-                else:
-                    for o in objs:
-                        oid = o["id"]
+                    objs = load_room_objects(rid)
+                    if not objs:
+                        st.info("No objects in this room.")
+                    else:
+                        for o in objs:
+                            oid = o["id"]
+                            with st.container(border=True):
+                                col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                                with col1:
+                                    st.markdown(f"**{o.get('object_name')}**")
+                                    st.caption(f"Category: {o.get('category')} • Qty: {o.get('qty')}")
+                                with col2:
+                                    st.markdown("Assigned")
+                                    st.write("✅" if o.get("material_id") else "—")
+                                with col3:
+                                    st.markdown("Status")
+                                    st.write(o.get("status", "unassigned"))
+                                with col4:
+                                    if st.button("Open", key=f"edit_obj_{oid}"):
+                                        st.session_state.current_object_id = oid
+                                        st.rerun()
 
-                        container = st.container(border=True)
-                        with container:
-                            col1, col2, col3, col4 = st.columns([3,1,1,1])
+                # Object editor
+                if st.session_state.get("current_object_id"):
+                    st.markdown("---")
+                    oid = st.session_state.current_object_id
+                    obj = next((x for x in objs if str(x["id"]) == str(oid)), None)
 
-                            with col1:
-                                st.markdown(f"**{o.get('object_name')}**")
-                                st.caption(f"Category: {o.get('category')} • Qty: {o.get('qty')}")
+                    if not st.session_state.get("current_room_id"):
+                        st.info("Select a room first.")
+                    elif not obj:
+                        st.info("Object not found in current room (maybe room changed).")
+                    else:
+                        st.markdown(f"### 🔧 Edit: {obj.get('object_name')}")
 
-                            with col2:
-                                st.markdown("Assigned")
-                                st.write("✅" if o.get("material_id") else "—")
+                        status_options = ["unassigned", "selected", "designer_approved", "client_approved"]
+                        current_status = obj.get("status") or "unassigned"
+                        if current_status not in status_options:
+                            current_status = "unassigned"
 
-                            with col3:
-                                st.markdown("Status")
-                                st.write(o.get("status","not_started"))
+                        new_status = st.selectbox(
+                            "Status",
+                            status_options,
+                            index=status_options.index(current_status),
+                            key="obj_status_select",
+                        )
 
-                            with col4:
-                                if st.button("Open", key=f"edit_obj_{oid}"):
-                                    st.session_state.current_object_id = oid
-                                    st.rerun()
+                        col_a, col_b, col_c = st.columns([1, 1, 1])
+                        with col_a:
+                            if st.button("Save Status", type="primary", key="save_obj_status"):
+                                sb = get_supabase(access_token)
+                                sb.table("room_objects").update({"status": new_status}).eq("id", oid).execute()
+                                st.success("Status updated.")
+                                st.rerun()
+                        with col_b:
+                            if st.button("Clear Material", key="clear_obj_material"):
+                                sb = get_supabase(access_token)
+                                sb.table("room_objects").update({"material_id": None, "status": "unassigned"}).eq("id", oid).execute()
+                                st.success("Cleared.")
+                                st.rerun()
+                        with col_c:
+                            if st.button("Close", key="close_obj_editor"):
+                                st.session_state.current_object_id = None
+                                st.rerun()
+
 # -----------------------------
-# Page: Search Catalog (your existing search UI)
+# Page: Search Catalog
 # -----------------------------
 elif page == "Search Catalog":
-    st.title("🏡 Find the Right Materials for Every Room - Powered by Materia")
+    st.title("🔎 Search Catalog")
 
     if st.button("🔄 Refresh Product Catalog"):
         st.cache_data.clear()
@@ -361,64 +334,19 @@ elif page == "Search Catalog":
     if embeddings is None or df.empty:
         st.warning("Catalog is empty or embeddings are missing. Add products or re-index the catalog.")
     else:
-        query = st.text_input(
-            "What material or item are you looking for?",
-            placeholder="e.g. light wood bench for outdoor"
-        )
-
+        query = st.text_input("What material or item are you looking for?", placeholder="e.g. light wood bench for outdoor")
         if query:
             query_vec = model.encode(query, convert_to_numpy=True)
             scores = util.cos_sim(query_vec, embeddings)[0]
-            top_k_idx = np.argsort(-scores)[:5]
+            top_k_idx = np.argsort(-scores)[:10]
             results = df.iloc[top_k_idx]
 
-            project = next((p for p in projects if p["name"] == st.session_state.current_project), None)
-            project_rooms = project.get("rooms", []) if project else []
-
             for i, (_, row) in enumerate(results.iterrows()):
-                render_product_card(row, i, project_rooms)
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            st.markdown("---")
-
-    # Cart toggle (kept available here too)
-    if st.button("🛍️ View My Cart"):
-        st.session_state.show_cart = not st.session_state.show_cart
-
-    if st.session_state.show_cart:
-        st.subheader("📟 Cart Summary by Room")
-        if not st.session_state.cart:
-            st.info("Your cart is currently empty.")
-        else:
-            cart_df = pd.DataFrame(st.session_state.cart)
-            cart_df["total"] = cart_df["price"] * cart_df["quantity"]
-            grouped = cart_df.groupby("room")
-
-            for room, items in grouped:
-                st.markdown(f"### 📍 {room}")
-                for idx in items.index:
-                    item = cart_df.loc[idx]
-                    col1, col2 = st.columns([6, 1])
-                    with col1:
-                        st.write(f"• **{item['name']}** — {item['quantity']} × {item['price']} = {item['total']} THB")
-                        if isinstance(item.get('link'), str) and item['link'].startswith("http"):
-                            st.write(f"[Product Link]({item['link']})")
-                        if isinstance(item.get('supplier'), str) and item['supplier'].startswith("+66"):
-                            msg = f"Hi, I'm interested in your product: {item['name']} from the Materia app."
-                            wa_url = f"https://wa.me/{item['supplier'].replace('+', '')}?text={urllib.parse.quote(msg)}"
-                            st.write(f"[ WhatsApp Supplier]({wa_url})")
-                    with col2:
-                        if st.button("❌ Remove", key=f"remove_search_{room}_{idx}"):
-                            st.session_state.cart.pop(idx)
-                            update_current_cart(st.session_state.current_project, st.session_state.cart)
-                            st.rerun()
-
-            grand_total = cart_df["total"].sum()
-            st.success(f"💰 **Total Cart Value: {grand_total} THB**")
-
+                render_product_card(row, i, project_rooms=[])
+                st.markdown("</div>", unsafe_allow_html=True)
 
 # -----------------------------
-# Page: My Materials (Supabase-backed, RLS protected)
+# Page: My Materials
 # -----------------------------
 elif page == "My Materials":
     st.title("📚 My Materials Library")
@@ -444,7 +372,7 @@ elif page == "My Materials":
                     "price": float(price) if price else None,
                     "link": link.strip() or None,
                     "image_url": image_url.strip() or None,
-                    "tags": tags,  # jsonb list
+                    "tags": tags,
                 },
             )
             st.success("Saved to your library.")
@@ -452,13 +380,8 @@ elif page == "My Materials":
 
     q = st.text_input("Search my library", placeholder="type to filter by name/description/tags")
 
-    try:
-        rows = list_materials(access_token)
-    except Exception as e:
-        st.error(f"❌ Failed to load materials: {e}")
-        st.stop()
+    rows = list_materials(access_token)
 
-    # Client-side filter (simple + fast for MVP)
     if q.strip():
         qq = q.lower()
 
