@@ -15,7 +15,9 @@ def require_login():
     with col1:
         if st.button("Send code", type="primary", disabled=not email.strip()):
             sb = get_supabase()
-            sb.auth.sign_in_with_otp({"email": email.strip()})
+            sb.auth.sign_in_with_otp({"email": email.strip(), "options": {
+                                            "should_create_user": True
+                                        }})
             st.session_state.pending_email = email.strip()
             st.success("Sent. Check your email.")
             st.rerun()
