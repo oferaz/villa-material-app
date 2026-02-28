@@ -16,7 +16,7 @@ from profiles_manager import get_profile
 from supabase_client import get_supabase
 
 # Supabase-backed managers
-from materials_manager import list_materials, add_private_material
+from materials_manager import list_materials, add_private_material, search_materials_semantic
 from project_manager import (
     load_projects,
     create_project,
@@ -118,6 +118,13 @@ def load_materials_cached(token: str | None):
     if not token:
         return []
     return list_materials(token)
+
+
+@st.cache_data(ttl=45, show_spinner=False)
+def search_materials_cached(token: str | None, query: str, limit: int = 20):
+    if not token:
+        return []
+    return search_materials_semantic(token, query, limit=limit)
 
 # -----------------------------
 # Page: Projects
@@ -309,9 +316,20 @@ if page == "Projects":
                         material_options = []
                         material_labels = {}
                         material_error = None
-                        if access_token:
+
+                        query_key = f"obj_material_query_{oid}"
+                        if query_key not in st.session_state:
+                            st.session_state[query_key] = obj.get("object_name") or ""
+
+                        query_text = st.text_input(
+                            "Find material (semantic DB search)",
+                            key=query_key,
+                            placeholder="Type what this object should be made of",
+                        )
+
+                        if access_token and query_text.strip():
                             try:
-                                material_options = load_materials_cached(access_token)
+                                material_options = search_materials_cached(access_token, query_text.strip(), limit=20)
                             except Exception as e:
                                 material_error = str(e)
 
@@ -328,12 +346,20 @@ if page == "Projects":
                             material_labels[mid] = f"{name} ({category})"
 
                         if current_material_id and current_material_id not in material_labels:
-                            material_labels[current_material_id] = f"Current material ({current_material_id[:8]})"
+                            all_rows = load_materials_cached(access_token) if access_token else []
+                            cur_row = next((r for r in all_rows if str(r.get("id")) == current_material_id), None)
+                            if cur_row:
+                                material_labels[current_material_id] = (
+                                    f"{cur_row.get('name') or 'Current material'} "
+                                    f"({cur_row.get('category') or 'Uncategorized'})"
+                                )
+                            else:
+                                material_labels[current_material_id] = f"Current material ({current_material_id[:8]})"
                             select_options.append(current_material_id)
 
                         selected_index = select_options.index(current_material_id) if current_material_id in select_options else 0
                         selected_material_id = st.selectbox(
-                            "Material",
+                            "Matched materials",
                             options=select_options,
                             index=selected_index,
                             format_func=lambda x: "None" if x is None else material_labels.get(x, x),
@@ -341,9 +367,11 @@ if page == "Projects":
                         )
 
                         if material_error:
-                            st.warning(f"Could not load materials: {material_error}")
+                            st.warning(f"Could not search materials: {material_error}")
+                        elif not query_text.strip():
+                            st.caption("Search is prefilled with object name. Update it to refine.")
                         elif not material_options:
-                            st.info("No materials available. Add materials in 'My Materials' first.")
+                            st.info("No results found. Try a broader search phrase.")
 
                         status_options = ["unassigned", "selected", "designer_approved", "client_approved"]
                         current_status = obj.get("status") or "unassigned"
@@ -440,6 +468,7 @@ elif page == "My Materials":
                 },
             )
             load_materials_cached.clear()
+            search_materials_cached.clear()
             st.success("Saved to your library.")
             st.rerun()
         if not (access_token and user_id):
