@@ -11,7 +11,7 @@ from config import CATALOG_PKL
 from embedding import get_embedder
 
 # Auth + Supabase
-from auth_ui import require_login
+from auth_ui import require_login, clear_auth_state
 from profiles_manager import get_profile
 from supabase_client import get_supabase
 
@@ -60,8 +60,11 @@ st.sidebar.markdown("---")
 st.sidebar.markdown(f"👤 Logged in as: **{full_name}**")
 
 if st.sidebar.button("🚪 Logout"):
-    for k in ["sb_access_token", "user_id", "user_email", "pending_email", "current_project_id", "current_room_id", "current_object_id"]:
-        st.session_state.pop(k, None)
+    clear_auth_state([
+        "current_project_id",
+        "current_room_id",
+        "current_object_id",
+    ])
     st.rerun()
 
 with st.sidebar.expander("👤 Profile", expanded=False):
