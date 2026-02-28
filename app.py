@@ -22,8 +22,8 @@ from project_manager import (
     create_project,
     load_project_rooms,
     load_room_objects,
-    project_status,
-    room_status,
+    load_projects_statuses,
+    load_room_statuses,
 )
 
 # -----------------------------
@@ -112,6 +112,13 @@ if df.empty or "embedding" not in df.columns or df["embedding"].isna().all():
 else:
     embeddings = np.vstack(df["embedding"].values)
 
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_materials_cached(token: str | None):
+    if not token:
+        return []
+    return list_materials(token)
+
 # -----------------------------
 # Page: Projects
 # -----------------------------
@@ -119,6 +126,7 @@ if page == "Projects":
     st.subheader("🗂️ Projects")
 
     projects = load_projects()
+    project_statuses = load_projects_statuses([p["id"] for p in projects]) if projects else {}
 
     # Sidebar: Create project (simple + works)
     with st.sidebar.expander("➕ Create New Project", expanded=False):
@@ -174,7 +182,9 @@ if page == "Projects":
                 pid = p["id"]
                 name = p.get("name", "Untitled")
 
-                ps = project_status(pid)
+                ps = project_statuses.get(
+                    str(pid), {"rooms": 0, "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+                )
                 total = ps["total"]
                 assigned = ps["assigned"]
                 client_ok = ps["client_ok"]
@@ -203,7 +213,9 @@ if page == "Projects":
             proj = next((x for x in projects if str(x["id"]) == str(pid)), None)
             st.markdown(f"### 📌 {proj.get('name','Project')}")
 
-            ps = project_status(pid)
+            ps = project_statuses.get(
+                str(pid), {"rooms": 0, "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+            )
             total = ps["total"]
             assigned = ps["assigned"]
             designer_ok = ps["designer_ok"]
@@ -223,6 +235,7 @@ if page == "Projects":
             st.markdown("#### Rooms")
 
             rooms = load_project_rooms(pid)
+            room_statuses = load_room_statuses([r["id"] for r in rooms]) if rooms else {}
             if not rooms:
                 st.info("No rooms in this project yet.")
                 objs = []
@@ -231,7 +244,9 @@ if page == "Projects":
                 for i, r in enumerate(rooms):
                     rid = r["id"]
                     rname = r["name"]
-                    rs = room_status(rid)
+                    rs = room_statuses.get(
+                        str(rid), {"total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+                    )
                     rt = rs["total"]
                     ra = rs["assigned"]
                     rc = rs["client_ok"]
@@ -296,7 +311,7 @@ if page == "Projects":
                         material_error = None
                         if access_token:
                             try:
-                                material_options = list_materials(access_token)
+                                material_options = load_materials_cached(access_token)
                             except Exception as e:
                                 material_error = str(e)
 
@@ -424,6 +439,7 @@ elif page == "My Materials":
                     "tags": tags,
                 },
             )
+            load_materials_cached.clear()
             st.success("Saved to your library.")
             st.rerun()
         if not (access_token and user_id):
@@ -431,7 +447,7 @@ elif page == "My Materials":
 
     q = st.text_input("Search my library", placeholder="type to filter by name/description/tags")
 
-    rows = list_materials(access_token)
+    rows = load_materials_cached(access_token)
 
     if q.strip():
         qq = q.lower()

@@ -143,23 +143,95 @@ def load_room_objects(room_id: str):
     return res.data or []
 
 
-def room_status(room_id: str):
+def load_room_statuses(room_ids):
+    """
+    Batch status aggregation for many rooms in one query.
+    Returns: {room_id: {total, assigned, designer_ok, client_ok}}
+    """
+    status_by_room = {
+        str(rid): {"total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+        for rid in (room_ids or [])
+    }
+    if not room_ids:
+        return status_by_room
+
     sb = get_supabase(_token())
-    objs = sb.table("room_objects").select("id, material_id, status").eq("room_id", room_id).execute().data or []
-    total = len(objs)
-    assigned = sum(1 for o in objs if o.get("material_id"))
-    designer_ok = sum(1 for o in objs if o.get("status") == "designer_approved")
-    client_ok = sum(1 for o in objs if o.get("status") == "client_approved")
-    return {"total": total, "assigned": assigned, "designer_ok": designer_ok, "client_ok": client_ok}
+    objs = (
+        sb.table("room_objects")
+        .select("room_id, material_id, status")
+        .in_("room_id", room_ids)
+        .execute()
+        .data
+        or []
+    )
+
+    for o in objs:
+        rid = str(o.get("room_id"))
+        if rid not in status_by_room:
+            status_by_room[rid] = {"total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+
+        slot = status_by_room[rid]
+        slot["total"] += 1
+        if o.get("material_id"):
+            slot["assigned"] += 1
+        if o.get("status") == "designer_approved":
+            slot["designer_ok"] += 1
+        if o.get("status") == "client_approved":
+            slot["client_ok"] += 1
+
+    return status_by_room
+
+
+def load_projects_statuses(project_ids):
+    """
+    Batch status aggregation for many projects.
+    Returns: {project_id: {rooms, total, assigned, designer_ok, client_ok}}
+    """
+    base = {
+        str(pid): {"rooms": 0, "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+        for pid in (project_ids or [])
+    }
+    if not project_ids:
+        return base
+
+    sb = get_supabase(_token())
+    rooms = (
+        sb.table("project_rooms")
+        .select("id, project_id")
+        .in_("project_id", project_ids)
+        .execute()
+        .data
+        or []
+    )
+
+    room_ids = [r["id"] for r in rooms]
+    room_stats = load_room_statuses(room_ids)
+
+    for r in rooms:
+        pid = str(r.get("project_id"))
+        rid = str(r.get("id"))
+        if pid not in base:
+            base[pid] = {"rooms": 0, "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+
+        slot = base[pid]
+        slot["rooms"] += 1
+
+        rs = room_stats.get(rid, {"total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0})
+        slot["total"] += rs["total"]
+        slot["assigned"] += rs["assigned"]
+        slot["designer_ok"] += rs["designer_ok"]
+        slot["client_ok"] += rs["client_ok"]
+
+    return base
+
+
+def room_status(room_id: str):
+    return load_room_statuses([room_id]).get(
+        str(room_id), {"total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+    )
 
 
 def project_status(project_id: str):
-    rooms = load_project_rooms(project_id)
-    totals = {"rooms": len(rooms), "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
-    for r in rooms:
-        s = room_status(r["id"])
-        totals["total"] += s["total"]
-        totals["assigned"] += s["assigned"]
-        totals["designer_ok"] += s["designer_ok"]
-        totals["client_ok"] += s["client_ok"]
-    return totals
+    return load_projects_statuses([project_id]).get(
+        str(project_id), {"rooms": 0, "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
+    )
