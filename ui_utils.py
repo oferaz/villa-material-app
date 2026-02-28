@@ -246,6 +246,22 @@ def inject_custom_css():
         color: #111827 !important;
         }
 
+        /* Streamlit/BaseWeb selectbox: keep selected value readable */
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+        background: rgba(255,255,255,0.95) !important;
+        border: 1px solid rgba(0,0,0,0.15) !important;
+        color: #111827 !important;
+        }
+        [data-testid="stSelectbox"] div[data-baseweb="select"] span,
+        [data-testid="stSelectbox"] div[data-baseweb="select"] div {
+        color: #111827 !important;
+        }
+        [data-testid="stSelectbox"] div[data-baseweb="select"] input {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        opacity: 1 !important;
+        }
+
         </style>
         """,
         unsafe_allow_html=True

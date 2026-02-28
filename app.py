@@ -318,6 +318,7 @@ if page == "Projects":
 
                         material_options = []
                         material_labels = {}
+                        material_rows = {}
                         material_error = None
 
                         query_key = f"obj_material_query_{oid}"
@@ -344,6 +345,7 @@ if page == "Projects":
                             if not mid:
                                 continue
                             select_options.append(mid)
+                            material_rows[mid] = m
                             name = m.get("name") or "Unnamed material"
                             category = m.get("category") or "Uncategorized"
                             material_labels[mid] = f"{name} ({category})"
@@ -352,6 +354,7 @@ if page == "Projects":
                             all_rows = load_materials_cached(access_token) if access_token else []
                             cur_row = next((r for r in all_rows if str(r.get("id")) == current_material_id), None)
                             if cur_row:
+                                material_rows[current_material_id] = cur_row
                                 material_labels[current_material_id] = (
                                     f"{cur_row.get('name') or 'Current material'} "
                                     f"({cur_row.get('category') or 'Uncategorized'})"
@@ -375,6 +378,44 @@ if page == "Projects":
                             st.caption("Search is prefilled with object name. Update it to refine.")
                         elif not material_options:
                             st.info("No results found. Try a broader search phrase.")
+
+                        show_preview = st.checkbox(
+                            "Show image previews",
+                            value=False,
+                            key=f"obj_show_material_images_{oid}",
+                        )
+                        if show_preview:
+                            selected_row = material_rows.get(str(selected_material_id)) if selected_material_id else None
+                            if selected_row:
+                                image_url = selected_row.get("image_url")
+                                if image_url:
+                                    st.image(
+                                        image_url,
+                                        width=260,
+                                        caption=f"Selected: {selected_row.get('name') or 'Material'}",
+                                    )
+                                else:
+                                    st.caption("Selected material has no image.")
+
+                            preview_rows = material_options[:6]
+                            if preview_rows:
+                                st.caption("Top semantic matches")
+                                cols = st.columns(3)
+                                for i, m in enumerate(preview_rows):
+                                    with cols[i % 3]:
+                                        title = m.get("name") or "Unnamed material"
+                                        mid = str(m.get("id")) if m.get("id") is not None else None
+                                        img = m.get("image_url")
+                                        if img:
+                                            st.image(img, use_container_width=True, caption=title)
+                                        else:
+                                            st.caption(f"{title} (no image)")
+                                        if mid:
+                                            if st.button("Select", key=f"obj_pick_mat_{oid}_{mid}"):
+                                                st.session_state[f"obj_material_select_{oid}"] = mid
+                                                st.rerun()
+                                            if str(selected_material_id) == mid:
+                                                st.caption("Selected")
 
                         status_options = ["unassigned", "selected", "designer_approved", "client_approved"]
                         current_status = obj.get("status") or "unassigned"
