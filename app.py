@@ -333,12 +333,12 @@ def render_client_portal(share_token: str):
             room_spend += qty * price
 
         with st.expander(
-            f"{room_name} • {stats['client_ok']}/{stats['total']} approved • {stats['assigned']}/{stats['total']} assigned",
+            f"{room_name} | {stats['client_ok']}/{stats['total']} approved | {stats['assigned']}/{stats['total']} assigned",
             expanded=False,
         ):
             room_info = f"Estimated spend: {room_spend:,.0f} THB"
             if room_budget is not None:
-                room_info += f" • Budget: {float(room_budget):,.0f} THB"
+                room_info += f" | Budget: {float(room_budget):,.0f} THB"
             st.caption(room_info)
 
             action_cols = st.columns(2)
@@ -375,7 +375,7 @@ def render_client_portal(share_token: str):
                     header_cols = st.columns([0.55, 0.15, 0.3])
                     with header_cols[0]:
                         st.markdown(f"**{obj.get('object_name') or 'Object'}**")
-                        st.caption(f"Category: {obj.get('category') or '-'} • Qty: {obj.get('qty') or 1}")
+                        st.caption(f"Category: {obj.get('category') or '-'} | Qty: {obj.get('qty') or 1}")
                     with header_cols[1]:
                         st.caption("Assigned")
                         st.write("Yes" if is_assigned else "No")
@@ -547,7 +547,7 @@ st.markdown(
     f"""
     <div class="welcome-box">
         <h2>Welcome back, {full_name}</h2>
-        <p>Shape mood, material, and story across every room from one creative workspace.</p>
+        <p>Shape mood, material, and sourcing decisions across every room from one shared workspace.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -604,6 +604,139 @@ def _safe_float(value):
         return None
 
 
+def _procurement_from_row(project_row: dict | None):
+    payload = _cart_payload_from_row(project_row)
+    block = payload.get("procurement") if isinstance(payload.get("procurement"), dict) else {}
+
+    notes = block.get("notes") if isinstance(block.get("notes"), dict) else {}
+    quote_status = block.get("quote_status") if isinstance(block.get("quote_status"), dict) else {}
+    priority = block.get("priority") if isinstance(block.get("priority"), dict) else {}
+    target_price = block.get("target_price") if isinstance(block.get("target_price"), dict) else {}
+
+    clean_target_price = {}
+    for key, value in target_price.items():
+        cast_value = _safe_float(value)
+        if cast_value is not None:
+            clean_target_price[str(key)] = cast_value
+
+    return {
+        "notes": {str(k): str(v or "") for k, v in notes.items()},
+        "quote_status": {str(k): str(v or "").strip().lower() for k, v in quote_status.items() if str(v or "").strip()},
+        "priority": {str(k): str(v or "").strip().lower() for k, v in priority.items() if str(v or "").strip()},
+        "target_price": clean_target_price,
+    }
+
+
+def _update_procurement_for_object(
+    procurement_block: dict,
+    object_id: str,
+    note: str,
+    quote_status: str,
+    priority: str,
+    target_price: float | None,
+):
+    next_block = {
+        "notes": dict(procurement_block.get("notes") or {}),
+        "quote_status": dict(procurement_block.get("quote_status") or {}),
+        "priority": dict(procurement_block.get("priority") or {}),
+        "target_price": dict(procurement_block.get("target_price") or {}),
+    }
+    key = str(object_id)
+
+    clean_note = str(note or "").strip()
+    clean_quote = str(quote_status or "").strip().lower()
+    clean_priority = str(priority or "").strip().lower()
+    clean_target = _safe_float(target_price)
+
+    if clean_note:
+        next_block["notes"][key] = clean_note
+    else:
+        next_block["notes"].pop(key, None)
+
+    if clean_quote:
+        next_block["quote_status"][key] = clean_quote
+    else:
+        next_block["quote_status"].pop(key, None)
+
+    if clean_priority:
+        next_block["priority"][key] = clean_priority
+    else:
+        next_block["priority"].pop(key, None)
+
+    if clean_target is not None:
+        next_block["target_price"][key] = clean_target
+    else:
+        next_block["target_price"].pop(key, None)
+
+    return next_block
+
+
+def _procurement_metrics(room_objects_map, material_lookup, procurement_block):
+    metrics = {
+        "assigned": 0,
+        "priced": 0,
+        "lead_known": 0,
+        "supplier_named": 0,
+        "quote_requested": 0,
+        "quote_received": 0,
+        "po_ready": 0,
+        "po_sent": 0,
+    }
+
+    quote_status = procurement_block.get("quote_status") or {}
+    for objects in (room_objects_map or {}).values():
+        for obj in (objects or []):
+            material_id = obj.get("material_id")
+            if not material_id:
+                continue
+
+            metrics["assigned"] += 1
+            material_row = material_lookup.get(str(material_id)) or {}
+
+            if _safe_float(material_row.get("price")) is not None:
+                metrics["priced"] += 1
+
+            lead_time = material_row.get("lead_time") or material_row.get("lead_time_days")
+            if lead_time is not None and str(lead_time).strip():
+                metrics["lead_known"] += 1
+
+            supplier_name = str(material_row.get("supplier") or material_row.get("supplier_name") or "").strip()
+            if supplier_name:
+                metrics["supplier_named"] += 1
+
+            status = str(quote_status.get(str(obj.get("id"))) or "").strip().lower()
+            if status == "quote_requested":
+                metrics["quote_requested"] += 1
+            elif status == "quote_received":
+                metrics["quote_received"] += 1
+            elif status == "po_ready":
+                metrics["po_ready"] += 1
+            elif status == "po_sent":
+                metrics["po_sent"] += 1
+
+    return metrics
+
+
+def _procurement_quote_label(status: str):
+    labels = {
+        "not_started": "Not started",
+        "quote_requested": "Quote requested",
+        "quote_received": "Quote received",
+        "po_ready": "PO ready",
+        "po_sent": "PO sent",
+    }
+    return labels.get(str(status or "").strip().lower(), "Not started")
+
+
+def _procurement_priority_label(priority: str):
+    labels = {
+        "routine": "Routine",
+        "high": "High",
+        "critical": "Critical",
+    }
+    return labels.get(str(priority or "").strip().lower(), "Routine")
+
+
 def _room_spend(objects, material_prices):
     spend = 0.0
     assigned = 0
@@ -641,7 +774,7 @@ def _room_spend(objects, material_prices):
 # Page: Projects
 # -----------------------------
 if page == "Projects":
-    _render_editorial_title("Design Workspace", "Projects")
+    _render_editorial_title("Design + Purchasing Workspace", "Projects")
 
     projects = load_projects()
     project_statuses = load_projects_statuses([p["id"] for p in projects]) if projects else {}
@@ -676,7 +809,7 @@ if page == "Projects":
             all_rooms.extend([r.strip() for r in custom_rooms.split(",") if r.strip()])
 
             if not new_proj.strip():
-                st.warning("⚠️ Please enter a project name.")
+                st.warning("Please enter a project name.")
             else:
                 create_project(new_proj.strip(), all_rooms)
                 st.rerun()
@@ -696,7 +829,7 @@ if page == "Projects":
                 unsafe_allow_html=True,
             )
         else:
-            q = st.text_input("Filter projects", placeholder="type to filter…", key="proj_filter")
+            q = st.text_input("Filter projects", placeholder="type to filter...", key="proj_filter")
             filtered = [p for p in projects if (q.strip().lower() in (p.get("name", "").lower())) or not q.strip()]
 
             for p in filtered:
@@ -717,7 +850,7 @@ if page == "Projects":
                     cols = st.columns([0.72, 0.28])
                     with cols[0]:
                         st.markdown(f"**{name}**")
-                        st.caption(f"{ps['rooms']} rooms • {assigned}/{total} assigned • {client_ok}/{total} client approved")
+                        st.caption(f"{ps['rooms']} rooms | {assigned}/{total} assigned | {client_ok}/{total} client approved")
                         st.progress(pct)
                     with cols[1]:
                         if st.button("Open", key=f"open_proj_{pid}", type=("primary" if is_current else "secondary")):
@@ -779,6 +912,8 @@ if page == "Projects":
                     st.info("No customer link yet. Click 'Generate link'.")
             project_material_rows = load_materials_cached(access_token) if access_token else []
             material_name_map = {str(m.get("id")): (m.get("name") or "Material") for m in project_material_rows if m.get("id")}
+            material_lookup = {str(m.get("id")): m for m in project_material_rows if m.get("id")}
+            procurement_meta = _procurement_from_row(proj)
 
             _render_editorial_title(proj.get("name", "Project"), "Creative Direction")
             design_brief = _design_brief_from_row(proj)
@@ -842,7 +977,7 @@ if page == "Projects":
 
                 hero_names = [material_name_map.get(mid, mid) for mid in selected_hero_ids[:6]]
                 if hero_names:
-                    st.caption("Hero materials: " + " • ".join(hero_names))
+                    st.caption("Hero materials: " + " | ".join(hero_names))
                 else:
                     st.caption("Pin hero materials to steer object decisions quickly.")
 
@@ -891,7 +1026,7 @@ if page == "Projects":
 
             _render_editorial_title("Project Rhythm", "Progress")
             st.progress((assigned / total) if total else 0.0)
-            st.caption(f"Designer approved: {designer_ok}/{total} • Client approved: {client_ok}/{total}")
+            st.caption(f"Designer approved: {designer_ok}/{total} | Client approved: {client_ok}/{total}")
 
             st.markdown("---")
             _render_editorial_title("Budget Story", "Financial Lens")
@@ -919,6 +1054,64 @@ if page == "Projects":
 
             if project_missing_prices:
                 st.caption(f"{project_missing_prices} assigned objects have no material price and are excluded from spend.")
+
+            st.markdown("---")
+            _render_editorial_title("Procurement Pulse", "Purchasing Lens")
+            procurement_stats = _procurement_metrics(room_objects_map, material_lookup, procurement_meta)
+            assigned_specs = procurement_stats["assigned"]
+
+            pulse_cols = st.columns(4)
+            pulse_cols[0].metric("Assigned specs", assigned_specs)
+            pulse_cols[1].metric(
+                "Priced",
+                f"{procurement_stats['priced']}/{assigned_specs}" if assigned_specs else "0/0",
+            )
+            pulse_cols[2].metric(
+                "Lead time known",
+                f"{procurement_stats['lead_known']}/{assigned_specs}" if assigned_specs else "0/0",
+            )
+            pulse_cols[3].metric(
+                "Supplier named",
+                f"{procurement_stats['supplier_named']}/{assigned_specs}" if assigned_specs else "0/0",
+            )
+
+            stage_cols = st.columns(4)
+            stage_cols[0].metric("Quote requested", procurement_stats["quote_requested"])
+            stage_cols[1].metric("Quote received", procurement_stats["quote_received"])
+            stage_cols[2].metric("PO ready", procurement_stats["po_ready"])
+            stage_cols[3].metric("PO sent", procurement_stats["po_sent"])
+
+            if assigned_specs > 0:
+                price_ratio = procurement_stats["priced"] / assigned_specs
+                lead_ratio = procurement_stats["lead_known"] / assigned_specs
+                supplier_ratio = procurement_stats["supplier_named"] / assigned_specs
+                readiness = (price_ratio + lead_ratio + supplier_ratio) / 3.0
+                st.progress(max(0.0, min(1.0, readiness)))
+                st.caption(
+                    f"Procurement readiness: {readiness * 100:.0f}% | "
+                    f"Quotes received: {procurement_stats['quote_received']}/{assigned_specs}"
+                )
+
+                missing_signals = []
+                if procurement_stats["priced"] < assigned_specs:
+                    missing_signals.append("price")
+                if procurement_stats["lead_known"] < assigned_specs:
+                    missing_signals.append("lead time")
+                if procurement_stats["supplier_named"] < assigned_specs:
+                    missing_signals.append("supplier")
+
+                if missing_signals:
+                    st.markdown(
+                        '<div class="inspire-empty">Purchasing focus: complete '
+                        + ", ".join(missing_signals)
+                        + " details on assigned objects to speed quote-to-PO flow.</div>",
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.markdown(
+                    '<div class="inspire-empty">Assign first materials to activate the procurement pulse and track quote readiness.</div>',
+                    unsafe_allow_html=True,
+                )
 
             st.markdown("---")
             _render_editorial_title("Client Pulse", "Feedback")
@@ -1089,7 +1282,7 @@ if page == "Projects":
                     with grid_cols[i % 3]:
                         with st.container(border=True):
                             st.markdown(f"**{rname}**")
-                            st.caption(f"{ra}/{rt} assigned • {rc}/{rt} client ok")
+                            st.caption(f"{ra}/{rt} assigned | {rc}/{rt} client ok")
                             st.progress(pct)
                             rm = room_spend_map.get(str(rid), {"spend": 0.0, "missing_price": 0})
                             room_budget = _safe_float(room_budgets.get(str(rid)))
@@ -1131,7 +1324,7 @@ if page == "Projects":
                     objs = load_room_objects(rid)
                     if not objs:
                         st.markdown(
-                            '<div class="inspire-empty">No objects yet. Start with anchor pieces to define this room’s character.</div>',
+                            "<div class=\"inspire-empty\">No objects yet. Start with anchor pieces to define this room's character.</div>",
                             unsafe_allow_html=True,
                         )
                     else:
@@ -1141,7 +1334,7 @@ if page == "Projects":
                                 col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
                                 with col1:
                                     st.markdown(f"**{o.get('object_name')}**")
-                                    st.caption(f"Category: {o.get('category')} • Qty: {o.get('qty')}")
+                                    st.caption(f"Category: {o.get('category')} | Qty: {o.get('qty')}")
                                 with col2:
                                     st.markdown("Assigned")
                                     st.write("Yes" if o.get("material_id") else "No")
@@ -1166,7 +1359,7 @@ if page == "Projects":
                     else:
                         _render_editorial_title(f"Edit: {obj.get('object_name')}", "Object Studio")
                         st.markdown(
-                            '<div class="quick-actions"><strong>Quick actions:</strong> Search • Assign • Approve • Comment</div>',
+                            '<div class="quick-actions"><strong>Quick actions:</strong> Search | Assign | Quote | Approve | Comment</div>',
                             unsafe_allow_html=True,
                         )
 
@@ -1271,6 +1464,67 @@ if page == "Projects":
                             placeholder="Explain fit with mood, light, durability, and budget intent.",
                         )
 
+                        procurement_notes = procurement_meta.get("notes") or {}
+                        procurement_quotes = procurement_meta.get("quote_status") or {}
+                        procurement_priorities = procurement_meta.get("priority") or {}
+                        procurement_targets = procurement_meta.get("target_price") or {}
+
+                        priority_options = ["routine", "high", "critical"]
+                        priority_key = f"obj_proc_priority_{oid}"
+                        if priority_key not in st.session_state:
+                            priority_value = str(procurement_priorities.get(str(oid)) or "routine").strip().lower()
+                            st.session_state[priority_key] = priority_value if priority_value in priority_options else "routine"
+                        purchasing_priority = st.selectbox(
+                            "Sourcing priority",
+                            options=priority_options,
+                            format_func=_procurement_priority_label,
+                            key=priority_key,
+                        )
+
+                        quote_options = ["not_started", "quote_requested", "quote_received", "po_ready", "po_sent"]
+                        quote_key = f"obj_proc_quote_{oid}"
+                        if quote_key not in st.session_state:
+                            quote_value = str(procurement_quotes.get(str(oid)) or "not_started").strip().lower()
+                            st.session_state[quote_key] = quote_value if quote_value in quote_options else "not_started"
+                        quote_status = st.selectbox(
+                            "Quote status",
+                            options=quote_options,
+                            format_func=_procurement_quote_label,
+                            key=quote_key,
+                        )
+
+                        target_price_default = _safe_float(procurement_targets.get(str(oid)))
+                        target_toggle_key = f"obj_proc_target_enabled_{oid}"
+                        if target_toggle_key not in st.session_state:
+                            st.session_state[target_toggle_key] = target_price_default is not None
+                        target_price_key = f"obj_proc_target_price_{oid}"
+                        if target_price_key not in st.session_state:
+                            st.session_state[target_price_key] = float(target_price_default) if target_price_default is not None else 0.0
+
+                        target_cols = st.columns([0.35, 0.65])
+                        with target_cols[0]:
+                            use_target_price = st.checkbox("Set target price", key=target_toggle_key)
+                        with target_cols[1]:
+                            target_price_input = st.number_input(
+                                "Target price (THB)",
+                                min_value=0.0,
+                                value=float(st.session_state[target_price_key]),
+                                step=10.0,
+                                key=target_price_key,
+                                disabled=not use_target_price,
+                            )
+                        target_price_value = target_price_input if use_target_price else None
+
+                        procurement_note_key = f"obj_proc_note_{oid}"
+                        if procurement_note_key not in st.session_state:
+                            st.session_state[procurement_note_key] = procurement_notes.get(str(oid), "")
+                        purchasing_note = st.text_area(
+                            "Purchasing note",
+                            key=procurement_note_key,
+                            height=82,
+                            placeholder="Capture quote context, alternates, and supplier constraints.",
+                        )
+
                         status_options = ["unassigned", "selected", "designer_approved", "client_approved"]
                         current_status = obj.get("status") or "unassigned"
                         if current_status not in status_options:
@@ -1283,7 +1537,7 @@ if page == "Projects":
                             key=f"obj_status_select_{oid}",
                         )
 
-                        action_cols = st.columns([1, 1, 1, 1, 1])
+                        action_cols = st.columns([1, 1, 1, 1, 1, 1])
                         with action_cols[0]:
                             if st.button("Assign", key=f"assign_obj_material_{oid}", type="primary", disabled=not (access_token and selected_material_id)):
                                 sb = get_supabase(access_token)
@@ -1291,30 +1545,93 @@ if page == "Projects":
                                 if (obj.get("status") or "unassigned") == "unassigned":
                                     update_payload["status"] = "selected"
                                 sb.table("room_objects").update(update_payload).eq("id", oid).execute()
+
                                 next_notes = dict(assignment_notes)
-                                next_notes[str(oid)] = why_this_works.strip()
-                                _save_project_cart_fields(access_token, str(pid), {"assignment_notes": next_notes})
-                                st.success("Material assigned with rationale.")
+                                clean_why = why_this_works.strip()
+                                if clean_why:
+                                    next_notes[str(oid)] = clean_why
+                                else:
+                                    next_notes.pop(str(oid), None)
+
+                                next_procurement = _update_procurement_for_object(
+                                    procurement_meta,
+                                    str(oid),
+                                    purchasing_note,
+                                    quote_status if quote_status != "not_started" else "",
+                                    purchasing_priority if purchasing_priority != "routine" else "",
+                                    target_price_value,
+                                )
+                                ok, err = _save_project_cart_fields(
+                                    access_token,
+                                    str(pid),
+                                    {"assignment_notes": next_notes, "procurement": next_procurement},
+                                )
+                                if not ok:
+                                    st.warning(f"Material was assigned, but notes were not saved: {err}")
+                                st.success("Material assigned with design and purchasing context.")
                                 st.rerun()
                         with action_cols[1]:
-                            if st.button("Save Status", key=f"save_obj_status_{oid}"):
+                            if st.button("Save Notes + Quote", key=f"save_obj_notes_{oid}", disabled=not access_token):
+                                next_notes = dict(assignment_notes)
+                                clean_why = why_this_works.strip()
+                                if clean_why:
+                                    next_notes[str(oid)] = clean_why
+                                else:
+                                    next_notes.pop(str(oid), None)
+
+                                next_procurement = _update_procurement_for_object(
+                                    procurement_meta,
+                                    str(oid),
+                                    purchasing_note,
+                                    quote_status if quote_status != "not_started" else "",
+                                    purchasing_priority if purchasing_priority != "routine" else "",
+                                    target_price_value,
+                                )
+                                ok, err = _save_project_cart_fields(
+                                    access_token,
+                                    str(pid),
+                                    {"assignment_notes": next_notes, "procurement": next_procurement},
+                                )
+                                if ok:
+                                    st.success("Design and purchasing notes and quote status saved.")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Could not save notes: {err}")
+                        with action_cols[2]:
+                            if st.button("Save Status", key=f"save_obj_status_{oid}", disabled=not access_token):
                                 sb = get_supabase(access_token)
                                 sb.table("room_objects").update({"status": new_status}).eq("id", oid).execute()
                                 st.success("Status updated.")
                                 st.rerun()
-                        with action_cols[2]:
-                            if st.button("Approve", key=f"approve_obj_status_{oid}"):
+                        with action_cols[3]:
+                            if st.button("Design Approve", key=f"approve_obj_status_{oid}", disabled=not access_token):
                                 sb = get_supabase(access_token)
                                 sb.table("room_objects").update({"status": "designer_approved"}).eq("id", oid).execute()
-                                st.success("Marked as designer approved.")
-                                st.rerun()
-                        with action_cols[3]:
-                            if st.button("Clear", key=f"clear_obj_material_{oid}"):
-                                sb = get_supabase(access_token)
-                                sb.table("room_objects").update({"material_id": None, "status": "unassigned"}).eq("id", oid).execute()
-                                st.success("Material and status reset.")
+                                st.success("Marked as design approved.")
                                 st.rerun()
                         with action_cols[4]:
+                            if st.button("Clear", key=f"clear_obj_material_{oid}", disabled=not access_token):
+                                sb = get_supabase(access_token)
+                                sb.table("room_objects").update({"material_id": None, "status": "unassigned"}).eq("id", oid).execute()
+
+                                next_notes = dict(assignment_notes)
+                                next_notes.pop(str(oid), None)
+                                next_procurement = _update_procurement_for_object(
+                                    procurement_meta,
+                                    str(oid),
+                                    "",
+                                    "",
+                                    "",
+                                    None,
+                                )
+                                _save_project_cart_fields(
+                                    access_token,
+                                    str(pid),
+                                    {"assignment_notes": next_notes, "procurement": next_procurement},
+                                )
+                                st.success("Material, status, and notes reset.")
+                                st.rerun()
+                        with action_cols[5]:
                             if st.button("Close", key=f"close_obj_editor_{oid}"):
                                 st.session_state.current_object_id = None
                                 st.rerun()
@@ -1340,7 +1657,7 @@ if page == "Projects":
                                     price_value = _safe_float(m.get("price"))
                                     price_label = f"{price_value:,.0f} THB" if price_value is not None else "Price on request"
                                     st.caption(
-                                        f"Price: {price_label} • {_lead_time_label(m)} • {_supplier_confidence_label(m)}"
+                                        f"Price: {price_label} | {_lead_time_label(m)} | {_supplier_confidence_label(m)}"
                                     )
                                     if m.get("category"):
                                         st.caption(f"Category: {m.get('category')}")
@@ -1575,7 +1892,7 @@ elif page == "My Materials":
                 if r.get("visibility") == "global":
                     meta_bits.append("GLOBAL")
                 if meta_bits:
-                    st.caption(" • ".join(meta_bits))
+                    st.caption(" | ".join(meta_bits))
 
                 if r.get("description"):
                     st.write(r["description"])
@@ -1586,3 +1903,4 @@ elif page == "My Materials":
                 tags = r.get("tags") or []
                 if isinstance(tags, list) and tags:
                     st.caption("Tags: " + ", ".join(tags))
+
