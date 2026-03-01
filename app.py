@@ -1,6 +1,7 @@
 # app.py
 
 import os
+from datetime import datetime, timezone
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -27,6 +28,16 @@ from project_manager import (
     load_room_statuses,
     get_project_budget_from_row,
     save_project_budget,
+    get_project_share_from_row,
+    rotate_project_share_token,
+    set_project_share_enabled,
+    get_object_comments_from_row,
+    get_object_approval_history_from_row,
+    append_object_comment,
+    get_shared_project_by_token,
+    update_object_status_by_share_token,
+    update_room_status_by_share_token,
+    append_object_comment_by_share_token,
 )
 
 # -----------------------------
@@ -42,6 +53,279 @@ st.markdown(
 inject_custom_css()
 apply_custom_css()
 set_background_image()
+
+
+def _app_base_url():
+    url = None
+    if hasattr(st, "secrets"):
+        url = st.secrets.get("PUBLIC_APP_URL")
+    if not url:
+        url = os.getenv("PUBLIC_APP_URL")
+    return (url or "").strip().rstrip("/")
+
+
+def _build_share_url(token: str):
+    base = _app_base_url()
+    if not token:
+        return ""
+    if base:
+        return f"{base}/?share={token}"
+    return f"?share={token}"
+
+
+def _format_ts(ts_value):
+    text = str(ts_value or "").strip()
+    if not text:
+        return "-"
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return text
+
+
+def render_client_portal(share_token: str):
+    st.title("Project Review Portal")
+    project = get_shared_project_by_token(share_token)
+    if not project:
+        st.error("This project link is invalid, disabled, or expired.")
+        return
+
+    project_id = str(project.get("id"))
+    st.caption(f"Project: {project.get('name') or 'Untitled'}")
+
+    client_name = st.text_input(
+        "Your name",
+        value=st.session_state.get("client_name", "Client"),
+        key="client_name",
+        help="Used when saving your comments.",
+    ).strip()
+    st.session_state.client_name = client_name or "Client"
+
+    rooms = load_project_rooms(project_id)
+    room_ids = [r["id"] for r in rooms]
+    room_statuses = load_room_statuses(room_ids) if room_ids else {}
+    room_objects_map = load_room_objects_batch(room_ids) if room_ids else {}
+
+    material_prices = {}
+    try:
+        for m in list_materials(None):
+            mid = m.get("id")
+            if mid is None:
+                continue
+            try:
+                price = float(m.get("price")) if m.get("price") is not None else None
+            except Exception:
+                price = None
+            if price is not None:
+                material_prices[str(mid)] = price
+    except Exception:
+        material_prices = {}
+
+    budget_cfg = get_project_budget_from_row(project)
+    project_budget = budget_cfg.get("project")
+    room_budgets = budget_cfg.get("rooms", {})
+
+    total_objects = 0
+    total_assigned = 0
+    total_client_ok = 0
+    project_spend = 0.0
+
+    for rid in room_ids:
+        stats = room_statuses.get(str(rid), {"total": 0, "assigned": 0, "client_ok": 0})
+        total_objects += stats["total"]
+        total_assigned += stats["assigned"]
+        total_client_ok += stats["client_ok"]
+
+        for o in room_objects_map.get(str(rid), []):
+            mid = o.get("material_id")
+            if not mid:
+                continue
+            price = material_prices.get(str(mid))
+            if price is None:
+                continue
+            try:
+                qty = float(o.get("qty") or 1)
+            except Exception:
+                qty = 1.0
+            project_spend += qty * price
+
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Rooms", len(rooms))
+    metric_cols[1].metric("Objects", total_objects)
+    metric_cols[2].metric("Approved", f"{total_client_ok}/{total_objects}" if total_objects else "0/0")
+    metric_cols[3].metric("Assigned", f"{total_assigned}/{total_objects}" if total_objects else "0/0")
+
+    budget_cols = st.columns(3)
+    budget_cols[0].metric("Estimated Spend", f"{project_spend:,.0f} THB")
+    budget_cols[1].metric("Budget", f"{project_budget:,.0f} THB" if project_budget is not None else "Not set")
+    if project_budget is None:
+        budget_cols[2].metric("Remaining", "Not set")
+    else:
+        budget_cols[2].metric("Remaining", f"{(project_budget - project_spend):,.0f} THB")
+
+    st.markdown("---")
+    st.subheader("Rooms and Objects")
+
+    if not rooms:
+        st.info("No rooms were found for this project.")
+        return
+
+    for room in rooms:
+        rid = str(room["id"])
+        room_name = room.get("name") or "Room"
+        stats = room_statuses.get(rid, {"total": 0, "assigned": 0, "client_ok": 0})
+        room_budget = room_budgets.get(rid)
+        room_spend = 0.0
+        for o in room_objects_map.get(rid, []):
+            mid = o.get("material_id")
+            if not mid:
+                continue
+            price = material_prices.get(str(mid))
+            if price is None:
+                continue
+            try:
+                qty = float(o.get("qty") or 1)
+            except Exception:
+                qty = 1.0
+            room_spend += qty * price
+
+        with st.expander(
+            f"{room_name} • {stats['client_ok']}/{stats['total']} approved • {stats['assigned']}/{stats['total']} assigned",
+            expanded=False,
+        ):
+            room_info = f"Estimated spend: {room_spend:,.0f} THB"
+            if room_budget is not None:
+                room_info += f" • Budget: {float(room_budget):,.0f} THB"
+            st.caption(room_info)
+
+            action_cols = st.columns(2)
+            with action_cols[0]:
+                if st.button("Approve all assigned objects", key=f"client_room_approve_{rid}", type="primary"):
+                    ok, msg = update_room_status_by_share_token(
+                        share_token,
+                        rid,
+                        approve_all=True,
+                        actor_name=st.session_state.client_name,
+                    )
+                    (st.success if ok else st.error)(msg)
+                    if ok:
+                        st.rerun()
+            with action_cols[1]:
+                if st.button("Reset room approvals", key=f"client_room_reset_{rid}"):
+                    ok, msg = update_room_status_by_share_token(
+                        share_token,
+                        rid,
+                        approve_all=False,
+                        actor_name=st.session_state.client_name,
+                    )
+                    (st.success if ok else st.error)(msg)
+                    if ok:
+                        st.rerun()
+
+            for obj in room_objects_map.get(rid, []):
+                oid = str(obj["id"])
+                status = obj.get("status") or "unassigned"
+                is_assigned = bool(obj.get("material_id"))
+
+                with st.container(border=True):
+                    header_cols = st.columns([0.55, 0.15, 0.3])
+                    with header_cols[0]:
+                        st.markdown(f"**{obj.get('object_name') or 'Object'}**")
+                        st.caption(f"Category: {obj.get('category') or '-'} • Qty: {obj.get('qty') or 1}")
+                    with header_cols[1]:
+                        st.caption("Assigned")
+                        st.write("Yes" if is_assigned else "No")
+                    with header_cols[2]:
+                        st.caption("Status")
+                        st.write(status)
+
+                    btn_cols = st.columns(2)
+                    with btn_cols[0]:
+                        if st.button(
+                            "Approve object",
+                            key=f"client_obj_approve_{oid}",
+                            disabled=not is_assigned,
+                        ):
+                            ok, msg = update_object_status_by_share_token(
+                                share_token,
+                                oid,
+                                "client_approved",
+                                actor_name=st.session_state.client_name,
+                            )
+                            (st.success if ok else st.error)(msg)
+                            if ok:
+                                st.rerun()
+                    with btn_cols[1]:
+                        if st.button(
+                            "Remove approval",
+                            key=f"client_obj_unapprove_{oid}",
+                            disabled=not is_assigned,
+                        ):
+                            ok, msg = update_object_status_by_share_token(
+                                share_token,
+                                oid,
+                                "selected",
+                                actor_name=st.session_state.client_name,
+                            )
+                            (st.success if ok else st.error)(msg)
+                            if ok:
+                                st.rerun()
+
+                    approvals = get_object_approval_history_from_row(project, oid)
+                    if approvals:
+                        latest = approvals[-1]
+                        st.caption(
+                            "Latest approval update: "
+                            f"{latest.get('actor_name') or 'Client'} "
+                            f"({latest.get('action') or '-'}) at {_format_ts(latest.get('created_at'))}"
+                        )
+                        with st.expander("Approval history", expanded=False):
+                            for row in reversed(approvals[-10:]):
+                                st.write(
+                                    f"- {_format_ts(row.get('created_at'))}: "
+                                    f"{row.get('actor_name') or 'Client'} "
+                                    f"({row.get('actor_role') or 'client'}) "
+                                    f"{row.get('action') or '-'}"
+                                )
+
+                    comments = get_object_comments_from_row(project, oid)
+                    if comments:
+                        st.caption("Comments")
+                        for row in comments[-5:]:
+                            author = row.get("author_name") or "Unknown"
+                            role = row.get("author_role") or "user"
+                            text = row.get("comment") or ""
+                            st.write(f"- {author} ({role}): {text}")
+
+                    comment_text = st.text_area(
+                        "Comment on this object",
+                        key=f"client_comment_text_{oid}",
+                        placeholder="Write your feedback for the designer",
+                        height=80,
+                    )
+                    if st.button("Send comment", key=f"client_send_comment_{oid}"):
+                        ok, msg = append_object_comment_by_share_token(
+                            share_token=share_token,
+                            object_id=oid,
+                            author_name=st.session_state.client_name,
+                            comment=comment_text,
+                        )
+                        (st.success if ok else st.error)(msg)
+                        if ok:
+                            st.rerun()
+
+
+# Shared-link customer portal (no login required)
+share_param = st.query_params.get("share", "")
+if isinstance(share_param, list):
+    share_param = share_param[0] if share_param else ""
+share_token = str(share_param or "").strip()
+if share_token:
+    render_client_portal(share_token)
+    st.stop()
 
 # -----------------------------
 # Require login (critical for RLS auth.uid())
@@ -267,6 +551,45 @@ if page == "Projects":
             st.info("Select a project on the left.")
         else:
             proj = next((x for x in projects if str(x["id"]) == str(pid)), None)
+            share_meta = get_project_share_from_row(proj)
+            share_token_value = share_meta.get("token")
+            share_enabled = bool(share_meta.get("enabled"))
+            share_link = _build_share_url(share_token_value) if share_token_value else ""
+
+            with st.expander("Customer link", expanded=False):
+                st.caption("Send this link to your customer so they can review only this project.")
+
+                controls = st.columns(3)
+                with controls[0]:
+                    if st.button("Generate link", key=f"share_generate_{pid}", type="primary"):
+                        new_token = rotate_project_share_token(pid)
+                        if new_token:
+                            st.success("Customer link generated.")
+                            st.rerun()
+                with controls[1]:
+                    enable_value = st.checkbox(
+                        "Link enabled",
+                        value=share_enabled,
+                        key=f"share_enabled_{pid}",
+                        disabled=not bool(share_token_value),
+                    )
+                    if share_token_value and enable_value != share_enabled:
+                        if set_project_share_enabled(pid, enable_value):
+                            st.success("Share link status updated.")
+                            st.rerun()
+                with controls[2]:
+                    if st.button("Rotate token", key=f"share_rotate_{pid}", disabled=not bool(share_token_value)):
+                        new_token = rotate_project_share_token(pid)
+                        if new_token:
+                            st.success("Customer link rotated.")
+                            st.rerun()
+
+                if share_link:
+                    st.text_input("Share URL", value=share_link, key=f"share_url_{pid}", disabled=True)
+                    if share_link.startswith("?share="):
+                        st.caption("Set PUBLIC_APP_URL in secrets/env to generate a full absolute URL.")
+                else:
+                    st.info("No customer link yet. Click 'Generate link'.")
             st.markdown(f"### 📌 {proj.get('name','Project')}")
 
             ps = project_statuses.get(
@@ -342,6 +665,80 @@ if page == "Projects":
 
             if project_missing_prices:
                 st.caption(f"{project_missing_prices} assigned objects have no material price and are excluded from spend.")
+
+            st.markdown("---")
+            st.markdown("#### Client feedback")
+            object_map = {}
+            room_name_map = {str(r.get("id")): (r.get("name") or "Room") for r in rooms}
+            for rid_key, objects in room_objects_map.items():
+                room_name = room_name_map.get(str(rid_key), "Room")
+                for obj_row in (objects or []):
+                    object_map[str(obj_row.get("id"))] = {
+                        "object_name": obj_row.get("object_name") or "Object",
+                        "room_name": room_name,
+                    }
+
+            cart = proj.get("cart") if isinstance(proj.get("cart"), dict) else {}
+            comments_map = cart.get("comments") if isinstance(cart.get("comments"), dict) else {}
+            approvals_map = cart.get("approval_history") if isinstance(cart.get("approval_history"), dict) else {}
+
+            client_events = []
+            for oid_key, rows in comments_map.items():
+                if not isinstance(rows, list):
+                    continue
+                for row in rows:
+                    if str(row.get("author_role") or "").strip().lower() != "client":
+                        continue
+                    obj_meta = object_map.get(str(oid_key), {"object_name": "Object", "room_name": "Unknown room"})
+                    client_events.append(
+                        {
+                            "kind": "comment",
+                            "created_at": row.get("created_at"),
+                            "actor_name": row.get("author_name") or "Client",
+                            "text": row.get("comment") or "",
+                            "object_name": obj_meta["object_name"],
+                            "room_name": obj_meta["room_name"],
+                        }
+                    )
+
+            for oid_key, rows in approvals_map.items():
+                if not isinstance(rows, list):
+                    continue
+                for row in rows:
+                    if str(row.get("actor_role") or "").strip().lower() != "client":
+                        continue
+                    obj_meta = object_map.get(str(oid_key), {"object_name": "Object", "room_name": "Unknown room"})
+                    client_events.append(
+                        {
+                            "kind": "approval",
+                            "created_at": row.get("created_at"),
+                            "actor_name": row.get("actor_name") or "Client",
+                            "action": row.get("action") or "-",
+                            "object_name": obj_meta["object_name"],
+                            "room_name": obj_meta["room_name"],
+                        }
+                    )
+
+            client_events.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+            feedback_cols = st.columns(3)
+            feedback_cols[0].metric("Client comments", sum(1 for e in client_events if e["kind"] == "comment"))
+            feedback_cols[1].metric("Approval actions", sum(1 for e in client_events if e["kind"] == "approval"))
+            feedback_cols[2].metric("Latest update", _format_ts(client_events[0].get("created_at")) if client_events else "-")
+
+            if not client_events:
+                st.caption("No client activity yet.")
+            else:
+                for event in client_events[:30]:
+                    if event["kind"] == "comment":
+                        st.write(
+                            f"- {_format_ts(event.get('created_at'))} - {event.get('actor_name')} commented on "
+                            f"{event.get('room_name')} / {event.get('object_name')}: {event.get('text')}"
+                        )
+                    else:
+                        st.write(
+                            f"- {_format_ts(event.get('created_at'))} - {event.get('actor_name')} "
+                            f"{event.get('action')} {event.get('room_name')} / {event.get('object_name')}"
+                        )
 
             budget_panel_key = f"show_budget_panel_{pid}"
             if budget_panel_key not in st.session_state:
@@ -641,6 +1038,47 @@ if page == "Projects":
                                 sb = get_supabase(access_token)
                                 sb.table("room_objects").update({"material_id": None, "status": "unassigned"}).eq("id", oid).execute()
                                 st.success("Cleared.")
+                                st.rerun()
+
+                        st.markdown("#### Object comments")
+                        comments = get_object_comments_from_row(proj, oid)
+                        if comments:
+                            for row in comments[-10:]:
+                                author = row.get("author_name") or "Unknown"
+                                role = row.get("author_role") or "user"
+                                text = row.get("comment") or ""
+                                st.write(f"- {author} ({role}): {text}")
+                        else:
+                            st.caption("No comments yet.")
+
+                        st.markdown("#### Approval history")
+                        approval_rows = get_object_approval_history_from_row(proj, oid)
+                        if approval_rows:
+                            for row in reversed(approval_rows[-10:]):
+                                st.write(
+                                    f"- {_format_ts(row.get('created_at'))}: "
+                                    f"{row.get('actor_name') or 'Unknown'} "
+                                    f"({row.get('actor_role') or 'user'}) "
+                                    f"{row.get('action') or '-'}"
+                                )
+                        else:
+                            st.caption("No approval history yet.")
+
+                        designer_comment = st.text_area(
+                            "Add comment",
+                            key=f"designer_comment_{oid}",
+                            placeholder="Reply to client or leave internal note",
+                            height=80,
+                        )
+                        if st.button("Post comment", key=f"designer_post_comment_{oid}"):
+                            if append_object_comment(
+                                project_id=str(pid),
+                                object_id=str(oid),
+                                author_role="designer",
+                                author_name=full_name,
+                                comment=designer_comment,
+                            ):
+                                st.success("Comment posted.")
                                 st.rerun()
                         with col_d:
                             if st.button("Close", key="close_obj_editor"):

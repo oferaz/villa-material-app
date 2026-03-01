@@ -4,6 +4,8 @@ import streamlit as st
 from supabase_client import get_supabase
 from assets.villa_template import SMALL_VILLA_TEMPLATE
 import re
+import secrets
+from datetime import datetime, timezone
 
 def _token() -> str | None:
     # In AUTH_BYPASS debug mode there may be no user token.
@@ -229,6 +231,411 @@ def save_project_budget(project_id: str, project_budget: float | None, room_budg
     except Exception as e:
         st.error(f"❌ Failed to save budget for project '{project_id}': {e}")
         return False
+
+
+def _project_cart_items_and_meta(project_id: str):
+    """
+    Return (items, meta_dict) from projects.cart in a backward-compatible way.
+    `meta_dict` stores optional nested data such as budget/share/comments.
+    """
+    sb = get_supabase(_token())
+    proj = (
+        sb.table("projects")
+        .select("cart")
+        .eq("id", project_id)
+        .limit(1)
+        .execute()
+        .data
+    )
+    existing_cart = (proj[0].get("cart") if proj else None) or []
+
+    if isinstance(existing_cart, dict):
+        items = existing_cart.get("items", []) or []
+        meta = dict(existing_cart)
+        return items, meta
+
+    if isinstance(existing_cart, list):
+        return existing_cart, {"items": existing_cart}
+
+    return [], {"items": []}
+
+
+def _save_project_cart(project_id: str, cart_payload: dict):
+    sb = get_supabase(_token())
+    sb.table("projects").update({"cart": cart_payload, "updated_at": "now()"}).eq("id", project_id).execute()
+
+
+def get_project_share_from_row(project_row: dict | None):
+    """
+    Extract share metadata from project cart payload.
+    Returns:
+      {
+        "token": str | None,
+        "created_at": str | None,
+        "enabled": bool
+      }
+    """
+    default = {"token": None, "created_at": None, "enabled": False}
+    if not project_row or not isinstance(project_row, dict):
+        return default
+
+    cart = project_row.get("cart") or {}
+    if not isinstance(cart, dict):
+        return default
+
+    share = cart.get("share") or {}
+    if not isinstance(share, dict):
+        return default
+
+    token = share.get("token")
+    created_at = share.get("created_at")
+    enabled = bool(share.get("enabled"))
+    if not isinstance(token, str) or not token.strip():
+        token = None
+    if not isinstance(created_at, str) or not created_at.strip():
+        created_at = None
+
+    return {"token": token, "created_at": created_at, "enabled": enabled}
+
+
+def rotate_project_share_token(project_id: str):
+    """
+    Generate and persist a new client share token for a project.
+    """
+    try:
+        items, cart_meta = _project_cart_items_and_meta(project_id)
+        token = secrets.token_urlsafe(24)
+        cart_meta["items"] = items
+        cart_meta["share"] = {
+            "token": token,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "enabled": True,
+        }
+        _save_project_cart(project_id, cart_meta)
+        return token
+    except Exception as e:
+        st.error(f"❌ Failed to rotate share token for project '{project_id}': {e}")
+        return None
+
+
+def set_project_share_enabled(project_id: str, enabled: bool):
+    try:
+        items, cart_meta = _project_cart_items_and_meta(project_id)
+        share = cart_meta.get("share") if isinstance(cart_meta.get("share"), dict) else {}
+        share["enabled"] = bool(enabled)
+        cart_meta["items"] = items
+        cart_meta["share"] = share
+        _save_project_cart(project_id, cart_meta)
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to update share settings for project '{project_id}': {e}")
+        return False
+
+
+def append_object_comment(project_id: str, object_id: str, author_role: str, author_name: str, comment: str):
+    """
+    Persist a per-object comment inside projects.cart.comments.
+    """
+    text = (comment or "").strip()
+    if not text:
+        return False
+
+    try:
+        items, cart_meta = _project_cart_items_and_meta(project_id)
+        comments = cart_meta.get("comments")
+        if not isinstance(comments, dict):
+            comments = {}
+
+        key = str(object_id)
+        rows = comments.get(key)
+        if not isinstance(rows, list):
+            rows = []
+
+        rows.append(
+            {
+                "author_role": (author_role or "unknown").strip(),
+                "author_name": (author_name or "Unknown").strip(),
+                "comment": text,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+        comments[key] = rows
+        cart_meta["items"] = items
+        cart_meta["comments"] = comments
+        _save_project_cart(project_id, cart_meta)
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to save comment: {e}")
+        return False
+
+
+def _append_object_approval_event(
+    project_id: str,
+    object_id: str,
+    action: str,
+    actor_role: str,
+    actor_name: str,
+):
+    """
+    Persist per-object approval history in projects.cart.approval_history.
+    """
+    if action not in {"approved", "unapproved"}:
+        return False
+
+    try:
+        items, cart_meta = _project_cart_items_and_meta(project_id)
+        history = cart_meta.get("approval_history")
+        if not isinstance(history, dict):
+            history = {}
+
+        key = str(object_id)
+        rows = history.get(key)
+        if not isinstance(rows, list):
+            rows = []
+
+        rows.append(
+            {
+                "action": action,
+                "actor_role": (actor_role or "unknown").strip(),
+                "actor_name": (actor_name or "Unknown").strip(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+        history[key] = rows
+        cart_meta["items"] = items
+        cart_meta["approval_history"] = history
+        _save_project_cart(project_id, cart_meta)
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to save approval history: {e}")
+        return False
+
+
+def get_object_comments_from_row(project_row: dict | None, object_id: str):
+    if not project_row or not isinstance(project_row, dict):
+        return []
+
+    cart = project_row.get("cart") or {}
+    if not isinstance(cart, dict):
+        return []
+
+    comments = cart.get("comments") or {}
+    if not isinstance(comments, dict):
+        return []
+
+    rows = comments.get(str(object_id)) or []
+    if not isinstance(rows, list):
+        return []
+    return rows
+
+
+def get_object_approval_history_from_row(project_row: dict | None, object_id: str):
+    if not project_row or not isinstance(project_row, dict):
+        return []
+
+    cart = project_row.get("cart") or {}
+    if not isinstance(cart, dict):
+        return []
+
+    history = cart.get("approval_history") or {}
+    if not isinstance(history, dict):
+        return []
+
+    rows = history.get(str(object_id)) or []
+    if not isinstance(rows, list):
+        return []
+    return rows
+
+
+def _clean_share_token(share_token: str | None):
+    token = (share_token or "").strip()
+    return token or None
+
+
+def get_shared_project_by_token(share_token: str | None):
+    """
+    Return one project that has a matching enabled share token.
+    """
+    token = _clean_share_token(share_token)
+    if not token:
+        return None
+
+    try:
+        sb = get_supabase(None)
+        rows = (
+            sb.table("projects")
+            .select("*")
+            .contains("cart", {"share": {"token": token, "enabled": True}})
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        return rows[0] if rows else None
+    except Exception as e:
+        st.error(f"❌ Failed to load shared project: {e}")
+        return None
+
+
+def _room_belongs_to_project(sb, room_id: str, project_id: str):
+    rows = (
+        sb.table("project_rooms")
+        .select("id")
+        .eq("id", room_id)
+        .eq("project_id", project_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    return bool(rows)
+
+
+def _object_row(sb, object_id: str):
+    rows = (
+        sb.table("room_objects")
+        .select("id, room_id, material_id, status")
+        .eq("id", object_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    return rows[0] if rows else None
+
+
+def update_object_status_by_share_token(
+    share_token: str,
+    object_id: str,
+    new_status: str,
+    actor_name: str | None = None,
+):
+    """
+    Update a single object's status through share token access.
+    Returns: (ok: bool, message: str)
+    """
+    allowed = {"selected", "client_approved"}
+    if new_status not in allowed:
+        return False, "Invalid status requested."
+
+    project = get_shared_project_by_token(share_token)
+    if not project:
+        return False, "Shared project link is invalid or disabled."
+
+    try:
+        sb = get_supabase(None)
+        obj = _object_row(sb, object_id)
+        if not obj:
+            return False, "Object not found."
+
+        if not _room_belongs_to_project(sb, str(obj.get("room_id")), str(project.get("id"))):
+            return False, "Object does not belong to this shared project."
+
+        if new_status == "client_approved" and not obj.get("material_id"):
+            return False, "Cannot approve an object without assigned material."
+
+        current_status = obj.get("status") or "unassigned"
+        if current_status == new_status:
+            return True, "Status already up to date."
+
+        sb.table("room_objects").update({"status": new_status}).eq("id", object_id).execute()
+        action = "approved" if new_status == "client_approved" else "unapproved"
+        _append_object_approval_event(
+            project_id=str(project.get("id")),
+            object_id=str(object_id),
+            action=action,
+            actor_role="client",
+            actor_name=(actor_name or "Client"),
+        )
+        return True, "Status updated."
+    except Exception as e:
+        return False, f"Failed to update object status: {e}"
+
+
+def update_room_status_by_share_token(
+    share_token: str,
+    room_id: str,
+    approve_all: bool,
+    actor_name: str | None = None,
+):
+    """
+    Bulk approve or unapprove all assigned objects in a room via share token.
+    Returns: (ok: bool, message: str)
+    """
+    project = get_shared_project_by_token(share_token)
+    if not project:
+        return False, "Shared project link is invalid or disabled."
+
+    try:
+        sb = get_supabase(None)
+        if not _room_belongs_to_project(sb, room_id, str(project.get("id"))):
+            return False, "Room does not belong to this shared project."
+
+        rows = (
+            sb.table("room_objects")
+            .select("id, material_id, status")
+            .eq("room_id", room_id)
+            .execute()
+            .data
+            or []
+        )
+        assigned = [r for r in rows if r.get("material_id")]
+
+        if approve_all:
+            target_ids = [str(r["id"]) for r in assigned if r.get("status") != "client_approved"]
+            next_status = "client_approved"
+        else:
+            target_ids = [str(r["id"]) for r in assigned if r.get("status") == "client_approved"]
+            next_status = "selected"
+
+        for oid in target_ids:
+            sb.table("room_objects").update({"status": next_status}).eq("id", oid).execute()
+            _append_object_approval_event(
+                project_id=str(project.get("id")),
+                object_id=str(oid),
+                action=("approved" if approve_all else "unapproved"),
+                actor_role="client",
+                actor_name=(actor_name or "Client"),
+            )
+
+        action = "approved" if approve_all else "reset"
+        return True, f"{len(target_ids)} object(s) {action}."
+    except Exception as e:
+        return False, f"Failed to update room approvals: {e}"
+
+
+def append_object_comment_by_share_token(share_token: str, object_id: str, author_name: str, comment: str):
+    """
+    Append a comment to an object using share token context.
+    Returns: (ok: bool, message: str)
+    """
+    project = get_shared_project_by_token(share_token)
+    if not project:
+        return False, "Shared project link is invalid or disabled."
+
+    try:
+        sb = get_supabase(None)
+        obj = _object_row(sb, object_id)
+        if not obj:
+            return False, "Object not found."
+
+        if not _room_belongs_to_project(sb, str(obj.get("room_id")), str(project.get("id"))):
+            return False, "Object does not belong to this shared project."
+
+        ok = append_object_comment(
+            project_id=str(project.get("id")),
+            object_id=str(object_id),
+            author_role="client",
+            author_name=(author_name or "Client"),
+            comment=comment,
+        )
+        if not ok:
+            return False, "Failed to save comment."
+        return True, "Comment saved."
+    except Exception as e:
+        return False, f"Failed to save comment: {e}"
 
 def load_project_rooms(project_id: str):
     sb = get_supabase(_token())
