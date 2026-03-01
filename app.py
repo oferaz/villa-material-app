@@ -604,6 +604,31 @@ st.markdown(
 st.sidebar.markdown("### Navigation")
 page = st.sidebar.radio("", ["Projects Workspace", "Materials Gallery", "My Materials"], label_visibility="collapsed")
 
+workspace_focus_options = ["Dashboard", "Project Setup", "Material Selection", "Client Review", "Procurement"]
+if "workspace_focus" not in st.session_state:
+    st.session_state.workspace_focus = "Dashboard"
+
+if page == "Projects Workspace":
+    st.sidebar.markdown("### Workspace focus")
+    st.session_state.workspace_focus = st.sidebar.radio(
+        "",
+        workspace_focus_options,
+        index=workspace_focus_options.index(st.session_state.workspace_focus)
+        if st.session_state.workspace_focus in workspace_focus_options
+        else 0,
+        label_visibility="collapsed",
+    )
+
+    st.sidebar.markdown("### Quick actions")
+    qa_cols = st.sidebar.columns(3)
+    if qa_cols[0].button("New", key="qa_new_project"):
+        st.session_state.workspace_focus = "Project Setup"
+        st.session_state.open_create_project = True
+    if qa_cols[1].button("Assign", key="qa_assign"):
+        st.session_state.workspace_focus = "Material Selection"
+    if qa_cols[2].button("Share", key="qa_share"):
+        st.session_state.workspace_focus = "Client Review"
+
 # -----------------------------
 # Shared: Load embedding model + catalog
 # -----------------------------
@@ -819,13 +844,19 @@ def _room_spend(objects, material_prices):
 # Page: Projects
 # -----------------------------
 if page == "Projects Workspace":
+    focus = st.session_state.get("workspace_focus", "Dashboard")
+    show_setup = focus in ["Dashboard", "Project Setup"]
+    show_selection = focus in ["Dashboard", "Material Selection", "Procurement", "Client Review"]
+    show_review = focus in ["Dashboard", "Client Review"]
+    show_procurement = focus in ["Dashboard", "Procurement"]
+
     _render_editorial_title("Projects Workspace", "Projects")
 
     projects = load_projects()
     project_statuses = load_projects_statuses([p["id"] for p in projects]) if projects else {}
 
     # Sidebar: Create project (simple + works)
-    with st.sidebar.expander("Create New Project", expanded=False):
+    with st.sidebar.expander("Create New Project", expanded=bool(st.session_state.pop("open_create_project", False))):
         st.markdown("#### My Base Template")
         st.caption("New projects can start from this template. You can edit room names and object rows in JSON.")
 
@@ -980,40 +1011,41 @@ if page == "Projects Workspace":
             share_enabled = bool(share_meta.get("enabled"))
             share_link = _build_share_url(share_token_value) if share_token_value else ""
 
-            with st.expander("Create Shareable Customer Link", expanded=False):
-                st.caption("Create a shareable link so your customer can view only this project.")
+            if show_review:
+                with st.expander("Create Shareable Customer Link", expanded=False):
+                    st.caption("Create a shareable link so your customer can view only this project.")
 
-                controls = st.columns(3)
-                with controls[0]:
-                    if st.button("Create link", key=f"share_generate_{pid}", type="primary"):
-                        new_token = rotate_project_share_token(pid)
-                        if new_token:
-                            st.success("Shareable customer link created.")
-                            st.rerun()
-                with controls[1]:
-                    enable_value = st.checkbox(
-                        "Allow customer access",
-                        value=share_enabled,
-                        key=f"share_enabled_{pid}",
-                        disabled=not bool(share_token_value),
-                    )
-                    if share_token_value and enable_value != share_enabled:
-                        if set_project_share_enabled(pid, enable_value):
-                            st.success("Customer link access updated.")
-                            st.rerun()
-                with controls[2]:
-                    if st.button("Regenerate link", key=f"share_rotate_{pid}", disabled=not bool(share_token_value)):
-                        new_token = rotate_project_share_token(pid)
-                        if new_token:
-                            st.success("Shareable customer link regenerated.")
-                            st.rerun()
+                    controls = st.columns(3)
+                    with controls[0]:
+                        if st.button("Create link", key=f"share_generate_{pid}", type="primary"):
+                            new_token = rotate_project_share_token(pid)
+                            if new_token:
+                                st.success("Shareable customer link created.")
+                                st.rerun()
+                    with controls[1]:
+                        enable_value = st.checkbox(
+                            "Allow customer access",
+                            value=share_enabled,
+                            key=f"share_enabled_{pid}",
+                            disabled=not bool(share_token_value),
+                        )
+                        if share_token_value and enable_value != share_enabled:
+                            if set_project_share_enabled(pid, enable_value):
+                                st.success("Customer link access updated.")
+                                st.rerun()
+                    with controls[2]:
+                        if st.button("Regenerate link", key=f"share_rotate_{pid}", disabled=not bool(share_token_value)):
+                            new_token = rotate_project_share_token(pid)
+                            if new_token:
+                                st.success("Shareable customer link regenerated.")
+                                st.rerun()
 
-                if share_link:
-                    st.text_input("Customer View Link", value=share_link, key=f"share_url_{pid}", disabled=True)
-                    if share_link.startswith("?share="):
-                        st.caption("Set PUBLIC_APP_URL in secrets/env to generate a full absolute URL.")
-                else:
-                    st.info("No customer link yet. Click 'Create link'.")
+                    if share_link:
+                        st.text_input("Customer View Link", value=share_link, key=f"share_url_{pid}", disabled=True)
+                        if share_link.startswith("?share="):
+                            st.caption("Set PUBLIC_APP_URL in secrets/env to generate a full absolute URL.")
+                    else:
+                        st.info("No customer link yet. Click 'Create link'.")
             project_material_rows = load_materials_cached(access_token) if access_token else []
             material_name_map = {str(m.get("id")): (m.get("name") or "Material") for m in project_material_rows if m.get("id")}
             material_lookup = {str(m.get("id")): m for m in project_material_rows if m.get("id")}
@@ -1023,67 +1055,68 @@ if page == "Projects Workspace":
             design_brief = _design_brief_from_row(proj)
             _render_mood_strip(design_brief.get("mood_images", []))
 
-            with st.expander("Mood Direction", expanded=True):
-                brief_keywords_text = st.text_input(
-                    "Style keywords",
-                    value=", ".join(design_brief.get("keywords", [])),
-                    key=f"brief_keywords_{pid}",
-                    placeholder="e.g. warm minimal, tropical modern, tactile calm",
-                )
-                brief_references_text = st.text_area(
-                    "Reference intent",
-                    value=design_brief.get("references", ""),
-                    key=f"brief_refs_{pid}",
-                    height=88,
-                    placeholder="Describe forms, lines, and inspiration notes.",
-                )
-                brief_materials_mood = st.text_area(
-                    "Materials mood",
-                    value=design_brief.get("materials_mood", ""),
-                    key=f"brief_material_mood_{pid}",
-                    height=78,
-                    placeholder="e.g. limewash walls, soft bronze accents, warm travertine.",
-                )
-                brief_mood_urls = st.text_area(
-                    "Mood strip image URLs (one per line, 3-6)",
-                    value="\n".join(design_brief.get("mood_images", [])),
-                    key=f"brief_mood_urls_{pid}",
-                    height=110,
-                    placeholder="https://...",
-                )
-                hero_options = sorted(material_name_map.keys(), key=lambda mid: material_name_map.get(mid, ""))
-                selected_hero_ids = st.multiselect(
-                    "Hero materials",
-                    options=hero_options,
-                    default=[mid for mid in design_brief.get("hero_material_ids", []) if mid in hero_options],
-                    format_func=lambda mid: material_name_map.get(mid, mid),
-                    key=f"brief_hero_materials_{pid}",
-                )
+            if show_setup:
+                with st.expander("Mood Direction", expanded=True):
+                    brief_keywords_text = st.text_input(
+                        "Style keywords",
+                        value=", ".join(design_brief.get("keywords", [])),
+                        key=f"brief_keywords_{pid}",
+                        placeholder="e.g. warm minimal, tropical modern, tactile calm",
+                    )
+                    brief_references_text = st.text_area(
+                        "Reference intent",
+                        value=design_brief.get("references", ""),
+                        key=f"brief_refs_{pid}",
+                        height=88,
+                        placeholder="Describe forms, lines, and inspiration notes.",
+                    )
+                    brief_materials_mood = st.text_area(
+                        "Materials mood",
+                        value=design_brief.get("materials_mood", ""),
+                        key=f"brief_material_mood_{pid}",
+                        height=78,
+                        placeholder="e.g. limewash walls, soft bronze accents, warm travertine.",
+                    )
+                    brief_mood_urls = st.text_area(
+                        "Mood strip image URLs (one per line, 3-6)",
+                        value="\n".join(design_brief.get("mood_images", [])),
+                        key=f"brief_mood_urls_{pid}",
+                        height=110,
+                        placeholder="https://...",
+                    )
+                    hero_options = sorted(material_name_map.keys(), key=lambda mid: material_name_map.get(mid, ""))
+                    selected_hero_ids = st.multiselect(
+                        "Hero materials",
+                        options=hero_options,
+                        default=[mid for mid in design_brief.get("hero_material_ids", []) if mid in hero_options],
+                        format_func=lambda mid: material_name_map.get(mid, mid),
+                        key=f"brief_hero_materials_{pid}",
+                    )
 
-                if st.button("Save Mood Direction", type="primary", key=f"save_mood_brief_{pid}"):
-                    next_brief = {
-                        "keywords": [x.strip() for x in brief_keywords_text.split(",") if x.strip()],
-                        "references": brief_references_text.strip(),
-                        "materials_mood": brief_materials_mood.strip(),
-                        "mood_images": [
-                            x.strip()
-                            for x in brief_mood_urls.splitlines()
-                            if x.strip().startswith("http")
-                        ][:6],
-                        "hero_material_ids": selected_hero_ids[:6],
-                    }
-                    ok, err = _save_project_cart_fields(access_token, str(pid), {"design_brief": next_brief})
-                    if ok:
-                        st.success("Mood direction saved.")
-                        st.rerun()
+                    if st.button("Save Mood Direction", type="primary", key=f"save_mood_brief_{pid}"):
+                        next_brief = {
+                            "keywords": [x.strip() for x in brief_keywords_text.split(",") if x.strip()],
+                            "references": brief_references_text.strip(),
+                            "materials_mood": brief_materials_mood.strip(),
+                            "mood_images": [
+                                x.strip()
+                                for x in brief_mood_urls.splitlines()
+                                if x.strip().startswith("http")
+                            ][:6],
+                            "hero_material_ids": selected_hero_ids[:6],
+                        }
+                        ok, err = _save_project_cart_fields(access_token, str(pid), {"design_brief": next_brief})
+                        if ok:
+                            st.success("Mood direction saved.")
+                            st.rerun()
+                        else:
+                            st.error(f"Could not save mood direction: {err}")
+
+                    hero_names = [material_name_map.get(mid, mid) for mid in selected_hero_ids[:6]]
+                    if hero_names:
+                        st.caption("Hero materials: " + " | ".join(hero_names))
                     else:
-                        st.error(f"Could not save mood direction: {err}")
-
-                hero_names = [material_name_map.get(mid, mid) for mid in selected_hero_ids[:6]]
-                if hero_names:
-                    st.caption("Hero materials: " + " | ".join(hero_names))
-                else:
-                    st.caption("Pin hero materials to steer object decisions quickly.")
+                        st.caption("Pin hero materials to steer object decisions quickly.")
 
             ps = project_statuses.get(
                 str(pid), {"rooms": 0, "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
@@ -1093,11 +1126,12 @@ if page == "Projects Workspace":
             designer_ok = ps["designer_ok"]
             client_ok = ps["client_ok"]
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Rooms", ps["rooms"])
-            c2.metric("Objects", total)
-            c3.metric("Assigned", f"{assigned}/{total}" if total else "0/0")
-            c4.metric("Client OK", f"{client_ok}/{total}" if total else "0/0")
+            if show_setup:
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Rooms", ps["rooms"])
+                c2.metric("Objects", total)
+                c3.metric("Assigned", f"{assigned}/{total}" if total else "0/0")
+                c4.metric("Client OK", f"{client_ok}/{total}" if total else "0/0")
 
             rooms = load_project_rooms(pid)
             room_statuses = load_room_statuses([r["id"] for r in rooms]) if rooms else {}
@@ -1363,6 +1397,8 @@ if page == "Projects Workspace":
 
             st.markdown("---")
             _render_editorial_title("Room Chapters", "Execution")
+            if not show_selection:
+                st.caption("Switch Workspace focus to Material Selection, Client Review, or Procurement to open and edit room objects.")
 
             if not rooms:
                 st.markdown(
@@ -1401,7 +1437,7 @@ if page == "Projects Workspace":
                             if rm["missing_price"]:
                                 st.caption(f"{rm['missing_price']} assigned objects have no price")
 
-                            if st.button("Open room", key=f"open_room_{rid}"):
+                            if st.button("Open room", key=f"open_room_{rid}", disabled=not show_selection):
                                 st.session_state.current_room_id = rid
                                 st.session_state.current_object_id = None
                                 st.rerun()
@@ -1451,7 +1487,7 @@ if page == "Projects Workspace":
                                         st.rerun()
 
                 # Object editor
-                if st.session_state.get("current_object_id"):
+                if st.session_state.get("current_object_id") and show_selection:
                     st.markdown("---")
                     oid = st.session_state.current_object_id
                     obj = next((x for x in objs if str(x["id"]) == str(oid)), None)
@@ -1463,7 +1499,7 @@ if page == "Projects Workspace":
                     else:
                         _render_editorial_title(f"Edit: {obj.get('object_name')}", "Object Studio")
                         st.markdown(
-                            '<div class="quick-actions"><strong>Quick actions:</strong> Search | Assign | Quote | Approve | Comment</div>',
+                            '<div class="quick-actions"><strong>Guided workflow:</strong> 1) Pick material 2) Save context 3) Set approval</div>',
                             unsafe_allow_html=True,
                         )
 
@@ -1476,6 +1512,7 @@ if page == "Projects Workspace":
                         if query_key not in st.session_state:
                             st.session_state[query_key] = obj.get("object_name") or ""
 
+                        st.markdown("#### Step 1 · Pick a material")
                         search_cols = st.columns([0.78, 0.22])
                         query_text = search_cols[0].text_input(
                             "Search materials",
@@ -1557,6 +1594,7 @@ if page == "Projects Workspace":
                                 unsafe_allow_html=True,
                             )
 
+                        st.markdown("#### Step 2 · Capture design + purchasing context")
                         assignment_notes = _object_assignment_notes_from_row(proj)
                         note_key = f"obj_why_note_{oid}"
                         if note_key not in st.session_state:
@@ -1583,6 +1621,7 @@ if page == "Projects Workspace":
                             options=priority_options,
                             format_func=_procurement_priority_label,
                             key=priority_key,
+                            disabled=not show_procurement,
                         )
 
                         quote_options = ["not_started", "quote_requested", "quote_received", "po_ready", "po_sent"]
@@ -1595,6 +1634,7 @@ if page == "Projects Workspace":
                             options=quote_options,
                             format_func=_procurement_quote_label,
                             key=quote_key,
+                            disabled=not show_procurement,
                         )
 
                         target_price_default = _safe_float(procurement_targets.get(str(oid)))
@@ -1607,7 +1647,7 @@ if page == "Projects Workspace":
 
                         target_cols = st.columns([0.35, 0.65])
                         with target_cols[0]:
-                            use_target_price = st.checkbox("Set target price", key=target_toggle_key)
+                            use_target_price = st.checkbox("Set target price", key=target_toggle_key, disabled=not show_procurement)
                         with target_cols[1]:
                             target_price_input = st.number_input(
                                 "Target price (THB)",
@@ -1615,7 +1655,7 @@ if page == "Projects Workspace":
                                 value=float(st.session_state[target_price_key]),
                                 step=10.0,
                                 key=target_price_key,
-                                disabled=not use_target_price,
+                                disabled=(not use_target_price) or (not show_procurement),
                             )
                         target_price_value = target_price_input if use_target_price else None
 
@@ -1627,8 +1667,10 @@ if page == "Projects Workspace":
                             key=procurement_note_key,
                             height=82,
                             placeholder="Capture quote context, alternates, and supplier constraints.",
+                            disabled=not show_procurement,
                         )
 
+                        st.markdown("#### Step 3 · Confirm status and finalize")
                         status_options = ["unassigned", "selected", "designer_approved", "client_approved"]
                         current_status = obj.get("status") or "unassigned"
                         if current_status not in status_options:
@@ -1675,7 +1717,8 @@ if page == "Projects Workspace":
                                 st.success("Material assigned with design and purchasing context.")
                                 st.rerun()
                         with action_cols[1]:
-                            if st.button("Save Notes + Quote", key=f"save_obj_notes_{oid}", disabled=not access_token):
+                            save_notes_label = "Save Notes + Quote" if show_procurement else "Save Notes"
+                            if st.button(save_notes_label, key=f"save_obj_notes_{oid}", disabled=not access_token):
                                 next_notes = dict(assignment_notes)
                                 clean_why = why_this_works.strip()
                                 if clean_why:

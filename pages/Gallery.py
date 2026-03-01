@@ -37,12 +37,36 @@ room_options = sorted(df["Rooms"].dropna().apply(lambda x: x.split(",")[0] if is
 room_options = [room for room in room_options if room]
 
 selected_room = st.sidebar.selectbox("Filter by Room", ["All"] + room_options)
+search_text = st.sidebar.text_input("Search products", placeholder="Name, description, supplier")
+sort_option = st.sidebar.selectbox("Sort by", ["Name (A-Z)", "Name (Z-A)", "Price (Low-High)", "Price (High-Low)"])
 
 # Filter products
 if selected_room != "All":
     filtered_df = df[df["Rooms"].str.contains(selected_room, case=False, na=False)]
 else:
-    filtered_df = df
+    filtered_df = df.copy()
+
+if search_text.strip():
+    q = search_text.strip().lower()
+    filtered_df = filtered_df[
+        filtered_df.apply(
+            lambda row: q in str(row.get("product_name", "")).lower()
+            or q in str(row.get("Description", "")).lower()
+            or q in str(row.get("Supplier", "")).lower(),
+            axis=1,
+        )
+    ]
+
+if sort_option == "Name (A-Z)":
+    filtered_df = filtered_df.sort_values(by="product_name", ascending=True, na_position="last")
+elif sort_option == "Name (Z-A)":
+    filtered_df = filtered_df.sort_values(by="product_name", ascending=False, na_position="last")
+elif "Price" in filtered_df.columns:
+    filtered_df = filtered_df.assign(__price_sort=pd.to_numeric(filtered_df["Price"], errors="coerce")).sort_values(
+        by="__price_sort",
+        ascending=(sort_option == "Price (Low-High)"),
+        na_position="last",
+    ).drop(columns=["__price_sort"])
 
 st.markdown(f"🧮 Showing **{len(filtered_df)}** product(s) in '{selected_room}'")
 

@@ -70,7 +70,7 @@ def set_background_image():
 
 def apply_custom_css():
     # Backward-compatible hook for existing imports/calls.
-    return
+    inject_custom_css()
 
 def inject_custom_css():
     st.markdown(
