@@ -40,7 +40,8 @@ def render_product_card(row, i, room_options):
             st.write(f"[🌐 View Product]({row['Link']})")
 
     with col2:
-        room = st.selectbox("Assign to Room", room_options, key=f"room_{i}")
+        room_choices = room_options if room_options else ["Unassigned"]
+        room = st.selectbox("Assign to Room", room_choices, key=f"room_{i}")
         quantity = st.number_input("Quantity", min_value=1, value=1, key=f"qty_{i}")
         colA, colB = st.columns(2)
         with colA:
@@ -75,19 +76,25 @@ def inject_custom_css():
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&display=swap');
 
         :root {
-            --bg: #f2f3ef;
-            --bg-soft: #eceee8;
-            --surface: #fbfbf8;
-            --surface-2: #f5f6f2;
-            --text: #1f2a24;
-            --muted: #5e6d63;
-            --line: #d8ddd3;
-            --accent: #2f6b57;
-            --accent-soft: #e3efe8;
-            --shadow: 0 8px 24px rgba(28, 38, 31, 0.08);
+            --stone-50: #f7f4ef;
+            --stone-100: #efe7dc;
+            --stone-200: #dfd3c3;
+            --sand-50: #f8f3e9;
+            --sand-100: #efe4d2;
+            --forest-700: #2d4a3e;
+            --forest-800: #243c33;
+            --accent: #c46e45;
+            --accent-soft: #f2ddcf;
+            --text: #1f312a;
+            --muted: #617267;
+            --surface: #fffdf9;
+            --surface-2: #faf5ee;
+            --line: #d8cdbd;
+            --shadow: 0 12px 30px rgba(28, 38, 31, 0.09);
+            --radius-xl: 20px;
             --radius-lg: 16px;
             --radius-md: 12px;
             --radius-sm: 10px;
@@ -95,14 +102,20 @@ def inject_custom_css():
 
         .stApp {
             background:
-                radial-gradient(900px 400px at 100% 0%, #e8eee6 0%, transparent 60%),
-                radial-gradient(700px 320px at 0% 20%, #e6ece6 0%, transparent 58%),
-                linear-gradient(180deg, var(--bg) 0%, #eff1ec 100%);
+                radial-gradient(920px 420px at 100% 0%, #ebe4d8 0%, transparent 58%),
+                radial-gradient(760px 340px at 0% 20%, #e6efe8 0%, transparent 58%),
+                linear-gradient(180deg, var(--stone-50) 0%, #f1ece4 100%);
             color: var(--text);
             font-family: "Manrope", "Segoe UI", sans-serif;
         }
 
-        h1, h2, h3, h4, h5, h6,
+        h1, h2, h3, h4, h5, h6 {
+            font-family: "Cormorant Garamond", serif;
+            letter-spacing: 0.2px;
+            font-weight: 600;
+            color: var(--forest-800);
+        }
+
         p, span, label, li, div {
             color: var(--text);
         }
@@ -115,20 +128,20 @@ def inject_custom_css():
 
         [data-testid="stAppViewContainer"] .main .block-container {
             max-width: 1280px;
-            padding-top: 1.4rem;
+            padding-top: 1.2rem;
             padding-bottom: 2.2rem;
         }
 
         .main > div {
-            background: rgba(251, 251, 248, 0.95);
+            background: rgba(255, 253, 249, 0.95);
             border: 1px solid var(--line);
-            border-radius: var(--radius-lg);
+            border-radius: var(--radius-xl);
             box-shadow: var(--shadow);
             padding: 1.3rem;
         }
 
         section[data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #f7f8f4 0%, #f2f4ef 100%) !important;
+            background: linear-gradient(180deg, #f8f4ec 0%, #efe7dc 100%) !important;
             border-right: 1px solid var(--line);
             box-shadow: 6px 0 18px rgba(36, 44, 37, 0.05);
         }
@@ -142,7 +155,7 @@ def inject_custom_css():
         }
 
         .welcome-box {
-            background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+            background: linear-gradient(125deg, var(--surface) 0%, var(--surface-2) 100%);
             border: 1px solid var(--line);
             border-radius: var(--radius-lg);
             box-shadow: var(--shadow);
@@ -152,8 +165,8 @@ def inject_custom_css():
 
         .welcome-box h2 {
             margin: 0 0 4px 0;
-            font-weight: 600;
-            letter-spacing: 0.2px;
+            font-weight: 700;
+            font-size: 2rem;
         }
 
         .welcome-box p {
@@ -176,28 +189,28 @@ def inject_custom_css():
 
         .stButton > button:hover,
         .stDownloadButton > button:hover {
-            border-color: #b6c2b4;
-            background: #f1f4ee;
+            border-color: #c7b9a2;
+            background: #f5eee3;
             transform: translateY(-1px);
         }
 
         .stButton > button[kind="primary"] {
-            background: var(--accent);
-            border-color: var(--accent);
-            color: #f6faf7 !important;
-            box-shadow: 0 8px 16px rgba(47, 107, 87, 0.2);
+            background: linear-gradient(135deg, var(--accent) 0%, #ad5e39 100%);
+            border-color: #ad5e39;
+            color: #fff8f3 !important;
+            box-shadow: 0 8px 18px rgba(196, 110, 69, 0.25);
         }
 
         .stButton > button[kind="primary"]:hover {
-            background: #275946;
-            border-color: #275946;
+            background: #a35a37;
+            border-color: #a35a37;
         }
 
         [data-baseweb="input"],
         [data-baseweb="base-input"],
         [data-baseweb="select"] > div,
         [data-testid="stTextArea"] textarea {
-            background: #fbfcf9 !important;
+            background: #fffdf9 !important;
             border: 1px solid var(--line) !important;
             border-radius: var(--radius-sm) !important;
         }
@@ -221,6 +234,7 @@ def inject_custom_css():
             background: var(--surface);
             border-radius: var(--radius-md);
             padding: 10px 12px;
+            animation: cardFadeIn 240ms ease-out;
         }
 
         div[data-testid="stMetric"] label {
@@ -238,11 +252,119 @@ def inject_custom_css():
             border-radius: var(--radius-md);
             border: 1px solid var(--line);
             background: var(--surface) !important;
+            animation: cardFadeIn 220ms ease-out;
         }
 
         hr {
             border: none;
             border-top: 1px solid var(--line);
+        }
+
+        .editorial-title {
+            font-family: "Cormorant Garamond", serif;
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--forest-800);
+            margin: 0.25rem 0 0.7rem 0;
+            letter-spacing: 0.4px;
+        }
+
+        .editorial-kicker {
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--muted);
+            font-size: 0.73rem;
+            margin-bottom: 0.15rem;
+        }
+
+        .mood-strip-wrap {
+            margin: 0.6rem 0 1rem 0;
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .mood-strip-item {
+            border-radius: var(--radius-sm);
+            min-height: 92px;
+            background: linear-gradient(135deg, #ece1d3 0%, #dce6dd 100%);
+            border: 1px solid var(--line);
+            overflow: hidden;
+        }
+
+        .mood-strip-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .quick-actions {
+            position: sticky;
+            top: 0.6rem;
+            z-index: 9;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 0.45rem 0.9rem;
+            margin-bottom: 0.8rem;
+            background: rgba(255, 251, 244, 0.92);
+            backdrop-filter: blur(6px);
+            box-shadow: 0 8px 18px rgba(28, 38, 31, 0.08);
+            font-size: 0.84rem;
+            color: var(--muted);
+        }
+
+        .material-sheet {
+            border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            background: linear-gradient(180deg, #fffdf9 0%, #faf4eb 100%);
+            padding: 0.75rem;
+        }
+
+        .material-sheet h4 {
+            margin: 0.45rem 0 0.35rem 0;
+            font-size: 1.35rem;
+        }
+
+        .tag-line {
+            display: inline-block;
+            background: #f2e7d8;
+            color: var(--forest-700);
+            border-radius: 999px;
+            border: 1px solid #e3d3bf;
+            font-size: 0.74rem;
+            margin: 0 0.3rem 0.28rem 0;
+            padding: 0.12rem 0.56rem;
+        }
+
+        .inspire-empty {
+            border: 1px dashed var(--line);
+            border-radius: var(--radius-md);
+            background: linear-gradient(135deg, #fbf6ef 0%, #f0f5ef 100%);
+            padding: 0.9rem 1rem;
+            color: var(--muted);
+            margin: 0.4rem 0 0.8rem 0;
+        }
+
+        @keyframes cardFadeIn {
+            0% {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 980px) {
+            .mood-strip-wrap {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .editorial-title {
+                font-size: 1.72rem;
+            }
         }
         </style>
         """,

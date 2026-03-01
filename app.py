@@ -1,6 +1,7 @@
 # app.py
 
 import os
+import html
 from datetime import datetime, timezone
 import streamlit as st
 import pandas as pd
@@ -85,6 +86,140 @@ def _format_ts(ts_value):
         return dt.astimezone().strftime("%Y-%m-%d %H:%M")
     except Exception:
         return text
+
+
+def _cart_payload_from_row(project_row: dict | None):
+    cart = (project_row.get("cart") if isinstance(project_row, dict) else None) or []
+    if isinstance(cart, dict):
+        payload = dict(cart)
+        payload["items"] = payload.get("items", []) or []
+        return payload
+    if isinstance(cart, list):
+        return {"items": cart}
+    return {"items": []}
+
+
+def _design_brief_from_row(project_row: dict | None):
+    payload = _cart_payload_from_row(project_row)
+    brief = payload.get("design_brief") if isinstance(payload.get("design_brief"), dict) else {}
+    keywords = brief.get("keywords")
+    mood_images = brief.get("mood_images")
+    hero_material_ids = brief.get("hero_material_ids")
+    if not isinstance(keywords, list):
+        keywords = []
+    if not isinstance(mood_images, list):
+        mood_images = []
+    if not isinstance(hero_material_ids, list):
+        hero_material_ids = []
+    return {
+        "keywords": [str(x).strip() for x in keywords if str(x).strip()],
+        "references": str(brief.get("references") or "").strip(),
+        "materials_mood": str(brief.get("materials_mood") or "").strip(),
+        "mood_images": [str(x).strip() for x in mood_images if str(x).strip()],
+        "hero_material_ids": [str(x).strip() for x in hero_material_ids if str(x).strip()],
+    }
+
+
+def _object_assignment_notes_from_row(project_row: dict | None):
+    payload = _cart_payload_from_row(project_row)
+    notes = payload.get("assignment_notes")
+    if not isinstance(notes, dict):
+        return {}
+    return {str(k): str(v or "") for k, v in notes.items()}
+
+
+def _save_project_cart_fields(access_token: str | None, project_id: str, fields: dict):
+    if not access_token:
+        return False, "Session token missing."
+    try:
+        sb = get_supabase(access_token)
+        rows = (
+            sb.table("projects")
+            .select("cart")
+            .eq("id", project_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        existing_payload = _cart_payload_from_row({"cart": rows[0].get("cart")} if rows else {})
+        for key, value in (fields or {}).items():
+            existing_payload[key] = value
+        sb.table("projects").update({"cart": existing_payload, "updated_at": "now()"}).eq("id", project_id).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def _infer_tactile_tags(material_row: dict):
+    tags = material_row.get("tags") or []
+    if isinstance(tags, str):
+        tags = [x.strip() for x in tags.split(",") if x.strip()]
+    elif not isinstance(tags, list):
+        tags = []
+    tags = [str(x).strip() for x in tags if str(x).strip()]
+    if tags:
+        return tags[:4]
+
+    text = f"{material_row.get('name') or ''} {material_row.get('description') or ''}".lower()
+    inferred = []
+    lookup = [
+        ("matte", "Matte"),
+        ("warm", "Warm"),
+        ("wood", "Natural Grain"),
+        ("stone", "Stone-like"),
+        ("texture", "Textured"),
+        ("linen", "Soft Weave"),
+        ("metal", "Satin Metal"),
+    ]
+    for needle, label in lookup:
+        if needle in text and label not in inferred:
+            inferred.append(label)
+    if not inferred:
+        inferred = ["Refined", "Balanced"]
+    return inferred[:4]
+
+
+def _lead_time_label(material_row: dict):
+    lead = material_row.get("lead_time") or material_row.get("lead_time_days")
+    if lead is None or str(lead).strip() == "":
+        return "Lead time: 2-4 weeks"
+    return f"Lead time: {lead}"
+
+
+def _supplier_confidence_label(material_row: dict):
+    confidence = str(material_row.get("supplier_confidence") or "").strip()
+    if confidence:
+        return f"Supplier confidence: {confidence}"
+    if str(material_row.get("visibility") or "").lower() == "global":
+        return "Supplier confidence: Verified catalog source"
+    return "Supplier confidence: Designer-curated source"
+
+
+def _render_editorial_title(title: str, kicker: str | None = None):
+    kicker_html = ""
+    if kicker:
+        kicker_html = f'<div class="editorial-kicker">{html.escape(kicker)}</div>'
+    st.markdown(
+        f'{kicker_html}<div class="editorial-title">{html.escape(title)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_mood_strip(image_urls: list[str]):
+    clean_urls = [u for u in image_urls if isinstance(u, str) and u.strip().startswith("http")][:6]
+    if not clean_urls:
+        st.markdown(
+            '<div class="inspire-empty">Start with a concept board: add 3-6 mood references to shape palette and form language.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    cells = []
+    for url in clean_urls:
+        safe_url = html.escape(url.strip(), quote=True)
+        cells.append(f'<div class="mood-strip-item"><img src="{safe_url}" alt="Mood reference"/></div>')
+    st.markdown(f'<div class="mood-strip-wrap">{"".join(cells)}</div>', unsafe_allow_html=True)
 
 
 def render_client_portal(share_token: str):
@@ -412,7 +547,7 @@ st.markdown(
     f"""
     <div class="welcome-box">
         <h2>Welcome back, {full_name}</h2>
-        <p>Pick a project to work on, or manage your materials library.</p>
+        <p>Shape mood, material, and story across every room from one creative workspace.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -506,7 +641,7 @@ def _room_spend(objects, material_prices):
 # Page: Projects
 # -----------------------------
 if page == "Projects":
-    st.subheader("Projects")
+    _render_editorial_title("Design Workspace", "Projects")
 
     projects = load_projects()
     project_statuses = load_projects_statuses([p["id"] for p in projects]) if projects else {}
@@ -553,10 +688,13 @@ if page == "Projects":
     left, right = st.columns([0.35, 0.65], gap="large")
 
     with left:
-        st.markdown("#### Your projects")
+        _render_editorial_title("Your Creative Tracks", "Project Library")
 
         if not projects:
-            st.info("No projects yet. Create one from the sidebar.")
+            st.markdown(
+                '<div class="inspire-empty">Start with a concept board: create your first project from the sidebar, then define its mood direction.</div>',
+                unsafe_allow_html=True,
+            )
         else:
             q = st.text_input("Filter projects", placeholder="type to filter…", key="proj_filter")
             filtered = [p for p in projects if (q.strip().lower() in (p.get("name", "").lower())) or not q.strip()]
@@ -591,9 +729,15 @@ if page == "Projects":
     with right:
         pid = st.session_state.current_project_id
         if not pid:
-            st.info("Select a project on the left.")
+            st.markdown(
+                '<div class="inspire-empty">Select a project to open its mood direction, room flow, and material story.</div>',
+                unsafe_allow_html=True,
+            )
         else:
             proj = next((x for x in projects if str(x["id"]) == str(pid)), None)
+            if not proj:
+                st.error("Project could not be loaded.")
+                st.stop()
             share_meta = get_project_share_from_row(proj)
             share_token_value = share_meta.get("token")
             share_enabled = bool(share_meta.get("enabled"))
@@ -633,7 +777,74 @@ if page == "Projects":
                         st.caption("Set PUBLIC_APP_URL in secrets/env to generate a full absolute URL.")
                 else:
                     st.info("No customer link yet. Click 'Generate link'.")
-            st.markdown(f"### {proj.get('name','Project')}")
+            project_material_rows = load_materials_cached(access_token) if access_token else []
+            material_name_map = {str(m.get("id")): (m.get("name") or "Material") for m in project_material_rows if m.get("id")}
+
+            _render_editorial_title(proj.get("name", "Project"), "Creative Direction")
+            design_brief = _design_brief_from_row(proj)
+            _render_mood_strip(design_brief.get("mood_images", []))
+
+            with st.expander("Mood Direction", expanded=True):
+                brief_keywords_text = st.text_input(
+                    "Style keywords",
+                    value=", ".join(design_brief.get("keywords", [])),
+                    key=f"brief_keywords_{pid}",
+                    placeholder="e.g. warm minimal, tropical modern, tactile calm",
+                )
+                brief_references_text = st.text_area(
+                    "Reference intent",
+                    value=design_brief.get("references", ""),
+                    key=f"brief_refs_{pid}",
+                    height=88,
+                    placeholder="Describe forms, lines, and inspiration notes.",
+                )
+                brief_materials_mood = st.text_area(
+                    "Materials mood",
+                    value=design_brief.get("materials_mood", ""),
+                    key=f"brief_material_mood_{pid}",
+                    height=78,
+                    placeholder="e.g. limewash walls, soft bronze accents, warm travertine.",
+                )
+                brief_mood_urls = st.text_area(
+                    "Mood strip image URLs (one per line, 3-6)",
+                    value="\n".join(design_brief.get("mood_images", [])),
+                    key=f"brief_mood_urls_{pid}",
+                    height=110,
+                    placeholder="https://...",
+                )
+                hero_options = sorted(material_name_map.keys(), key=lambda mid: material_name_map.get(mid, ""))
+                selected_hero_ids = st.multiselect(
+                    "Hero materials",
+                    options=hero_options,
+                    default=[mid for mid in design_brief.get("hero_material_ids", []) if mid in hero_options],
+                    format_func=lambda mid: material_name_map.get(mid, mid),
+                    key=f"brief_hero_materials_{pid}",
+                )
+
+                if st.button("Save Mood Direction", type="primary", key=f"save_mood_brief_{pid}"):
+                    next_brief = {
+                        "keywords": [x.strip() for x in brief_keywords_text.split(",") if x.strip()],
+                        "references": brief_references_text.strip(),
+                        "materials_mood": brief_materials_mood.strip(),
+                        "mood_images": [
+                            x.strip()
+                            for x in brief_mood_urls.splitlines()
+                            if x.strip().startswith("http")
+                        ][:6],
+                        "hero_material_ids": selected_hero_ids[:6],
+                    }
+                    ok, err = _save_project_cart_fields(access_token, str(pid), {"design_brief": next_brief})
+                    if ok:
+                        st.success("Mood direction saved.")
+                        st.rerun()
+                    else:
+                        st.error(f"Could not save mood direction: {err}")
+
+                hero_names = [material_name_map.get(mid, mid) for mid in selected_hero_ids[:6]]
+                if hero_names:
+                    st.caption("Hero materials: " + " • ".join(hero_names))
+                else:
+                    st.caption("Pin hero materials to steer object decisions quickly.")
 
             ps = project_statuses.get(
                 str(pid), {"rooms": 0, "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
@@ -656,7 +867,7 @@ if page == "Projects":
             project_budget = budget_cfg.get("project")
             room_budgets = budget_cfg.get("rooms", {})
 
-            materials_rows = load_materials_cached(access_token) if access_token else []
+            materials_rows = project_material_rows
             material_prices = {}
             for m in materials_rows:
                 mid = m.get("id")
@@ -678,12 +889,12 @@ if page == "Projects":
                 project_spend += metrics["spend"]
                 project_missing_prices += metrics["missing_price"]
 
-            st.markdown("#### Overall progress")
+            _render_editorial_title("Project Rhythm", "Progress")
             st.progress((assigned / total) if total else 0.0)
             st.caption(f"Designer approved: {designer_ok}/{total} • Client approved: {client_ok}/{total}")
 
             st.markdown("---")
-            st.markdown("#### Budget")
+            _render_editorial_title("Budget Story", "Financial Lens")
 
             budget_cols = st.columns([0.34, 0.33, 0.33])
             budget_cols[0].metric("Estimated Spend", f"{project_spend:,.0f} THB")
@@ -710,7 +921,7 @@ if page == "Projects":
                 st.caption(f"{project_missing_prices} assigned objects have no material price and are excluded from spend.")
 
             st.markdown("---")
-            st.markdown("#### Client feedback")
+            _render_editorial_title("Client Pulse", "Feedback")
             object_map = {}
             room_name_map = {str(r.get("id")): (r.get("name") or "Room") for r in rooms}
             for rid_key, objects in room_objects_map.items():
@@ -769,7 +980,10 @@ if page == "Projects":
             feedback_cols[2].metric("Latest update", _format_ts(client_events[0].get("created_at")) if client_events else "-")
 
             if not client_events:
-                st.caption("No client activity yet.")
+                st.markdown(
+                    '<div class="inspire-empty">No client responses yet. Share one curated room to start focused feedback.</div>',
+                    unsafe_allow_html=True,
+                )
             else:
                 for event in client_events[:30]:
                     if event["kind"] == "comment":
@@ -851,10 +1065,13 @@ if page == "Projects":
                             st.rerun()
 
             st.markdown("---")
-            st.markdown("#### Rooms")
+            _render_editorial_title("Room Chapters", "Execution")
 
             if not rooms:
-                st.info("No rooms in this project yet.")
+                st.markdown(
+                    '<div class="inspire-empty">No room chapters yet. Add rooms to begin turning concept into specification.</div>',
+                    unsafe_allow_html=True,
+                )
                 objs = []
             else:
                 grid_cols = st.columns(3)
@@ -913,7 +1130,10 @@ if page == "Projects":
 
                     objs = load_room_objects(rid)
                     if not objs:
-                        st.info("No objects in this room.")
+                        st.markdown(
+                            '<div class="inspire-empty">No objects yet. Start with anchor pieces to define this room’s character.</div>',
+                            unsafe_allow_html=True,
+                        )
                     else:
                         for o in objs:
                             oid = o["id"]
@@ -944,7 +1164,11 @@ if page == "Projects":
                     elif not obj:
                         st.info("Object not found in current room (maybe room changed).")
                     else:
-                        st.markdown(f"### Edit: {obj.get('object_name')}")
+                        _render_editorial_title(f"Edit: {obj.get('object_name')}", "Object Studio")
+                        st.markdown(
+                            '<div class="quick-actions"><strong>Quick actions:</strong> Search • Assign • Approve • Comment</div>',
+                            unsafe_allow_html=True,
+                        )
 
                         material_options = []
                         material_labels = {}
@@ -955,11 +1179,14 @@ if page == "Projects":
                         if query_key not in st.session_state:
                             st.session_state[query_key] = obj.get("object_name") or ""
 
-                        query_text = st.text_input(
-                            "Find material (semantic DB search)",
+                        search_cols = st.columns([0.78, 0.22])
+                        query_text = search_cols[0].text_input(
+                            "Search materials",
                             key=query_key,
-                            placeholder="Type what this object should be made of",
+                            placeholder="Type texture, style, or usage",
                         )
+                        if search_cols[1].button("Search", key=f"obj_search_btn_{oid}"):
+                            st.rerun()
 
                         if access_token and query_text.strip():
                             try:
@@ -968,7 +1195,6 @@ if page == "Projects":
                                 material_error = str(e)
 
                         current_material_id = str(obj.get("material_id")) if obj.get("material_id") else None
-
                         select_options = [None]
                         for m in material_options:
                             mid = str(m.get("id"))
@@ -994,68 +1220,56 @@ if page == "Projects":
                             select_options.append(current_material_id)
 
                         select_key = f"obj_material_select_{oid}"
-                        pending_select_key = f"obj_material_select_pending_{oid}"
-
-                        pending_material_id = st.session_state.pop(pending_select_key, None)
-                        if pending_material_id in select_options:
-                            st.session_state[select_key] = pending_material_id
-
                         if select_key not in st.session_state:
                             st.session_state[select_key] = current_material_id if current_material_id in select_options else None
                         elif st.session_state[select_key] not in select_options:
                             st.session_state[select_key] = current_material_id if current_material_id in select_options else None
 
                         selected_material_id = st.selectbox(
-                            "Matched materials",
+                            "Selected material",
                             options=select_options,
                             format_func=lambda x: "None" if x is None else material_labels.get(x, x),
                             key=select_key,
                         )
 
+                        preview_rows = material_options[:8]
+                        if preview_rows:
+                            keyboard_options = [str(m.get("id")) for m in preview_rows if m.get("id") is not None]
+                            if keyboard_options:
+                                if str(selected_material_id) in keyboard_options:
+                                    default_index = keyboard_options.index(str(selected_material_id))
+                                else:
+                                    default_index = 0
+                                kb_pick = st.radio(
+                                    "Navigate top matches (use up/down arrows, press Enter on Assign)",
+                                    options=keyboard_options,
+                                    index=default_index,
+                                    format_func=lambda mid: material_labels.get(mid, mid),
+                                    key=f"obj_keyboard_pick_{oid}",
+                                )
+                                st.session_state[select_key] = kb_pick
+                                selected_material_id = kb_pick
+
                         if material_error:
                             st.warning(f"Could not search materials: {material_error}")
                         elif not query_text.strip():
-                            st.caption("Search is prefilled with object name. Update it to refine.")
+                            st.caption("Search is prefilled with object name. Refine with mood keywords.")
                         elif not material_options:
-                            st.info("No results found. Try a broader search phrase.")
+                            st.markdown(
+                                '<div class="inspire-empty">No match yet. Try broader texture terms like "linen", "matte oak", or "handmade tile".</div>',
+                                unsafe_allow_html=True,
+                            )
 
-                        show_preview = st.checkbox(
-                            "Show image previews",
-                            value=False,
-                            key=f"obj_show_material_images_{oid}",
+                        assignment_notes = _object_assignment_notes_from_row(proj)
+                        note_key = f"obj_why_note_{oid}"
+                        if note_key not in st.session_state:
+                            st.session_state[note_key] = assignment_notes.get(str(oid), "")
+                        why_this_works = st.text_area(
+                            "Why this works",
+                            key=note_key,
+                            height=84,
+                            placeholder="Explain fit with mood, light, durability, and budget intent.",
                         )
-                        if show_preview:
-                            selected_row = material_rows.get(str(selected_material_id)) if selected_material_id else None
-                            if selected_row:
-                                image_url = selected_row.get("image_url")
-                                if image_url:
-                                    st.image(
-                                        image_url,
-                                        width=260,
-                                        caption=f"Selected: {selected_row.get('name') or 'Material'}",
-                                    )
-                                else:
-                                    st.caption("Selected material has no image.")
-
-                            preview_rows = material_options[:6]
-                            if preview_rows:
-                                st.caption("Top semantic matches")
-                                cols = st.columns(3)
-                                for i, m in enumerate(preview_rows):
-                                    with cols[i % 3]:
-                                        title = m.get("name") or "Unnamed material"
-                                        mid = str(m.get("id")) if m.get("id") is not None else None
-                                        img = m.get("image_url")
-                                        if img:
-                                            st.image(img, use_container_width=True, caption=title)
-                                        else:
-                                            st.caption(f"{title} (no image)")
-                                        if mid:
-                                            if st.button("Select", key=f"obj_pick_mat_{oid}_{mid}"):
-                                                st.session_state[pending_select_key] = mid
-                                                st.rerun()
-                                            if str(selected_material_id) == mid:
-                                                st.caption("Selected")
 
                         status_options = ["unassigned", "selected", "designer_approved", "client_approved"]
                         current_status = obj.get("status") or "unassigned"
@@ -1066,34 +1280,78 @@ if page == "Projects":
                             "Status",
                             status_options,
                             index=status_options.index(current_status),
-                            key="obj_status_select",
+                            key=f"obj_status_select_{oid}",
                         )
 
-                        col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 1])
-                        with col_a:
-                            if st.button("Save Status", type="primary", key="save_obj_status"):
-                                sb = get_supabase(access_token)
-                                sb.table("room_objects").update({"status": new_status}).eq("id", oid).execute()
-                                st.success("Status updated.")
-                                st.rerun()
-                        with col_b:
-                            assign_disabled = not (access_token and selected_material_id)
-                            if st.button("Assign Material", key="assign_obj_material", disabled=assign_disabled):
+                        action_cols = st.columns([1, 1, 1, 1, 1])
+                        with action_cols[0]:
+                            if st.button("Assign", key=f"assign_obj_material_{oid}", type="primary", disabled=not (access_token and selected_material_id)):
                                 sb = get_supabase(access_token)
                                 update_payload = {"material_id": selected_material_id}
                                 if (obj.get("status") or "unassigned") == "unassigned":
                                     update_payload["status"] = "selected"
                                 sb.table("room_objects").update(update_payload).eq("id", oid).execute()
-                                st.success("Material assigned.")
+                                next_notes = dict(assignment_notes)
+                                next_notes[str(oid)] = why_this_works.strip()
+                                _save_project_cart_fields(access_token, str(pid), {"assignment_notes": next_notes})
+                                st.success("Material assigned with rationale.")
                                 st.rerun()
-                        with col_c:
-                            if st.button("Clear Material", key="clear_obj_material"):
+                        with action_cols[1]:
+                            if st.button("Save Status", key=f"save_obj_status_{oid}"):
+                                sb = get_supabase(access_token)
+                                sb.table("room_objects").update({"status": new_status}).eq("id", oid).execute()
+                                st.success("Status updated.")
+                                st.rerun()
+                        with action_cols[2]:
+                            if st.button("Approve", key=f"approve_obj_status_{oid}"):
+                                sb = get_supabase(access_token)
+                                sb.table("room_objects").update({"status": "designer_approved"}).eq("id", oid).execute()
+                                st.success("Marked as designer approved.")
+                                st.rerun()
+                        with action_cols[3]:
+                            if st.button("Clear", key=f"clear_obj_material_{oid}"):
                                 sb = get_supabase(access_token)
                                 sb.table("room_objects").update({"material_id": None, "status": "unassigned"}).eq("id", oid).execute()
-                                st.success("Cleared.")
+                                st.success("Material and status reset.")
+                                st.rerun()
+                        with action_cols[4]:
+                            if st.button("Close", key=f"close_obj_editor_{oid}"):
+                                st.session_state.current_object_id = None
                                 st.rerun()
 
-                        st.markdown("#### Object comments")
+                        if preview_rows:
+                            _render_editorial_title("Top Material Matches", "Mini Spec Sheets")
+                            card_cols = st.columns(2)
+                            for i, m in enumerate(preview_rows):
+                                mid = str(m.get("id")) if m.get("id") is not None else None
+                                with card_cols[i % 2]:
+                                    st.markdown('<div class="material-sheet">', unsafe_allow_html=True)
+                                    img = (m.get("image_url") or "").strip()
+                                    if img.startswith("http"):
+                                        st.image(img, use_container_width=True)
+                                    else:
+                                        st.caption("No reference image")
+
+                                    st.markdown(f"#### {m.get('name') or 'Unnamed material'}")
+                                    tags = _infer_tactile_tags(m)
+                                    tags_html = "".join([f'<span class="tag-line">{html.escape(t)}</span>' for t in tags])
+                                    st.markdown(tags_html, unsafe_allow_html=True)
+
+                                    price_value = _safe_float(m.get("price"))
+                                    price_label = f"{price_value:,.0f} THB" if price_value is not None else "Price on request"
+                                    st.caption(
+                                        f"Price: {price_label} • {_lead_time_label(m)} • {_supplier_confidence_label(m)}"
+                                    )
+                                    if m.get("category"):
+                                        st.caption(f"Category: {m.get('category')}")
+                                    if m.get("description"):
+                                        st.write(str(m.get("description"))[:220])
+                                    if mid and st.button("Use this", key=f"obj_pick_mat_{oid}_{mid}"):
+                                        st.session_state[select_key] = mid
+                                        st.rerun()
+                                    st.markdown("</div>", unsafe_allow_html=True)
+
+                        _render_editorial_title("Object Conversation", "Comments")
                         comments = get_object_comments_from_row(proj, oid)
                         if comments:
                             for row in comments[-10:]:
@@ -1102,9 +1360,9 @@ if page == "Projects":
                                 text = row.get("comment") or ""
                                 st.write(f"- {author} ({role}): {text}")
                         else:
-                            st.caption("No comments yet.")
+                            st.caption("No comments yet. Capture intent early to align supplier and client decisions.")
 
-                        st.markdown("#### Approval history")
+                        _render_editorial_title("Approval Timeline", "History")
                         approval_rows = get_object_approval_history_from_row(proj, oid)
                         if approval_rows:
                             for row in reversed(approval_rows[-10:]):
@@ -1115,7 +1373,7 @@ if page == "Projects":
                                     f"{row.get('action') or '-'}"
                                 )
                         else:
-                            st.caption("No approval history yet.")
+                            st.caption("No approval history yet. Mark one material as approved to build confidence momentum.")
 
                         designer_comment = st.text_area(
                             "Add comment",
@@ -1133,10 +1391,6 @@ if page == "Projects":
                             ):
                                 st.success("Comment posted.")
                                 st.rerun()
-                        with col_d:
-                            if st.button("Close", key="close_obj_editor"):
-                                st.session_state.current_object_id = None
-                                st.rerun()
 
 # -----------------------------
 # Page: Search Catalog
@@ -1149,7 +1403,7 @@ elif page == "Search Catalog":
         st.rerun()
 
     if embeddings is None or df.empty:
-        st.warning("Catalog is empty or embeddings are missing. Add products and refresh the catalog.")
+        st.warning("Catalog needs curation before inspiration can flow. Add products and refresh the catalog.")
     else:
         query = st.text_input("What material or item are you looking for?", placeholder="e.g. light wood bench for outdoor")
         if query:
@@ -1159,8 +1413,7 @@ elif page == "Search Catalog":
             results = df.iloc[top_k_idx]
 
             for i, (_, row) in enumerate(results.iterrows()):
-                render_product_card(row, i, project_rooms=[])
-                st.markdown("</div>", unsafe_allow_html=True)
+                render_product_card(row, i, room_options=[])
 
 # -----------------------------
 # Page: My Materials
@@ -1306,7 +1559,10 @@ elif page == "My Materials":
     st.caption(f"{len(rows)} items visible (your private + global supplier items).")
 
     if not rows:
-        st.info("No materials yet.")
+        st.markdown(
+            '<div class="inspire-empty">No materials yet. Start a concept board by adding your first hero material.</div>',
+            unsafe_allow_html=True,
+        )
     else:
         for r in rows:
             with st.container(border=True):
