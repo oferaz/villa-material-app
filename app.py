@@ -384,9 +384,9 @@ full_name = profile.get("full_name") or (
 # Sidebar: user area (name + logout + profile editor)
 # -----------------------------
 st.sidebar.markdown("---")
-st.sidebar.markdown(f"👤 Logged in as: **{full_name}**")
+st.sidebar.markdown(f"Logged in as: **{full_name}**")
 
-if st.sidebar.button("🚪 Logout"):
+if st.sidebar.button("Logout"):
     clear_auth_state([
         "current_project_id",
         "current_room_id",
@@ -394,7 +394,7 @@ if st.sidebar.button("🚪 Logout"):
     ])
     st.rerun()
 
-with st.sidebar.expander("👤 Profile", expanded=False):
+with st.sidebar.expander("Profile", expanded=False):
     new_name = st.text_input("Display name", value=full_name, key="profile_display_name")
     if st.button("Save name", key="save_profile_btn", disabled=not (access_token and user_id)):
         try:
@@ -411,7 +411,7 @@ with st.sidebar.expander("👤 Profile", expanded=False):
 st.markdown(
     f"""
     <div class="welcome-box">
-        <h2>👋 Welcome back, {full_name}</h2>
+        <h2>Welcome back, {full_name}</h2>
         <p>Pick a project to work on, or manage your materials library.</p>
     </div>
     """,
@@ -421,7 +421,7 @@ st.markdown(
 # -----------------------------
 # Sidebar Navigation
 # -----------------------------
-st.sidebar.markdown("### 🧭 Navigation")
+st.sidebar.markdown("### Navigation")
 page = st.sidebar.radio("", ["Projects", "Search Catalog", "My Materials"], label_visibility="collapsed")
 
 # -----------------------------
@@ -506,13 +506,13 @@ def _room_spend(objects, material_prices):
 # Page: Projects
 # -----------------------------
 if page == "Projects":
-    st.subheader("🗂️ Projects")
+    st.subheader("Projects")
 
     projects = load_projects()
     project_statuses = load_projects_statuses([p["id"] for p in projects]) if projects else {}
 
     # Sidebar: Create project (simple + works)
-    with st.sidebar.expander("➕ Create New Project", expanded=False):
+    with st.sidebar.expander("Create New Project", expanded=False):
         new_proj = st.text_input("Project Name", key="new_proj_name")
 
         predefined = [
@@ -531,7 +531,7 @@ if page == "Projects":
 
         custom_rooms = st.text_input("Custom Rooms (comma-separated)", "", key="custom_rooms")
 
-        if st.button("✅ Create", type="primary", key="create_project_btn"):
+        if st.button("Create", type="primary", key="create_project_btn"):
             all_rooms = []
             for room, count in room_counts.items():
                 for i in range(count):
@@ -633,7 +633,7 @@ if page == "Projects":
                         st.caption("Set PUBLIC_APP_URL in secrets/env to generate a full absolute URL.")
                 else:
                     st.info("No customer link yet. Click 'Generate link'.")
-            st.markdown(f"### 📌 {proj.get('name','Project')}")
+            st.markdown(f"### {proj.get('name','Project')}")
 
             ps = project_statuses.get(
                 str(pid), {"rooms": 0, "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
@@ -898,7 +898,7 @@ if page == "Projects":
                 if st.session_state.get("current_room_id"):
                     rid = st.session_state.current_room_id
                     room = next((x for x in rooms if str(x["id"]) == str(rid)), None)
-                    st.markdown(f"### 🧩 Room: {room.get('name') if room else ''}")
+                    st.markdown(f"### Room: {room.get('name') if room else ''}")
 
                     current_room_budget = _safe_float(room_budgets.get(str(rid)))
                     current_room_metrics = room_spend_map.get(str(rid), {"spend": 0.0, "missing_price": 0})
@@ -924,7 +924,7 @@ if page == "Projects":
                                     st.caption(f"Category: {o.get('category')} • Qty: {o.get('qty')}")
                                 with col2:
                                     st.markdown("Assigned")
-                                    st.write("✅" if o.get("material_id") else "—")
+                                    st.write("Yes" if o.get("material_id") else "No")
                                 with col3:
                                     st.markdown("Status")
                                     st.write(o.get("status", "unassigned"))
@@ -944,7 +944,7 @@ if page == "Projects":
                     elif not obj:
                         st.info("Object not found in current room (maybe room changed).")
                     else:
-                        st.markdown(f"### 🔧 Edit: {obj.get('object_name')}")
+                        st.markdown(f"### Edit: {obj.get('object_name')}")
 
                         material_options = []
                         material_labels = {}
@@ -1142,9 +1142,9 @@ if page == "Projects":
 # Page: Search Catalog
 # -----------------------------
 elif page == "Search Catalog":
-    st.title("🔎 Search Catalog")
+    st.title("Search Catalog")
 
-    if st.button("🔄 Refresh Product Catalog"):
+    if st.button("Refresh Product Catalog"):
         st.cache_data.clear()
         st.rerun()
 
@@ -1166,9 +1166,9 @@ elif page == "Search Catalog":
 # Page: My Materials
 # -----------------------------
 elif page == "My Materials":
-    st.title("📚 My Materials Library")
+    st.title("My Materials Library")
 
-    with st.expander("➕ Add material", expanded=False):
+    with st.expander("Add material", expanded=False):
         name = st.text_input("Name", key="mat_name")
         description = st.text_area("Description", key="mat_desc")
         category = st.text_input("Category", key="mat_cat")

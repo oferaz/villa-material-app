@@ -64,234 +64,186 @@ def render_product_card(row, i, room_options):
                 st.switch_page("pages/Edit_Product.py")
 
 def set_background_image():
-    st.markdown(
-        """
-        <style>
-        .stApp {
-            background-image: url("https://images.unsplash.com/photo-1507525428034-b723cf961d3e");
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-        }
-
-        .main > div {
-            background-color: rgba(255, 255, 255, 0.85);
-            padding: 1rem;
-            border-radius: 10px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    # Intentionally no-op. Theme styling is centralized in inject_custom_css().
+    return
 
 def apply_custom_css():
-    st.markdown("""
-        <style>
-            .stButton>button {
-                border-radius: 12px;
-                box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
-                padding: 0.5rem 1rem;
-                transition: background-color 0.3s ease;
-            }
-
-            .stButton>button:hover {
-                background-color: #f0f0f0;
-            }
-
-            .card {
-                background-color: #ffffff;
-                border-radius: 15px;
-                padding: 16px;
-                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.07);
-                margin-bottom: 20px;
-                transition: transform 0.2s ease;
-            }
-
-            .card:hover {
-                transform: scale(1.02);
-            }
-
-            .stImage img {
-                border-radius: 10px;
-                max-width: 100%;
-                height: auto;
-                object-fit: cover;
-            }
-        </style>
-    """, unsafe_allow_html=True)
+    # Backward-compatible hook for existing imports/calls.
+    return
 
 def inject_custom_css():
     st.markdown(
         """
         <style>
-        /* --- App base --- */
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+
+        :root {
+            --bg: #f2f3ef;
+            --bg-soft: #eceee8;
+            --surface: #fbfbf8;
+            --surface-2: #f5f6f2;
+            --text: #1f2a24;
+            --muted: #5e6d63;
+            --line: #d8ddd3;
+            --accent: #2f6b57;
+            --accent-soft: #e3efe8;
+            --shadow: 0 8px 24px rgba(28, 38, 31, 0.08);
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 10px;
+        }
+
         .stApp {
-            background-color: #f8f9fa;
-            font-family: "Segoe UI", sans-serif;
+            background:
+                radial-gradient(900px 400px at 100% 0%, #e8eee6 0%, transparent 60%),
+                radial-gradient(700px 320px at 0% 20%, #e6ece6 0%, transparent 58%),
+                linear-gradient(180deg, var(--bg) 0%, #eff1ec 100%);
+            color: var(--text);
+            font-family: "Manrope", "Segoe UI", sans-serif;
         }
 
-        /* Make all main content text dark and readable */
-        .main, .main * {
-            color: #1f1f1f !important;
+        h1, h2, h3, h4, h5, h6,
+        p, span, label, li, div {
+            color: var(--text);
         }
 
-        /* Captions / secondary text (Streamlit uses small gray) */
-        .main .stCaption, .main small, .main [data-testid="stCaptionContainer"] {
-            color: #4b5563 !important;
+        [data-testid="stCaptionContainer"],
+        .stCaption,
+        small {
+            color: var(--muted) !important;
         }
 
-        /* --- Main white cards (keep your existing style) --- */
+        [data-testid="stAppViewContainer"] .main .block-container {
+            max-width: 1280px;
+            padding-top: 1.4rem;
+            padding-bottom: 2.2rem;
+        }
+
         .main > div {
-            background-color: rgba(255,255,255,0.92);
-            padding: 2rem;
-            border-radius: 1rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
-            margin-bottom: 1rem;
-            backdrop-filter: blur(6px);
+            background: rgba(251, 251, 248, 0.95);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            padding: 1.3rem;
         }
 
-        /* Inputs */
-        .stTextInput, .stNumberInput, .stSelectbox, .stTextArea, .stFileUploader, .stMultiSelect {
-            padding: 0.5rem;
-            border-radius: 0.5rem;
-        }
-
-        /* Buttons */
-        .stButton > button {
-            background-color: #0072C6;
-            color: white !important;
-            border-radius: 0.5rem;
-            padding: 0.4rem 1rem;
-            border: none;
-            transition: background-color 0.3s ease;
-        }
-
-        .stButton > button:hover {
-            background-color: #005A9E;
-        }
-
-        .stDownloadButton > button {
-            border-radius: 0.5rem;
-        }
-
-        /* Images */
-        img {
-            border-radius: 12px;
-            max-height: 250px;
-            object-fit: cover;
-        }
-
-        /* Product card */
-        .product-card {
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-            background: rgba(255,255,255,0.95);
-        }
-
-        /* --- Sidebar readability --- */
-        section[data-testid="stSidebar"] * {
-            color: #111827 !important;
-        }
         section[data-testid="stSidebar"] {
-            background: rgba(255,255,255,0.92) !important;
-            backdrop-filter: blur(6px);
+            background: linear-gradient(180deg, #f7f8f4 0%, #f2f4ef 100%) !important;
+            border-right: 1px solid var(--line);
+            box-shadow: 6px 0 18px rgba(36, 44, 37, 0.05);
         }
 
-        /* --- Welcome banner (optional) --- */
+        section[data-testid="stSidebar"] > div {
+            padding-top: 0.8rem;
+        }
+
+        section[data-testid="stSidebar"] * {
+            color: var(--text) !important;
+        }
+
         .welcome-box {
-            background: rgba(255,255,255,0.88);
-            padding: 18px 22px;
-            border-radius: 16px;
-            backdrop-filter: blur(6px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.10);
-            margin-bottom: 18px;
+            background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            padding: 16px 18px;
+            margin-bottom: 14px;
         }
+
         .welcome-box h2 {
-            margin: 0 0 6px 0;
+            margin: 0 0 4px 0;
+            font-weight: 600;
+            letter-spacing: 0.2px;
         }
+
         .welcome-box p {
             margin: 0;
-            color: #4b5563 !important;
+            color: var(--muted) !important;
         }
 
-        /* Force readable input controls */
-        section[data-testid="stSidebar"] input,
-        section[data-testid="stSidebar"] textarea,
-        section[data-testid="stSidebar"] select,
-        .main input, .main textarea, .main select {
-        background: rgba(255,255,255,0.95) !important;
-        color: #111827 !important;
-        border: 1px solid rgba(0,0,0,0.15) !important;
+        .stButton > button,
+        .stDownloadButton > button {
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: var(--surface);
+            color: var(--text) !important;
+            min-height: 2.4rem;
+            padding: 0.42rem 1rem;
+            font-weight: 600;
+            transition: all 0.18s ease;
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
         }
 
-        /* Streamlit/BaseWeb input wrappers (text input + text area) */
-        [data-testid="stTextInputRootElement"] > div,
-        [data-testid="stTextAreaRootElement"] > div,
-        div[data-baseweb="input"] > div,
-        div[data-baseweb="base-input"] {
-        background: rgba(255,255,255,0.95) !important;
-        border: 1px solid rgba(0,0,0,0.15) !important;
+        .stButton > button:hover,
+        .stDownloadButton > button:hover {
+            border-color: #b6c2b4;
+            background: #f1f4ee;
+            transform: translateY(-1px);
         }
 
-        [data-testid="stTextInputRootElement"] input,
-        [data-testid="stTextAreaRootElement"] textarea,
-        div[data-baseweb="input"] input,
-        div[data-baseweb="base-input"] textarea {
-        color: #111827 !important;
-        -webkit-text-fill-color: #111827 !important;
-        caret-color: #111827 !important;
-        background: transparent !important;
+        .stButton > button[kind="primary"] {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #f6faf7 !important;
+            box-shadow: 0 8px 16px rgba(47, 107, 87, 0.2);
         }
 
-        /* Disabled fields (e.g. share link text input) */
-        [data-testid="stTextInputRootElement"] input:disabled,
-        [data-testid="stTextAreaRootElement"] textarea:disabled,
-        div[data-baseweb="input"] input:disabled,
-        div[data-baseweb="base-input"] textarea:disabled {
-        color: #111827 !important;
-        -webkit-text-fill-color: #111827 !important;
-        opacity: 1 !important;
-        background: rgba(248,250,252,0.98) !important;
+        .stButton > button[kind="primary"]:hover {
+            background: #275946;
+            border-color: #275946;
         }
 
-        /* Make bordered containers readable */
-        div[data-testid="stVerticalBlockBorderWrapper"] {
-        background: rgba(255,255,255,0.92) !important;
-        }
-        div[data-testid="stVerticalBlockBorderWrapper"] * {
-        color: #111827 !important;
-        }
-        
-        /* Number input + selectbox container */
-        div[data-baseweb="input"] input {
-        background: rgba(255,255,255,0.95) !important;
-        color: #111827 !important;
+        [data-baseweb="input"],
+        [data-baseweb="base-input"],
+        [data-baseweb="select"] > div,
+        [data-testid="stTextArea"] textarea {
+            background: #fbfcf9 !important;
+            border: 1px solid var(--line) !important;
+            border-radius: var(--radius-sm) !important;
         }
 
-        /* Dropdown menu items */
-        div[data-baseweb="menu"] * {
-        color: #111827 !important;
+        [data-baseweb="input"] input,
+        [data-baseweb="base-input"] input,
+        [data-baseweb="select"] input,
+        [data-testid="stTextArea"] textarea {
+            color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
+            caret-color: var(--text) !important;
         }
 
-        /* Streamlit/BaseWeb selectbox: keep selected value readable */
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-        background: rgba(255,255,255,0.95) !important;
-        border: 1px solid rgba(0,0,0,0.15) !important;
-        color: #111827 !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] span,
-        [data-testid="stSelectbox"] div[data-baseweb="select"] div {
-        color: #111827 !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] input {
-        color: #111827 !important;
-        -webkit-text-fill-color: #111827 !important;
-        opacity: 1 !important;
+        [data-baseweb="menu"] *,
+        [data-baseweb="popover"] * {
+            color: var(--text) !important;
         }
 
+        div[data-testid="stMetric"] {
+            border: 1px solid var(--line);
+            background: var(--surface);
+            border-radius: var(--radius-md);
+            padding: 10px 12px;
+        }
+
+        div[data-testid="stMetric"] label {
+            color: var(--muted) !important;
+            font-weight: 500;
+        }
+
+        [data-testid="stExpander"] {
+            border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            background: var(--surface);
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            border-radius: var(--radius-md);
+            border: 1px solid var(--line);
+            background: var(--surface) !important;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid var(--line);
+        }
         </style>
         """,
         unsafe_allow_html=True
