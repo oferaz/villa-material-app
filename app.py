@@ -45,7 +45,11 @@ from project_manager import (
 # -----------------------------
 # Page setup
 # -----------------------------
-st.set_page_config(page_title="Materia", layout="wide")
+LOGO_PNG_PATH = os.path.join("assets", "materia_logo.png")
+_page_config = {"page_title": "Materia", "layout": "wide"}
+if os.path.exists(LOGO_PNG_PATH):
+    _page_config["page_icon"] = LOGO_PNG_PATH
+st.set_page_config(**_page_config)
 st.markdown(
     """
     <link rel="shortcut icon" href="assets/favicon.ico">
@@ -518,6 +522,9 @@ full_name = profile.get("full_name") or (
 # -----------------------------
 # Sidebar: user area (name + logout + profile editor)
 # -----------------------------
+if os.path.exists(LOGO_PNG_PATH):
+    st.sidebar.image(LOGO_PNG_PATH, use_container_width=True)
+
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"Logged in as: **{full_name}**")
 
