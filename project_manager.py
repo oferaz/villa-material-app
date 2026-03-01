@@ -22,6 +22,75 @@ def _template_room_key(room_name: str) -> str:
     base = re.sub(r"\s+\d+$", "", room_name.strip())
     return base
 
+
+def _safe_qty(value) -> int:
+    try:
+        return max(1, int(float(value)))
+    except Exception:
+        return 1
+
+
+def _slugify(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", str(text or "").strip().lower()).strip("_")
+    return slug or "item"
+
+
+def _normalize_template_map(template_map):
+    clean = {}
+    if not isinstance(template_map, dict):
+        return clean
+
+    for room_name, objects in template_map.items():
+        room_clean = str(room_name or "").strip()
+        if not room_clean:
+            continue
+
+        object_rows = []
+        if not isinstance(objects, list):
+            objects = []
+
+        for idx, obj in enumerate(objects):
+            if isinstance(obj, str):
+                obj = {"name": obj}
+            if not isinstance(obj, dict):
+                continue
+
+            name = str(obj.get("name") or "").strip()
+            key = str(obj.get("key") or "").strip()
+            category = str(obj.get("category") or "").strip() or "General"
+            qty = _safe_qty(obj.get("qty", 1))
+
+            if not name:
+                name = key.replace("_", " ").title() if key else f"Item {idx + 1}"
+            if not key:
+                key = _slugify(name)
+
+            object_rows.append(
+                {
+                    "key": key,
+                    "name": name,
+                    "category": category,
+                    "qty": qty,
+                }
+            )
+
+        clean[room_clean] = object_rows
+
+    return clean
+
+
+def _template_objects_for_room_name(template_map: dict, room_name: str):
+    if not isinstance(template_map, dict):
+        return []
+    direct = template_map.get(str(room_name or "").strip())
+    if isinstance(direct, list):
+        return direct
+    fallback_key = _template_room_key(room_name)
+    fallback = template_map.get(fallback_key)
+    if isinstance(fallback, list):
+        return fallback
+    return []
+
 def load_projects():
     """Fetch projects visible to the logged-in user (RLS will filter later)."""
     try:
@@ -33,12 +102,14 @@ def load_projects():
         return []
 
 
-def create_project(name: str, rooms=None, template: str = "small_villa"):
+def create_project(name: str, rooms=None, template: str = "small_villa", template_map: dict | None = None):
     """
     Create a project + rooms + default room_objects.
     rooms:
       - if provided: creates these room names (template objects only for matching names)
       - if None/empty: creates rooms from SMALL_VILLA_TEMPLATE keys
+    template_map:
+      - if provided: this template overrides SMALL_VILLA_TEMPLATE
     """
     name_clean = (name or "").strip()
 
@@ -71,12 +142,14 @@ def create_project(name: str, rooms=None, template: str = "small_villa"):
 
         project_id = proj_res.data[0]["id"]
 
+        template_source = _normalize_template_map(template_map) or _normalize_template_map(SMALL_VILLA_TEMPLATE)
+
         # 2) Decide room names
         rooms = rooms or []
         if rooms:
             room_names = rooms
         else:
-            room_names = list(SMALL_VILLA_TEMPLATE.keys())
+            room_names = list(template_source.keys())
 
         # 3) Insert rooms (bulk)
         rooms_payload = [{"project_id": project_id, "name": rname} for rname in room_names]
@@ -89,14 +162,13 @@ def create_project(name: str, rooms=None, template: str = "small_villa"):
             rid = room_row["id"]
             rname = room_row["name"]
 
-            tkey = _template_room_key(rname)
-            for obj in SMALL_VILLA_TEMPLATE.get(tkey, []):
+            for obj in _template_objects_for_room_name(template_source, rname):
                 objects_payload.append({
                     "room_id": rid,
-                    "object_key": obj["key"],
-                    "object_name": obj["name"],
+                    "object_key": str(obj.get("key") or "").strip() or _slugify(obj.get("name") or "item"),
+                    "object_name": str(obj.get("name") or "").strip() or "Item",
                     "category": obj.get("category"),
-                    "qty": int(obj.get("qty", 1)),
+                    "qty": _safe_qty(obj.get("qty", 1)),
                     "status": "unassigned",
                     "material_id": None,
                 })

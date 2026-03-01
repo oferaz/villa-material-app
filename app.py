@@ -2,6 +2,7 @@
 
 import os
 import html
+import json
 from datetime import datetime, timezone
 import streamlit as st
 import pandas as pd
@@ -16,6 +17,13 @@ from embedding import get_embedder
 from auth_ui import require_login, clear_auth_state
 from profiles_manager import get_profile
 from supabase_client import get_supabase
+from user_template_manager import (
+    default_user_template,
+    load_user_template_from_profile,
+    save_user_template,
+    template_dict_from_payload,
+    template_payload_from_dict,
+)
 
 # Supabase-backed managers
 from materials_manager import list_materials, add_private_material, search_materials_semantic
@@ -90,6 +98,22 @@ def _format_ts(ts_value):
         return dt.astimezone().strftime("%Y-%m-%d %H:%M")
     except Exception:
         return text
+
+
+def _template_json_from_map(template_map: dict) -> str:
+    return json.dumps(template_payload_from_dict(template_map), indent=2)
+
+
+def _template_map_from_json(raw_text: str):
+    try:
+        parsed = json.loads(raw_text or "{}")
+    except Exception as e:
+        return {}, f"Invalid JSON: {e}"
+
+    template_map = template_dict_from_payload(parsed)
+    if not template_map:
+        return {}, "Template must include at least one room."
+    return template_map, None
 
 
 def _cart_payload_from_row(project_row: dict | None):
@@ -519,6 +543,17 @@ full_name = profile.get("full_name") or (
     st.session_state.user_email.split("@")[0] if st.session_state.get("user_email") else "User"
 )
 
+user_key = str(user_id or "")
+if st.session_state.get("user_template_owner") != user_key:
+    loaded_template = load_user_template_from_profile(profile)
+    st.session_state.user_template_owner = user_key
+    st.session_state.user_template_map = loaded_template
+    st.session_state.user_template_editor_json = _template_json_from_map(loaded_template)
+elif "user_template_map" not in st.session_state:
+    loaded_template = load_user_template_from_profile(profile)
+    st.session_state.user_template_map = loaded_template
+    st.session_state.user_template_editor_json = _template_json_from_map(loaded_template)
+
 # -----------------------------
 # Sidebar: user area (name + logout + profile editor)
 # -----------------------------
@@ -533,6 +568,9 @@ if st.sidebar.button("Logout"):
         "current_project_id",
         "current_room_id",
         "current_object_id",
+        "user_template_owner",
+        "user_template_map",
+        "user_template_editor_json",
     ])
     st.rerun()
 
@@ -788,6 +826,57 @@ if page == "Projects Workspace":
 
     # Sidebar: Create project (simple + works)
     with st.sidebar.expander("Create New Project", expanded=False):
+        st.markdown("#### My Base Template")
+        st.caption("New projects can start from this template. You can edit room names and object rows in JSON.")
+
+        template_text = st.text_area(
+            "Template JSON",
+            key="user_template_editor_json",
+            height=260,
+            help='Use format: {"rooms":[{"name":"Room","objects":[{"name":"Item","category":"Furniture","qty":1}]}]}',
+        )
+
+        template_buttons = st.columns(3)
+        with template_buttons[0]:
+            if st.button("Apply JSON", key="template_apply_json_btn"):
+                parsed_template, parse_error = _template_map_from_json(template_text)
+                if parse_error:
+                    st.error(parse_error)
+                else:
+                    st.session_state.user_template_map = parsed_template
+                    st.success(f"Loaded template with {len(parsed_template)} room(s).")
+        with template_buttons[1]:
+            if st.button(
+                "Save as my template",
+                key="template_save_profile_btn",
+                disabled=not (access_token and user_id),
+            ):
+                parsed_template, parse_error = _template_map_from_json(template_text)
+                if parse_error:
+                    st.error(parse_error)
+                else:
+                    ok, err = save_user_template(access_token, user_id, profile, parsed_template)
+                    if ok:
+                        st.session_state.user_template_map = parsed_template
+                        st.success("Template saved to your profile.")
+                    else:
+                        st.error(f"Could not save template: {err}")
+        with template_buttons[2]:
+            if st.button("Reset default", key="template_reset_default_btn"):
+                reset_template = default_user_template()
+                st.session_state.user_template_map = reset_template
+                st.session_state.user_template_editor_json = _template_json_from_map(reset_template)
+                st.success("Reset editor to default villa template.")
+
+        active_template_map = st.session_state.get("user_template_map") or default_user_template()
+        active_room_names = list(active_template_map.keys())
+        st.caption(
+            f"Active template: {len(active_room_names)} room(s). "
+            f"{', '.join(active_room_names[:5])}{' ...' if len(active_room_names) > 5 else ''}"
+        )
+        use_my_template = st.checkbox("Use my base template for new projects", value=True, key="use_my_template_for_new_project")
+
+        st.markdown("---")
         new_proj = st.text_input("Project Name", key="new_proj_name")
 
         predefined = [
@@ -818,7 +907,15 @@ if page == "Projects Workspace":
             if not new_proj.strip():
                 st.warning("Please enter a project name.")
             else:
-                create_project(new_proj.strip(), all_rooms)
+                rooms_arg = all_rooms if all_rooms else None
+                if use_my_template:
+                    create_project(
+                        new_proj.strip(),
+                        rooms=rooms_arg,
+                        template_map=st.session_state.get("user_template_map") or default_user_template(),
+                    )
+                else:
+                    create_project(new_proj.strip(), rooms=rooms_arg)
                 st.rerun()
 
     # pick selected project (by id)
