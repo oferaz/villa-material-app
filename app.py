@@ -112,11 +112,13 @@ def render_client_portal(share_token: str):
     room_objects_map = load_room_objects_batch(room_ids) if room_ids else {}
 
     material_prices = {}
+    material_lookup = {}
     try:
         for m in list_materials(None):
             mid = m.get("id")
             if mid is None:
                 continue
+            material_lookup[str(mid)] = m
             try:
                 price = float(m.get("price")) if m.get("price") is not None else None
             except Exception:
@@ -231,6 +233,7 @@ def render_client_portal(share_token: str):
                 oid = str(obj["id"])
                 status = obj.get("status") or "unassigned"
                 is_assigned = bool(obj.get("material_id"))
+                material_row = material_lookup.get(str(obj.get("material_id"))) if is_assigned else None
 
                 with st.container(border=True):
                     header_cols = st.columns([0.55, 0.15, 0.3])
@@ -243,6 +246,34 @@ def render_client_portal(share_token: str):
                     with header_cols[2]:
                         st.caption("Status")
                         st.write(status)
+
+                    if is_assigned:
+                        st.caption("Assigned material")
+                        if material_row:
+                            material_name = material_row.get("name") or "Material"
+                            material_category = material_row.get("category") or "Uncategorized"
+                            material_price = material_row.get("price")
+                            material_line = f"{material_name} ({material_category})"
+                            if material_price is not None:
+                                try:
+                                    material_line += f" - {float(material_price):,.0f} THB"
+                                except Exception:
+                                    pass
+                            st.write(material_line)
+
+                            image_url = (material_row.get("image_url") or "").strip()
+                            if image_url:
+                                st.image(image_url, width=320, caption=material_name)
+                            else:
+                                st.caption("No product image available.")
+
+                            product_link = (material_row.get("link") or "").strip()
+                            if product_link:
+                                st.markdown(f"[Open product link]({product_link})")
+                            else:
+                                st.caption("No product link available.")
+                        else:
+                            st.caption("Material details are not available.")
 
                     btn_cols = st.columns(2)
                     with btn_cols[0]:
