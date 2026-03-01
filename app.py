@@ -343,7 +343,17 @@ if page == "Projects":
             if project_missing_prices:
                 st.caption(f"{project_missing_prices} assigned objects have no material price and are excluded from spend.")
 
-            with st.expander("Manage budgets", expanded=False):
+            budget_panel_key = f"show_budget_panel_{pid}"
+            if budget_panel_key not in st.session_state:
+                st.session_state[budget_panel_key] = False
+
+            panel_toggle_label = "Manage Budget"
+            if st.button(panel_toggle_label, type="primary", key=f"toggle_budget_panel_{pid}"):
+                st.session_state[budget_panel_key] = not st.session_state[budget_panel_key]
+
+            if st.session_state[budget_panel_key]:
+                st.info("Set the overall project budget and optional room budgets.")
+
                 proj_default = float(project_budget) if project_budget is not None else 0.0
                 proj_budget_input = st.number_input(
                     "Project budget (THB)",
@@ -378,11 +388,20 @@ if page == "Projects":
                     if include_room_budget:
                         edited_room_budgets[rid] = room_budget_value
 
+                total_room_budget = sum(edited_room_budgets.values())
+                st.caption(f"Total enabled room budgets: {total_room_budget:,.0f} THB")
+
                 save_col, clear_col = st.columns([1, 1])
                 with save_col:
                     if st.button("Save budgets", type="primary", key=f"save_budgets_{pid}"):
                         next_project_budget = proj_budget_input if set_proj_budget else None
-                        if save_project_budget(pid, next_project_budget, edited_room_budgets):
+                        if next_project_budget is not None and total_room_budget > next_project_budget:
+                            st.error(
+                                "Total room budgets cannot exceed the project budget. "
+                                f"Room budgets: {total_room_budget:,.0f} THB, "
+                                f"Project budget: {next_project_budget:,.0f} THB."
+                            )
+                        elif save_project_budget(pid, next_project_budget, edited_room_budgets):
                             st.success("Budgets saved.")
                             st.rerun()
                 with clear_col:
@@ -418,13 +437,13 @@ if page == "Projects":
                             rm = room_spend_map.get(str(rid), {"spend": 0.0, "missing_price": 0})
                             room_budget = _safe_float(room_budgets.get(str(rid)))
                             if room_budget is None:
-                                st.caption(f"Spend: {rm['spend']:,.0f} THB â€¢ Room budget not set")
+                                st.caption(f"Spend: {rm['spend']:,.0f} THB - Room budget not set")
                             else:
                                 delta = room_budget - rm["spend"]
                                 if delta >= 0:
-                                    st.caption(f"Spend: {rm['spend']:,.0f} / {room_budget:,.0f} THB â€¢ {delta:,.0f} THB left")
+                                    st.caption(f"Spend: {rm['spend']:,.0f} / {room_budget:,.0f} THB - {delta:,.0f} THB left")
                                 else:
-                                    st.caption(f"Spend: {rm['spend']:,.0f} / {room_budget:,.0f} THB â€¢ Over by {abs(delta):,.0f} THB")
+                                    st.caption(f"Spend: {rm['spend']:,.0f} / {room_budget:,.0f} THB - Over by {abs(delta):,.0f} THB")
                             if rm["missing_price"]:
                                 st.caption(f"{rm['missing_price']} assigned objects have no price")
 
@@ -444,10 +463,10 @@ if page == "Projects":
                     current_room_budget = _safe_float(room_budgets.get(str(rid)))
                     current_room_metrics = room_spend_map.get(str(rid), {"spend": 0.0, "missing_price": 0})
                     if current_room_budget is None:
-                        st.caption(f"Budget: not set â€¢ Estimated spend: {current_room_metrics['spend']:,.0f} THB")
+                        st.caption(f"Budget: not set - Estimated spend: {current_room_metrics['spend']:,.0f} THB")
                     else:
                         st.caption(
-                            f"Budget: {current_room_budget:,.0f} THB â€¢ Estimated spend: {current_room_metrics['spend']:,.0f} THB"
+                            f"Budget: {current_room_budget:,.0f} THB - Estimated spend: {current_room_metrics['spend']:,.0f} THB"
                         )
                     if current_room_metrics["missing_price"]:
                         st.caption(f"{current_room_metrics['missing_price']} assigned objects in this room have no price.")
