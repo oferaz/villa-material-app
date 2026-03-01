@@ -227,6 +227,36 @@ def inject_custom_css():
         border: 1px solid rgba(0,0,0,0.15) !important;
         }
 
+        /* Streamlit/BaseWeb input wrappers (text input + text area) */
+        [data-testid="stTextInputRootElement"] > div,
+        [data-testid="stTextAreaRootElement"] > div,
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="base-input"] {
+        background: rgba(255,255,255,0.95) !important;
+        border: 1px solid rgba(0,0,0,0.15) !important;
+        }
+
+        [data-testid="stTextInputRootElement"] input,
+        [data-testid="stTextAreaRootElement"] textarea,
+        div[data-baseweb="input"] input,
+        div[data-baseweb="base-input"] textarea {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        caret-color: #111827 !important;
+        background: transparent !important;
+        }
+
+        /* Disabled fields (e.g. share link text input) */
+        [data-testid="stTextInputRootElement"] input:disabled,
+        [data-testid="stTextAreaRootElement"] textarea:disabled,
+        div[data-baseweb="input"] input:disabled,
+        div[data-baseweb="base-input"] textarea:disabled {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        opacity: 1 !important;
+        background: rgba(248,250,252,0.98) !important;
+        }
+
         /* Make bordered containers readable */
         div[data-testid="stVerticalBlockBorderWrapper"] {
         background: rgba(255,255,255,0.92) !important;
