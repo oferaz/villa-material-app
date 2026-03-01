@@ -3,10 +3,119 @@ import os
 import re
 import time
 import json
+import base64
 from supabase_client import get_supabase
 from data_utils import APP_DATA_DIR
 
 AUTH_SESSION_FILE = os.path.join(APP_DATA_DIR, "auth_session.json")
+
+
+def _jwt_exp_epoch(access_token: str | None) -> float | None:
+    token = (access_token or "").strip()
+    if not token:
+        return None
+    parts = token.split(".")
+    if len(parts) < 2:
+        return None
+    try:
+        payload = parts[1]
+        payload += "=" * (-len(payload) % 4)
+        decoded = base64.urlsafe_b64decode(payload.encode("utf-8")).decode("utf-8")
+        data = json.loads(decoded)
+        exp = data.get("exp")
+        if exp is None:
+            return None
+        return float(exp)
+    except Exception:
+        return None
+
+
+def _session_expiry_epoch(session) -> float | None:
+    expires_at = getattr(session, "expires_at", None)
+    if expires_at is not None:
+        try:
+            return float(expires_at)
+        except Exception:
+            pass
+
+    expires_in = getattr(session, "expires_in", None)
+    if expires_in is not None:
+        try:
+            return time.time() + float(expires_in)
+        except Exception:
+            return None
+    return None
+
+
+def _set_auth_state(session, user) -> bool:
+    access_token = getattr(session, "access_token", None)
+    if not access_token or not user:
+        return False
+
+    st.session_state.sb_access_token = access_token
+    st.session_state.user_id = getattr(user, "id", None)
+    st.session_state.user_email = getattr(user, "email", None)
+
+    refresh_token = getattr(session, "refresh_token", None)
+    if refresh_token:
+        st.session_state.sb_refresh_token = refresh_token
+    else:
+        st.session_state.pop("sb_refresh_token", None)
+
+    expires_at = _session_expiry_epoch(session)
+    if expires_at is not None:
+        st.session_state.sb_access_expires_at = float(expires_at)
+    else:
+        st.session_state.pop("sb_access_expires_at", None)
+
+    _save_persisted_session(session, user)
+    return True
+
+
+def _access_token_needs_refresh() -> bool:
+    access_token = st.session_state.get("sb_access_token")
+    if not access_token:
+        return False
+
+    # Refresh one minute before expiration.
+    threshold = time.time() + 60
+    expires_at = st.session_state.get("sb_access_expires_at")
+    if expires_at is None:
+        expires_at = _jwt_exp_epoch(access_token)
+    if expires_at is None:
+        return False
+    try:
+        return float(expires_at) <= threshold
+    except Exception:
+        return False
+
+
+def _refresh_session_if_needed(force: bool = False) -> bool:
+    access_token = st.session_state.get("sb_access_token")
+    if not access_token:
+        return False
+
+    if not force and not _access_token_needs_refresh():
+        return True
+
+    refresh_token = st.session_state.get("sb_refresh_token")
+    if not refresh_token:
+        # Session is expiring/expired and cannot be refreshed.
+        clear_auth_state()
+        return False
+
+    try:
+        sb = get_supabase()
+        res = sb.auth.refresh_session(refresh_token)
+        session = res.session
+        user = res.user
+        if not _set_auth_state(session, user):
+            clear_auth_state()
+            return False
+        return True
+    except Exception:
+        clear_auth_state()
+        return False
 
 def _auth_bypass_enabled() -> bool:
     raw = os.getenv("AUTH_BYPASS")
@@ -102,18 +211,21 @@ def _try_restore_login_from_disk() -> bool:
             _clear_persisted_session()
             return False
 
-        st.session_state.sb_access_token = session.access_token
-        st.session_state.user_id = user.id
-        st.session_state.user_email = user.email
-        _save_persisted_session(session, user)
-        return True
+        return _set_auth_state(session, user)
     except Exception:
         _clear_persisted_session()
         return False
 
 
 def clear_auth_state(extra_keys: list[str] | None = None) -> None:
-    keys = ["sb_access_token", "user_id", "user_email", "pending_email"]
+    keys = [
+        "sb_access_token",
+        "sb_refresh_token",
+        "sb_access_expires_at",
+        "user_id",
+        "user_email",
+        "pending_email",
+    ]
     if extra_keys:
         keys.extend(extra_keys)
     for k in keys:
@@ -126,7 +238,7 @@ def require_login():
         st.session_state.setdefault("user_id", None)
         return
 
-    if st.session_state.get("sb_access_token"):
+    if st.session_state.get("sb_access_token") and _refresh_session_if_needed():
         return
 
     if _try_restore_login_from_disk():
@@ -182,10 +294,9 @@ def require_login():
             session = res.session
             user = res.user
 
-            st.session_state.sb_access_token = session.access_token
-            st.session_state.user_id = user.id
-            st.session_state.user_email = user.email
-            _save_persisted_session(session, user)
+            if not _set_auth_state(session, user):
+                st.error("Login session could not be established. Please try again.")
+                st.stop()
 
             # create profile if needed
             sb_authed = get_supabase(session.access_token)
