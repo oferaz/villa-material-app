@@ -18,6 +18,7 @@ from supabase_client import get_supabase
 
 # Supabase-backed managers
 from materials_manager import list_materials, add_private_material, search_materials_semantic
+from link_scraper import extract_material_payload_from_url
 from project_manager import (
     load_projects,
     create_project,
@@ -992,13 +993,23 @@ if page == "Projects":
                                 material_labels[current_material_id] = f"Current material ({current_material_id[:8]})"
                             select_options.append(current_material_id)
 
-                        selected_index = select_options.index(current_material_id) if current_material_id in select_options else 0
+                        select_key = f"obj_material_select_{oid}"
+                        pending_select_key = f"obj_material_select_pending_{oid}"
+
+                        pending_material_id = st.session_state.pop(pending_select_key, None)
+                        if pending_material_id in select_options:
+                            st.session_state[select_key] = pending_material_id
+
+                        if select_key not in st.session_state:
+                            st.session_state[select_key] = current_material_id if current_material_id in select_options else None
+                        elif st.session_state[select_key] not in select_options:
+                            st.session_state[select_key] = current_material_id if current_material_id in select_options else None
+
                         selected_material_id = st.selectbox(
                             "Matched materials",
                             options=select_options,
-                            index=selected_index,
                             format_func=lambda x: "None" if x is None else material_labels.get(x, x),
-                            key=f"obj_material_select_{oid}",
+                            key=select_key,
                         )
 
                         if material_error:
@@ -1041,7 +1052,7 @@ if page == "Projects":
                                             st.caption(f"{title} (no image)")
                                         if mid:
                                             if st.button("Select", key=f"obj_pick_mat_{oid}_{mid}"):
-                                                st.session_state[f"obj_material_select_{oid}"] = mid
+                                                st.session_state[pending_select_key] = mid
                                                 st.rerun()
                                             if str(selected_material_id) == mid:
                                                 st.caption("Selected")
@@ -1187,6 +1198,92 @@ elif page == "My Materials":
             st.rerun()
         if not (access_token and user_id):
             st.caption("Debug mode: login is bypassed, so creating private materials is disabled.")
+
+    with st.expander("Add from product link", expanded=False):
+        source_url = st.text_input(
+            "Product URL",
+            key="mat_link_source_url",
+            placeholder="https://example.com/product/123",
+        ).strip()
+
+        fetch_disabled = not bool(source_url)
+        quick_save_disabled = fetch_disabled or not (access_token and user_id)
+
+        col_fetch, col_quick = st.columns(2)
+        if col_fetch.button("Fetch from URL", key="mat_link_fetch_btn", disabled=fetch_disabled):
+            payload = extract_material_payload_from_url(source_url)
+            if "error" in payload:
+                st.error(payload["error"])
+            else:
+                st.session_state["mat_link_payload"] = payload
+                st.session_state["mat_link_name"] = payload.get("name") or ""
+                st.session_state["mat_link_desc"] = payload.get("description") or ""
+                st.session_state["mat_link_cat"] = payload.get("category") or ""
+                st.session_state["mat_link_price"] = float(payload.get("price") or 0.0)
+                st.session_state["mat_link_link"] = payload.get("link") or source_url
+                st.session_state["mat_link_img"] = payload.get("image_url") or ""
+                st.session_state["mat_link_tags"] = ", ".join(payload.get("tags") or [])
+                st.success("Fetched product details. Review and save.")
+
+        if col_quick.button("Fetch + Save", key="mat_link_quick_save_btn", disabled=quick_save_disabled):
+            payload = extract_material_payload_from_url(source_url)
+            if "error" in payload:
+                st.error(payload["error"])
+            else:
+                add_private_material(
+                    access_token=access_token,
+                    user_id=user_id,
+                    payload=payload,
+                )
+                load_materials_cached.clear()
+                search_materials_cached.clear()
+                st.success("Added to your private library from link.")
+                st.rerun()
+
+        fetched_payload = st.session_state.get("mat_link_payload")
+        if fetched_payload:
+            if (st.session_state.get("mat_link_img") or "").startswith("http"):
+                st.image(st.session_state["mat_link_img"], width=260)
+
+            st.text_input("Name", key="mat_link_name")
+            st.text_area("Description", key="mat_link_desc")
+            st.text_input("Category", key="mat_link_cat")
+            st.number_input("Price (THB)", min_value=0.0, step=10.0, key="mat_link_price")
+            st.text_input("Source Link", key="mat_link_link")
+            st.text_input("Image URL", key="mat_link_img")
+            st.text_input("Tags (comma separated)", key="mat_link_tags")
+
+            save_disabled = not (
+                st.session_state.get("mat_link_name", "").strip() and access_token and user_id
+            )
+            if st.button("Save fetched material", type="primary", key="mat_link_save_btn", disabled=save_disabled):
+                tags = [
+                    t.strip()
+                    for t in str(st.session_state.get("mat_link_tags") or "").split(",")
+                    if t.strip()
+                ]
+                add_private_material(
+                    access_token=access_token,
+                    user_id=user_id,
+                    payload={
+                        "name": st.session_state.get("mat_link_name", "").strip(),
+                        "description": st.session_state.get("mat_link_desc", "").strip() or None,
+                        "category": st.session_state.get("mat_link_cat", "").strip() or None,
+                        "price": float(st.session_state.get("mat_link_price") or 0.0)
+                        if st.session_state.get("mat_link_price")
+                        else None,
+                        "link": st.session_state.get("mat_link_link", "").strip() or None,
+                        "image_url": st.session_state.get("mat_link_img", "").strip() or None,
+                        "tags": tags,
+                    },
+                )
+                load_materials_cached.clear()
+                search_materials_cached.clear()
+                st.success("Saved fetched material to your private library.")
+                st.rerun()
+
+            if not (access_token and user_id):
+                st.caption("Login is required to save fetched materials.")
 
     q = st.text_input("Search my library", placeholder="type to filter by name/description/tags")
 
