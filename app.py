@@ -96,13 +96,15 @@ def render_client_portal(share_token: str):
     project_id = str(project.get("id"))
     st.caption(f"Project: {project.get('name') or 'Untitled'}")
 
+    if "client_portal_name" not in st.session_state:
+        st.session_state["client_portal_name"] = "Client"
+
     client_name = st.text_input(
         "Your name",
-        value=st.session_state.get("client_name", "Client"),
-        key="client_name",
+        key="client_portal_name",
         help="Used when saving your comments.",
     ).strip()
-    st.session_state.client_name = client_name or "Client"
+    client_actor_name = client_name or "Client"
 
     rooms = load_project_rooms(project_id)
     room_ids = [r["id"] for r in rooms]
@@ -208,7 +210,7 @@ def render_client_portal(share_token: str):
                         share_token,
                         rid,
                         approve_all=True,
-                        actor_name=st.session_state.client_name,
+                        actor_name=client_actor_name,
                     )
                     (st.success if ok else st.error)(msg)
                     if ok:
@@ -219,7 +221,7 @@ def render_client_portal(share_token: str):
                         share_token,
                         rid,
                         approve_all=False,
-                        actor_name=st.session_state.client_name,
+                        actor_name=client_actor_name,
                     )
                     (st.success if ok else st.error)(msg)
                     if ok:
@@ -253,7 +255,7 @@ def render_client_portal(share_token: str):
                                 share_token,
                                 oid,
                                 "client_approved",
-                                actor_name=st.session_state.client_name,
+                                actor_name=client_actor_name,
                             )
                             (st.success if ok else st.error)(msg)
                             if ok:
@@ -268,7 +270,7 @@ def render_client_portal(share_token: str):
                                 share_token,
                                 oid,
                                 "selected",
-                                actor_name=st.session_state.client_name,
+                                actor_name=client_actor_name,
                             )
                             (st.success if ok else st.error)(msg)
                             if ok:
@@ -310,7 +312,7 @@ def render_client_portal(share_token: str):
                         ok, msg = append_object_comment_by_share_token(
                             share_token=share_token,
                             object_id=oid,
-                            author_name=st.session_state.client_name,
+                            author_name=client_actor_name,
                             comment=comment_text,
                         )
                         (st.success if ok else st.error)(msg)
