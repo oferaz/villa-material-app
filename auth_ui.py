@@ -15,6 +15,18 @@ def _auth_bypass_enabled() -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _session_persistence_enabled() -> bool:
+    """
+    Disk-backed auth session persistence is unsafe in multi-user deployments
+    (for example Streamlit Cloud), because one server-side file is shared by
+    all visitors. Keep it off by default.
+    """
+    raw = os.getenv("AUTH_PERSIST_SESSION", "0")
+    if hasattr(st, "secrets"):
+        raw = st.secrets.get("AUTH_PERSIST_SESSION", raw)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _parse_retry_seconds(error_text: str) -> int | None:
     if not error_text:
         return None
@@ -28,6 +40,9 @@ def _parse_retry_seconds(error_text: str) -> int | None:
 
 
 def _save_persisted_session(session, user) -> None:
+    if not _session_persistence_enabled():
+        return
+
     refresh_token = getattr(session, "refresh_token", None)
     if not refresh_token:
         return
@@ -45,6 +60,11 @@ def _save_persisted_session(session, user) -> None:
 
 
 def _load_persisted_session() -> dict | None:
+    if not _session_persistence_enabled():
+        # Ensure stale shared credentials from older versions are removed.
+        _clear_persisted_session()
+        return None
+
     if not os.path.exists(AUTH_SESSION_FILE):
         return None
     try:
