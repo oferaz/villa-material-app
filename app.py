@@ -883,40 +883,40 @@ if page == "Projects Workspace":
             share_enabled = bool(share_meta.get("enabled"))
             share_link = _build_share_url(share_token_value) if share_token_value else ""
 
-            with st.expander("Customer link", expanded=False):
-                st.caption("Send this link to your customer so they can review only this project.")
+            with st.expander("Create Shareable Customer Link", expanded=False):
+                st.caption("Create a shareable link so your customer can view only this project.")
 
                 controls = st.columns(3)
                 with controls[0]:
-                    if st.button("Generate link", key=f"share_generate_{pid}", type="primary"):
+                    if st.button("Create link", key=f"share_generate_{pid}", type="primary"):
                         new_token = rotate_project_share_token(pid)
                         if new_token:
-                            st.success("Customer link generated.")
+                            st.success("Shareable customer link created.")
                             st.rerun()
                 with controls[1]:
                     enable_value = st.checkbox(
-                        "Link enabled",
+                        "Allow customer access",
                         value=share_enabled,
                         key=f"share_enabled_{pid}",
                         disabled=not bool(share_token_value),
                     )
                     if share_token_value and enable_value != share_enabled:
                         if set_project_share_enabled(pid, enable_value):
-                            st.success("Share link status updated.")
+                            st.success("Customer link access updated.")
                             st.rerun()
                 with controls[2]:
-                    if st.button("Rotate token", key=f"share_rotate_{pid}", disabled=not bool(share_token_value)):
+                    if st.button("Regenerate link", key=f"share_rotate_{pid}", disabled=not bool(share_token_value)):
                         new_token = rotate_project_share_token(pid)
                         if new_token:
-                            st.success("Customer link rotated.")
+                            st.success("Shareable customer link regenerated.")
                             st.rerun()
 
                 if share_link:
-                    st.text_input("Share URL", value=share_link, key=f"share_url_{pid}", disabled=True)
+                    st.text_input("Customer View Link", value=share_link, key=f"share_url_{pid}", disabled=True)
                     if share_link.startswith("?share="):
                         st.caption("Set PUBLIC_APP_URL in secrets/env to generate a full absolute URL.")
                 else:
-                    st.info("No customer link yet. Click 'Generate link'.")
+                    st.info("No customer link yet. Click 'Create link'.")
             project_material_rows = load_materials_cached(access_token) if access_token else []
             material_name_map = {str(m.get("id")): (m.get("name") or "Material") for m in project_material_rows if m.get("id")}
             material_lookup = {str(m.get("id")): m for m in project_material_rows if m.get("id")}
