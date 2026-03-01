@@ -8,8 +8,37 @@ def list_materials(access_token: str):
     # res.data should be a list
     return res.data or []
 
+
+def _material_text_for_embedding(payload: dict) -> str:
+    tags = payload.get("tags") or []
+    if isinstance(tags, list):
+        tags_text = " ".join(str(t).strip() for t in tags if str(t).strip())
+    else:
+        tags_text = str(tags).strip()
+
+    parts = [
+        str(payload.get("name") or "").strip(),
+        str(payload.get("category") or "").strip(),
+        str(payload.get("description") or "").strip(),
+        tags_text,
+    ]
+    return " ".join(p for p in parts if p).strip()
+
+
+def _try_build_embedding(payload: dict):
+    text = _material_text_for_embedding(payload)
+    if not text:
+        return None
+    try:
+        model = get_embedder()
+        return model.encode(text, convert_to_numpy=True).tolist()
+    except Exception:
+        return None
+
+
 def add_private_material(access_token: str, user_id: str, payload: dict):
     sb = get_supabase(access_token)
+    embedding = _try_build_embedding(payload)
 
     row = {
         "owner_id": user_id,
@@ -22,8 +51,15 @@ def add_private_material(access_token: str, user_id: str, payload: dict):
         "image_url": payload.get("image_url"),
         "tags": payload.get("tags", []),  # jsonb list
     }
+    if embedding is not None:
+        row["embedding"] = embedding
 
-    res = sb.table("materials").insert(row).execute()
+    try:
+        res = sb.table("materials").insert(row).execute()
+    except Exception:
+        # Backward compatibility: allow insert when DB has no embedding column yet.
+        row.pop("embedding", None)
+        res = sb.table("materials").insert(row).execute()
 
     if not res.data:
         # This usually means RLS blocked it or the token isn't attached
