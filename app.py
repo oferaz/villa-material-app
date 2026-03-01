@@ -1149,7 +1149,7 @@ elif page == "Search Catalog":
         st.rerun()
 
     if embeddings is None or df.empty:
-        st.warning("Catalog is empty or embeddings are missing. Add products or re-index the catalog.")
+        st.warning("Catalog is empty or embeddings are missing. Add products and refresh the catalog.")
     else:
         query = st.text_input("What material or item are you looking for?", placeholder="e.g. light wood bench for outdoor")
         if query:
