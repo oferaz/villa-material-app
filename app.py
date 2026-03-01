@@ -564,7 +564,7 @@ st.markdown(
 # Sidebar Navigation
 # -----------------------------
 st.sidebar.markdown("### Navigation")
-page = st.sidebar.radio("", ["Projects", "Search Catalog", "My Materials"], label_visibility="collapsed")
+page = st.sidebar.radio("", ["Projects Workspace", "Materials Gallery", "My Materials"], label_visibility="collapsed")
 
 # -----------------------------
 # Shared: Load embedding model + catalog
@@ -780,8 +780,8 @@ def _room_spend(objects, material_prices):
 # -----------------------------
 # Page: Projects
 # -----------------------------
-if page == "Projects":
-    _render_editorial_title("Design + Purchasing Workspace", "Projects")
+if page == "Projects Workspace":
+    _render_editorial_title("Projects Workspace", "Projects")
 
     projects = load_projects()
     project_statuses = load_projects_statuses([p["id"] for p in projects]) if projects else {}
@@ -1717,10 +1717,10 @@ if page == "Projects":
                                 st.rerun()
 
 # -----------------------------
-# Page: Search Catalog
+# Page: Materials Gallery
 # -----------------------------
-elif page == "Search Catalog":
-    st.title("Search Catalog")
+elif page == "Materials Gallery":
+    st.title("Materials Gallery")
 
     if st.button("Refresh Product Catalog"):
         st.cache_data.clear()
