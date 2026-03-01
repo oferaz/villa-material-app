@@ -22,8 +22,11 @@ from project_manager import (
     create_project,
     load_project_rooms,
     load_room_objects,
+    load_room_objects_batch,
     load_projects_statuses,
     load_room_statuses,
+    get_project_budget_from_row,
+    save_project_budget,
 )
 
 # -----------------------------
@@ -128,6 +131,49 @@ def search_materials_cached(token: str | None, query: str, limit: int = 20):
     if not token:
         return []
     return search_materials_semantic(token, query, limit=limit)
+
+
+def _safe_float(value):
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _room_spend(objects, material_prices):
+    spend = 0.0
+    assigned = 0
+    priced = 0
+    missing_price = 0
+
+    for o in (objects or []):
+        mid = o.get("material_id")
+        if not mid:
+            continue
+        assigned += 1
+
+        price = material_prices.get(str(mid))
+        qty = o.get("qty") or 1
+        try:
+            qty = float(qty)
+        except Exception:
+            qty = 1.0
+
+        if price is None:
+            missing_price += 1
+            continue
+
+        spend += qty * price
+        priced += 1
+
+    return {
+        "spend": spend,
+        "assigned": assigned,
+        "priced": priced,
+        "missing_price": missing_price,
+    }
 
 # -----------------------------
 # Page: Projects
@@ -237,15 +283,117 @@ if page == "Projects":
             c3.metric("Assigned", f"{assigned}/{total}" if total else "0/0")
             c4.metric("Client OK", f"{client_ok}/{total}" if total else "0/0")
 
+            rooms = load_project_rooms(pid)
+            room_statuses = load_room_statuses([r["id"] for r in rooms]) if rooms else {}
+
+            budget_cfg = get_project_budget_from_row(proj)
+            project_budget = budget_cfg.get("project")
+            room_budgets = budget_cfg.get("rooms", {})
+
+            materials_rows = load_materials_cached(access_token) if access_token else []
+            material_prices = {}
+            for m in materials_rows:
+                mid = m.get("id")
+                if mid is None:
+                    continue
+                price = _safe_float(m.get("price"))
+                if price is not None:
+                    material_prices[str(mid)] = price
+
+            room_ids = [r["id"] for r in rooms]
+            room_objects_map = load_room_objects_batch(room_ids) if room_ids else {}
+
+            room_spend_map = {}
+            project_spend = 0.0
+            project_missing_prices = 0
+            for rid_iter in room_ids:
+                metrics = _room_spend(room_objects_map.get(str(rid_iter), []), material_prices)
+                room_spend_map[str(rid_iter)] = metrics
+                project_spend += metrics["spend"]
+                project_missing_prices += metrics["missing_price"]
+
             st.markdown("#### Overall progress")
             st.progress((assigned / total) if total else 0.0)
             st.caption(f"Designer approved: {designer_ok}/{total} • Client approved: {client_ok}/{total}")
 
             st.markdown("---")
+            st.markdown("#### Budget")
+
+            budget_cols = st.columns([0.34, 0.33, 0.33])
+            budget_cols[0].metric("Estimated Spend", f"{project_spend:,.0f} THB")
+            budget_cols[1].metric("Project Budget", f"{project_budget:,.0f} THB" if project_budget is not None else "Not set")
+            if project_budget is None:
+                budget_cols[2].metric("Remaining", "Not set")
+            else:
+                budget_cols[2].metric("Remaining", f"{(project_budget - project_spend):,.0f} THB")
+
+            if project_budget is not None:
+                if project_budget > 0:
+                    budget_ratio = project_spend / project_budget
+                else:
+                    budget_ratio = 1.0 if project_spend > 0 else 0.0
+                st.progress(max(0.0, min(1.0, budget_ratio)))
+                if project_spend > project_budget:
+                    st.warning(f"Over budget by {(project_spend - project_budget):,.0f} THB")
+                else:
+                    st.caption(f"Within budget by {(project_budget - project_spend):,.0f} THB")
+            else:
+                st.caption("Set a project budget to track spend against target.")
+
+            if project_missing_prices:
+                st.caption(f"{project_missing_prices} assigned objects have no material price and are excluded from spend.")
+
+            with st.expander("Manage budgets", expanded=False):
+                proj_default = float(project_budget) if project_budget is not None else 0.0
+                proj_budget_input = st.number_input(
+                    "Project budget (THB)",
+                    min_value=0.0,
+                    value=proj_default,
+                    step=1000.0,
+                    key=f"project_budget_input_{pid}",
+                )
+                set_proj_budget = st.checkbox(
+                    "Enable project budget",
+                    value=(project_budget is not None),
+                    key=f"enable_project_budget_{pid}",
+                )
+
+                st.markdown("Room budgets (optional)")
+                edited_room_budgets = {}
+                for r in rooms:
+                    rid = str(r["id"])
+                    current_room_budget = _safe_float(room_budgets.get(rid))
+                    room_budget_value = st.number_input(
+                        f"{r.get('name', 'Room')} budget (THB)",
+                        min_value=0.0,
+                        value=float(current_room_budget) if current_room_budget is not None else 0.0,
+                        step=500.0,
+                        key=f"room_budget_input_{pid}_{rid}",
+                    )
+                    include_room_budget = st.checkbox(
+                        f"Enable {r.get('name', 'Room')} budget",
+                        value=(current_room_budget is not None),
+                        key=f"room_budget_enabled_{pid}_{rid}",
+                    )
+                    if include_room_budget:
+                        edited_room_budgets[rid] = room_budget_value
+
+                save_col, clear_col = st.columns([1, 1])
+                with save_col:
+                    if st.button("Save budgets", type="primary", key=f"save_budgets_{pid}"):
+                        next_project_budget = proj_budget_input if set_proj_budget else None
+                        if save_project_budget(pid, next_project_budget, edited_room_budgets):
+                            st.success("Budgets saved.")
+                            st.rerun()
+                with clear_col:
+                    if st.button("Clear all budgets", key=f"clear_budgets_{pid}"):
+                        if save_project_budget(pid, None, {}):
+                            st.success("All budgets cleared.")
+                            st.rerun()
+
+            st.markdown("---")
             st.markdown("#### Rooms")
 
-            rooms = load_project_rooms(pid)
-            room_statuses = load_room_statuses([r["id"] for r in rooms]) if rooms else {}
             if not rooms:
                 st.info("No rooms in this project yet.")
                 objs = []
@@ -267,6 +415,18 @@ if page == "Projects":
                             st.markdown(f"**{rname}**")
                             st.caption(f"{ra}/{rt} assigned • {rc}/{rt} client ok")
                             st.progress(pct)
+                            rm = room_spend_map.get(str(rid), {"spend": 0.0, "missing_price": 0})
+                            room_budget = _safe_float(room_budgets.get(str(rid)))
+                            if room_budget is None:
+                                st.caption(f"Spend: {rm['spend']:,.0f} THB â€¢ Room budget not set")
+                            else:
+                                delta = room_budget - rm["spend"]
+                                if delta >= 0:
+                                    st.caption(f"Spend: {rm['spend']:,.0f} / {room_budget:,.0f} THB â€¢ {delta:,.0f} THB left")
+                                else:
+                                    st.caption(f"Spend: {rm['spend']:,.0f} / {room_budget:,.0f} THB â€¢ Over by {abs(delta):,.0f} THB")
+                            if rm["missing_price"]:
+                                st.caption(f"{rm['missing_price']} assigned objects have no price")
 
                             if st.button("Open room", key=f"open_room_{rid}"):
                                 st.session_state.current_room_id = rid
@@ -280,6 +440,17 @@ if page == "Projects":
                     rid = st.session_state.current_room_id
                     room = next((x for x in rooms if str(x["id"]) == str(rid)), None)
                     st.markdown(f"### 🧩 Room: {room.get('name') if room else ''}")
+
+                    current_room_budget = _safe_float(room_budgets.get(str(rid)))
+                    current_room_metrics = room_spend_map.get(str(rid), {"spend": 0.0, "missing_price": 0})
+                    if current_room_budget is None:
+                        st.caption(f"Budget: not set â€¢ Estimated spend: {current_room_metrics['spend']:,.0f} THB")
+                    else:
+                        st.caption(
+                            f"Budget: {current_room_budget:,.0f} THB â€¢ Estimated spend: {current_room_metrics['spend']:,.0f} THB"
+                        )
+                    if current_room_metrics["missing_price"]:
+                        st.caption(f"{current_room_metrics['missing_price']} assigned objects in this room have no price.")
 
                     objs = load_room_objects(rid)
                     if not objs:

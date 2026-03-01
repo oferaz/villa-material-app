@@ -117,7 +117,10 @@ def get_current_cart(projects, project_id: str):
     """Return cart for the selected project id from the provided list."""
     for p in projects:
         if str(p.get("id")) == str(project_id):
-            return p.get("cart", []) or []
+            cart = p.get("cart", []) or []
+            if isinstance(cart, dict):
+                return cart.get("items", []) or []
+            return cart
     return []
 
 
@@ -125,9 +128,107 @@ def update_current_cart(project_id: str, updated_cart):
     """Update cart for a specific project id."""
     try:
         sb = get_supabase(_token())
-        sb.table("projects").update({"cart": updated_cart, "updated_at": "now()"}).eq("id", project_id).execute()
+        proj = (
+            sb.table("projects")
+            .select("cart")
+            .eq("id", project_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        existing_cart = (proj[0].get("cart") if proj else None) or []
+
+        payload_cart = updated_cart
+        if isinstance(existing_cart, dict):
+            payload_cart = {
+                "items": updated_cart,
+                "budget": existing_cart.get("budget", {"project": None, "rooms": {}}),
+            }
+
+        sb.table("projects").update({"cart": payload_cart, "updated_at": "now()"}).eq("id", project_id).execute()
     except Exception as e:
         st.error(f"❌ Failed to update cart for project '{project_id}': {e}")
+
+
+def get_project_budget_from_row(project_row: dict | None):
+    """
+    Read budget config from a project row cart payload.
+    Backward compatible with legacy `cart: []`.
+    Returns: {"project": float | None, "rooms": {room_id: float}}
+    """
+    default = {"project": None, "rooms": {}}
+    if not project_row:
+        return default
+
+    cart = (project_row.get("cart") if isinstance(project_row, dict) else None) or []
+    if not isinstance(cart, dict):
+        return default
+
+    budget = cart.get("budget") or {}
+    project_budget = budget.get("project")
+    room_budgets = budget.get("rooms") or {}
+
+    clean_rooms = {}
+    if isinstance(room_budgets, dict):
+        for k, v in room_budgets.items():
+            try:
+                if v is None:
+                    continue
+                clean_rooms[str(k)] = float(v)
+            except Exception:
+                continue
+
+    try:
+        project_budget = float(project_budget) if project_budget is not None else None
+    except Exception:
+        project_budget = None
+
+    return {"project": project_budget, "rooms": clean_rooms}
+
+
+def save_project_budget(project_id: str, project_budget: float | None, room_budgets: dict):
+    """
+    Persist budget config inside `projects.cart.budget` while preserving existing cart items.
+    """
+    try:
+        sb = get_supabase(_token())
+        proj = (
+            sb.table("projects")
+            .select("cart")
+            .eq("id", project_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        existing_cart = (proj[0].get("cart") if proj else None) or []
+
+        if isinstance(existing_cart, dict):
+            items = existing_cart.get("items", []) or []
+        elif isinstance(existing_cart, list):
+            items = existing_cart
+        else:
+            items = []
+
+        clean_rooms = {}
+        if isinstance(room_budgets, dict):
+            for k, v in room_budgets.items():
+                if v is None:
+                    continue
+                clean_rooms[str(k)] = float(v)
+
+        payload = {
+            "items": items,
+            "budget": {
+                "project": float(project_budget) if project_budget is not None else None,
+                "rooms": clean_rooms,
+            },
+        }
+
+        sb.table("projects").update({"cart": payload, "updated_at": "now()"}).eq("id", project_id).execute()
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to save budget for project '{project_id}': {e}")
+        return False
 
 def load_project_rooms(project_id: str):
     sb = get_supabase(_token())
@@ -141,6 +242,32 @@ def load_room_objects(room_id: str):
     sb = get_supabase(_token())
     res = sb.table("room_objects").select("*").eq("room_id", room_id).order("category").execute()
     return res.data or []
+
+
+def load_room_objects_batch(room_ids):
+    """
+    Batch fetch objects for many rooms.
+    Returns {room_id: [objects...]}
+    """
+    out = {str(rid): [] for rid in (room_ids or [])}
+    if not room_ids:
+        return out
+
+    sb = get_supabase(_token())
+    rows = (
+        sb.table("room_objects")
+        .select("*")
+        .in_("room_id", room_ids)
+        .execute()
+        .data
+        or []
+    )
+
+    for row in rows:
+        rid = str(row.get("room_id"))
+        out.setdefault(rid, []).append(row)
+
+    return out
 
 
 def load_room_statuses(room_ids):
