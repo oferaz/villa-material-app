@@ -8,6 +8,7 @@ from supabase_client import get_supabase
 from data_utils import APP_DATA_DIR
 
 AUTH_SESSION_FILE = os.path.join(APP_DATA_DIR, "auth_session.json")
+LOGO_PNG_PATH = os.path.join("assets", "materia_logo.png")
 
 
 def _jwt_exp_epoch(access_token: str | None) -> float | None:
@@ -279,6 +280,8 @@ def require_login():
 
     _, login_col, _ = st.columns([1, 1.4, 1])
     with login_col:
+        if os.path.exists(LOGO_PNG_PATH):
+            st.image(LOGO_PNG_PATH, width=190)
         st.markdown(
             """
             <div class="welcome-box">
