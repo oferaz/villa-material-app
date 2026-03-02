@@ -149,9 +149,26 @@ def _normalize_email(value: str) -> str:
     return str(value or "").strip().lower()
 
 
+def _looks_like_email(value: str) -> bool:
+    email = _normalize_email(value)
+    # Lightweight validation to catch obvious typos before hitting Supabase.
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]{2,}", email))
+
+
 def _normalize_otp_token(value: str) -> str:
     # Users often paste codes with spaces/hyphens; Supabase expects a compact token.
     return re.sub(r"[^A-Za-z0-9]", "", str(value or "").strip())
+
+
+def _friendly_send_code_error(error_text: str) -> str | None:
+    text = str(error_text or "").strip().lower()
+    if not text:
+        return None
+    if "invalid" in text and "email" in text:
+        return "Please enter a valid email address."
+    if "email address" in text and "is invalid" in text:
+        return "Please enter a valid email address."
+    return None
 
 
 def _friendly_verify_error(error_text: str) -> str | None:
@@ -285,6 +302,9 @@ def require_login():
             st.caption(f"You can request another code in {wait_left}s.")
 
         if st.button("Send code", type="primary", disabled=send_disabled):
+            if not _looks_like_email(email_clean):
+                st.error("Please enter a valid email address (for example: name@company.com).")
+                st.stop()
             try:
                 sb = get_supabase()
                 sb.auth.sign_in_with_otp({
@@ -303,8 +323,9 @@ def require_login():
                     st.session_state.otp_next_allowed_at = time.time() + retry_s
                     st.warning(f"Too many requests. Try again in about {retry_s} seconds.")
                     st.stop()
-                if "invalid" in msg.lower() and "email" in msg.lower():
-                    st.error("Please enter a valid email address.")
+                friendly = _friendly_send_code_error(msg)
+                if friendly:
+                    st.error(friendly)
                 else:
                     st.error("Could not send a login code right now. Please try again.")
                 st.stop()
