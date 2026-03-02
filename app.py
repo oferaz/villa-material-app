@@ -29,30 +29,85 @@ from user_template_manager import (
 # Supabase-backed managers
 from materials_manager import list_materials, add_private_material, search_materials_semantic
 from link_scraper import extract_material_payload_from_url
-from project_manager import (
-    load_projects,
-    create_project,
-    update_project_name,
-    rename_project_room,
-    add_project_room,
-    delete_project_room,
-    load_project_rooms,
-    load_room_objects,
-    load_room_objects_batch,
-    load_projects_statuses,
-    load_room_statuses,
-    get_project_budget_from_row,
-    save_project_budget,
-    get_project_share_from_row,
-    rotate_project_share_token,
-    set_project_share_enabled,
-    get_object_comments_from_row,
-    get_object_approval_history_from_row,
-    append_object_comment,
-    get_shared_project_by_token,
-    update_object_status_by_share_token,
-    update_room_status_by_share_token,
-    append_object_comment_by_share_token,
+import project_manager as _project_manager
+
+
+def _missing_project_manager_fn(name: str):
+    def _missing(*args, **kwargs):
+        raise RuntimeError(
+            f"project_manager.{name} is unavailable. "
+            "Deploy app.py and project_manager.py from the same revision."
+        )
+
+    return _missing
+
+
+load_projects = getattr(_project_manager, "load_projects", _missing_project_manager_fn("load_projects"))
+create_project = getattr(_project_manager, "create_project", _missing_project_manager_fn("create_project"))
+update_project_name = getattr(
+    _project_manager, "update_project_name", _missing_project_manager_fn("update_project_name")
+)
+rename_project_room = getattr(
+    _project_manager, "rename_project_room", _missing_project_manager_fn("rename_project_room")
+)
+add_project_room = getattr(_project_manager, "add_project_room", _missing_project_manager_fn("add_project_room"))
+delete_project_room = getattr(
+    _project_manager, "delete_project_room", _missing_project_manager_fn("delete_project_room")
+)
+load_project_rooms = getattr(
+    _project_manager, "load_project_rooms", _missing_project_manager_fn("load_project_rooms")
+)
+load_room_objects = getattr(_project_manager, "load_room_objects", _missing_project_manager_fn("load_room_objects"))
+load_room_objects_batch = getattr(
+    _project_manager, "load_room_objects_batch", _missing_project_manager_fn("load_room_objects_batch")
+)
+load_projects_statuses = getattr(
+    _project_manager, "load_projects_statuses", _missing_project_manager_fn("load_projects_statuses")
+)
+load_room_statuses = getattr(_project_manager, "load_room_statuses", _missing_project_manager_fn("load_room_statuses"))
+get_project_budget_from_row = getattr(
+    _project_manager, "get_project_budget_from_row", _missing_project_manager_fn("get_project_budget_from_row")
+)
+save_project_budget = getattr(
+    _project_manager, "save_project_budget", _missing_project_manager_fn("save_project_budget")
+)
+get_project_share_from_row = getattr(
+    _project_manager, "get_project_share_from_row", _missing_project_manager_fn("get_project_share_from_row")
+)
+rotate_project_share_token = getattr(
+    _project_manager, "rotate_project_share_token", _missing_project_manager_fn("rotate_project_share_token")
+)
+set_project_share_enabled = getattr(
+    _project_manager, "set_project_share_enabled", _missing_project_manager_fn("set_project_share_enabled")
+)
+get_object_comments_from_row = getattr(
+    _project_manager, "get_object_comments_from_row", _missing_project_manager_fn("get_object_comments_from_row")
+)
+get_object_approval_history_from_row = getattr(
+    _project_manager,
+    "get_object_approval_history_from_row",
+    _missing_project_manager_fn("get_object_approval_history_from_row"),
+)
+append_object_comment = getattr(
+    _project_manager, "append_object_comment", _missing_project_manager_fn("append_object_comment")
+)
+get_shared_project_by_token = getattr(
+    _project_manager, "get_shared_project_by_token", _missing_project_manager_fn("get_shared_project_by_token")
+)
+update_object_status_by_share_token = getattr(
+    _project_manager,
+    "update_object_status_by_share_token",
+    _missing_project_manager_fn("update_object_status_by_share_token"),
+)
+update_room_status_by_share_token = getattr(
+    _project_manager,
+    "update_room_status_by_share_token",
+    _missing_project_manager_fn("update_room_status_by_share_token"),
+)
+append_object_comment_by_share_token = getattr(
+    _project_manager,
+    "append_object_comment_by_share_token",
+    _missing_project_manager_fn("append_object_comment_by_share_token"),
 )
 
 # -----------------------------
