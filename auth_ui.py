@@ -269,6 +269,20 @@ def clear_auth_state(extra_keys: list[str] | None = None) -> None:
         st.session_state.pop(k, None)
     _clear_persisted_session()
 
+
+def _hide_sidebar_navigation_for_auth() -> None:
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] {
+            display: none;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def require_login():
     if _auth_bypass_enabled():
         st.session_state.setdefault("user_email", "debug@local")
@@ -277,6 +291,8 @@ def require_login():
 
     if st.session_state.get("sb_access_token") and _refresh_session_if_needed():
         return
+
+    _hide_sidebar_navigation_for_auth()
 
     _, login_col, _ = st.columns([1, 1.4, 1])
     with login_col:

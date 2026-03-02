@@ -4,8 +4,10 @@ import os
 from embedding import get_embedder
 from ui_utils import render_edit_product_form
 from config import CATALOG_PKL, CSV_LOG, VERSION_DIR, MODEL_PATH
+from auth_ui import require_login
 
 st.set_page_config(page_title="Edit Product")
+require_login()
 
 # Load catalog
 if not os.path.exists(CATALOG_PKL):

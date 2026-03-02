@@ -6,9 +6,11 @@ import pickle
 import os
 from ui_utils import render_product_card, apply_custom_css
 from config import CATALOG_PKL, ROOM_OPTIONS
+from auth_ui import require_login
 
 st.set_page_config(page_title="Product Gallery", layout="wide")
 apply_custom_css()
+require_login()
 
 st.title("🖼 Product Gallery")
 

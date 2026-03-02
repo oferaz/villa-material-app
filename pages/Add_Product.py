@@ -3,6 +3,10 @@ from ui_utils import render_add_product_form
 from embedding import get_embedder
 import os
 from config import MODEL_PATH
+from auth_ui import require_login
+
+
+require_login()
 
 
 # --- Paths ---

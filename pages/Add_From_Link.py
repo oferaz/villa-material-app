@@ -6,9 +6,8 @@ from materials_manager import add_private_material
 
 
 st.set_page_config(page_title="Add Material From Link", layout="centered")
-st.title("Add Material From Link")
-
 require_login()
+st.title("Add Material From Link")
 access_token = st.session_state.get("sb_access_token")
 user_id = st.session_state.get("user_id")
 
