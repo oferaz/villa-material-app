@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-@st.cache_resource(show_spinner=False)
 def _build_supabase_client(supabase_url: str, supabase_key: str, access_token: str | None) -> Client:
+    # Do not cache client objects globally; shared clients can leak auth state across users.
     sb: Client = create_client(supabase_url, supabase_key)
     if access_token:
         sb.postgrest.auth(access_token)

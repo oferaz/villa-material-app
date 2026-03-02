@@ -126,14 +126,11 @@ def _auth_bypass_enabled() -> bool:
 
 def _session_persistence_enabled() -> bool:
     """
-    Disk-backed auth session persistence is unsafe in multi-user deployments
-    (for example Streamlit Cloud), because one server-side file is shared by
-    all visitors. Keep it off by default.
+    Keep disk-backed auth persistence disabled to avoid cross-user session
+    leakage in multi-user deployments. Per-browser Streamlit session_state is
+    used instead.
     """
-    raw = os.getenv("AUTH_PERSIST_SESSION", "0")
-    if hasattr(st, "secrets"):
-        raw = st.secrets.get("AUTH_PERSIST_SESSION", raw)
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    return False
 
 
 def _parse_retry_seconds(error_text: str) -> int | None:
@@ -146,6 +143,28 @@ def _parse_retry_seconds(error_text: str) -> int | None:
         return int(m.group(1))
     except Exception:
         return None
+
+
+def _normalize_email(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def _normalize_otp_token(value: str) -> str:
+    # Users often paste codes with spaces/hyphens; Supabase expects a compact token.
+    return re.sub(r"[^A-Za-z0-9]", "", str(value or "").strip())
+
+
+def _friendly_verify_error(error_text: str) -> str | None:
+    text = str(error_text or "").strip().lower()
+    if not text:
+        return None
+    if "expired" in text:
+        return "This code has expired. Request a new code and try again."
+    if "invalid" in text or "otp" in text or "token" in text:
+        return "That code is invalid. Please use the latest code from your email."
+    if "email" in text and "required" in text:
+        return "Email is missing. Enter your email and request a new code."
+    return None
 
 
 def _save_persisted_session(session, user) -> None:
@@ -241,77 +260,107 @@ def require_login():
     if st.session_state.get("sb_access_token") and _refresh_session_if_needed():
         return
 
-    if _try_restore_login_from_disk():
-        return
+    _, login_col, _ = st.columns([1, 1.4, 1])
+    with login_col:
+        st.markdown(
+            """
+            <div class="welcome-box">
+                <h2>Welcome to Materia</h2>
+                <p>Sign in with a one-time code sent to your email.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption("How login works: enter your email, request a code, then paste the code to continue.")
 
-    st.title("Login")
+        email = st.text_input("Email address", placeholder="name@company.com")
+        email_clean = _normalize_email(email)
 
-    email = st.text_input("Email")
+        now = time.time()
+        next_allowed = float(st.session_state.get("otp_next_allowed_at", 0))
+        wait_left = max(0, int(next_allowed - now))
+        send_disabled = (not email_clean) or (wait_left > 0)
 
-    now = time.time()
-    next_allowed = float(st.session_state.get("otp_next_allowed_at", 0))
-    wait_left = max(0, int(next_allowed - now))
-    send_disabled = (not email.strip()) or (wait_left > 0)
+        if wait_left > 0:
+            st.caption(f"You can request another code in {wait_left}s.")
 
-    if wait_left > 0:
-        st.caption(f"You can request another code in {wait_left}s.")
-
-    if st.button("Send code", type="primary", disabled=send_disabled):
-        try:
-            sb = get_supabase()
-            sb.auth.sign_in_with_otp({
-                "email": email.strip(),
-                "options": {"should_create_user": True}
-            })
-            st.session_state.pending_email = email.strip()
-            # Mirror server-side throttle to avoid immediate repeat requests.
-            st.session_state.otp_next_allowed_at = time.time() + 30
-            st.success("Sent. Check your email.")
-            st.rerun()
-        except Exception as e:
-            msg = str(e)
-            retry_s = _parse_retry_seconds(msg)
-            if retry_s is not None:
-                st.session_state.otp_next_allowed_at = time.time() + retry_s
-                st.warning(f"Too many requests. Try again in about {retry_s} seconds.")
-                st.stop()
-            st.exception(e)
-            st.stop()
-
-    otp = st.text_input("Code")
-
-    if st.button("Verify", type="primary", disabled=not otp.strip()):
-        try:
-            sb = get_supabase()
-            em = st.session_state.get("pending_email") or email.strip()
-
-            res = sb.auth.verify_otp({
-                "email": em,
-                "token": otp.strip(),
-                "type": "email"
-            })
-
-            session = res.session
-            user = res.user
-
-            if not _set_auth_state(session, user):
-                st.error("Login session could not be established. Please try again.")
+        if st.button("Send code", type="primary", disabled=send_disabled):
+            try:
+                sb = get_supabase()
+                sb.auth.sign_in_with_otp({
+                    "email": email_clean,
+                    "options": {"should_create_user": True}
+                })
+                st.session_state.pending_email = email_clean
+                # Mirror server-side throttle to avoid immediate repeat requests.
+                st.session_state.otp_next_allowed_at = time.time() + 30
+                st.success("Code sent. Please check your inbox (and spam folder).")
+                st.rerun()
+            except Exception as e:
+                msg = str(e)
+                retry_s = _parse_retry_seconds(msg)
+                if retry_s is not None:
+                    st.session_state.otp_next_allowed_at = time.time() + retry_s
+                    st.warning(f"Too many requests. Try again in about {retry_s} seconds.")
+                    st.stop()
+                if "invalid" in msg.lower() and "email" in msg.lower():
+                    st.error("Please enter a valid email address.")
+                else:
+                    st.error("Could not send a login code right now. Please try again.")
                 st.stop()
 
-            # create profile if needed
-            sb_authed = get_supabase(session.access_token)
-            profile_check = sb_authed.table("profiles").select("id").eq("id", user.id).execute()
-            if not profile_check.data:
-                sb_authed.table("profiles").insert({
-                    "id": user.id,
-                    "full_name": user.email.split("@")[0]
-                }).execute()
+        pending_email = (st.session_state.get("pending_email") or "").strip()
+        if pending_email:
+            st.caption(f"Latest code was sent to: {pending_email}")
 
-            st.rerun()
+        otp = st.text_input("Verification code", placeholder="Enter the 6-digit code")
 
-        except Exception as e:
-            st.exception(e)
-            st.stop()
+        if st.button("Verify and continue", type="primary", disabled=not otp.strip()):
+            try:
+                sb = get_supabase()
+                em = _normalize_email(pending_email or email_clean)
+                token = _normalize_otp_token(otp)
+                if not em:
+                    st.error("Enter your email and request a code first.")
+                    st.stop()
+                if not token:
+                    st.error("Enter a valid verification code.")
+                    st.stop()
+
+                res = sb.auth.verify_otp({
+                    "email": em,
+                    "token": token,
+                    "type": "email"
+                })
+
+                session = res.session
+                user = res.user
+
+                if not _set_auth_state(session, user):
+                    st.error("Login session could not be established. Please try again.")
+                    st.stop()
+
+                # Non-blocking profile bootstrap: login should still succeed if this fails.
+                try:
+                    sb_authed = get_supabase(session.access_token)
+                    profile_check = sb_authed.table("profiles").select("id").eq("id", user.id).execute()
+                    if not profile_check.data:
+                        sb_authed.table("profiles").insert({
+                            "id": user.id,
+                            "full_name": user.email.split("@")[0]
+                        }).execute()
+                except Exception:
+                    pass
+
+                st.rerun()
+
+            except Exception as e:
+                friendly = _friendly_verify_error(str(e))
+                if friendly:
+                    st.error(friendly)
+                else:
+                    st.error("Could not verify this code. Request a new code and try again.")
+                st.stop()
 
     st.stop()
 
