@@ -19,3 +19,4 @@ lxml>=5.2.1
 
 # Optional image handling
 Pillow>=10.3.0
+pytest>=8.0.0
