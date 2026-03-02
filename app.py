@@ -3,6 +3,7 @@
 import os
 import html
 import json
+import inspect
 from datetime import datetime, timezone
 import streamlit as st
 import pandas as pd
@@ -114,6 +115,20 @@ def _template_map_from_json(raw_text: str):
     if not template_map:
         return {}, "Template must include at least one room."
     return template_map, None
+
+
+def _create_project_compat(name: str, rooms=None, template_map: dict | None = None):
+    """Call create_project with optional template_map only when supported."""
+    kwargs = {"rooms": rooms}
+    if template_map is not None:
+        try:
+            params = inspect.signature(create_project).parameters
+            if "template_map" in params:
+                kwargs["template_map"] = template_map
+        except Exception:
+            # Fail closed to keep older create_project signatures working.
+            pass
+    return create_project(name, **kwargs)
 
 
 def _cart_payload_from_row(project_row: dict | None):
@@ -940,13 +955,13 @@ if page == "Projects Workspace":
             else:
                 rooms_arg = all_rooms if all_rooms else None
                 if use_my_template:
-                    create_project(
+                    _create_project_compat(
                         new_proj.strip(),
                         rooms=rooms_arg,
                         template_map=st.session_state.get("user_template_map") or default_user_template(),
                     )
                 else:
-                    create_project(new_proj.strip(), rooms=rooms_arg)
+                    _create_project_compat(new_proj.strip(), rooms=rooms_arg)
                 st.rerun()
 
     # pick selected project (by id)
