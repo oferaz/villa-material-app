@@ -187,6 +187,221 @@ def create_project(name: str, rooms=None, template: str = "small_villa", templat
         return load_projects()
 
 
+def _touch_project(project_id: str):
+    try:
+        sb = get_supabase(_token())
+        sb.table("projects").update({"updated_at": "now()"}).eq("id", project_id).execute()
+    except Exception:
+        # Non-critical best-effort metadata update.
+        pass
+
+
+def update_project_name(project_id: str, new_name: str):
+    name_clean = (new_name or "").strip()
+    if not name_clean:
+        st.warning("⚠️ Project name cannot be empty.")
+        return False
+
+    try:
+        sb = get_supabase(_token())
+        rows = (
+            sb.table("projects")
+            .select("id,name")
+            .eq("name", name_clean)
+            .execute()
+            .data
+            or []
+        )
+        conflict = [r for r in rows if str(r.get("id")) != str(project_id)]
+        if conflict:
+            st.warning(f"⚠️ Project '{name_clean}' already exists.")
+            return False
+
+        sb.table("projects").update({"name": name_clean, "updated_at": "now()"}).eq("id", project_id).execute()
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to update project name: {e}")
+        return False
+
+
+def rename_project_room(project_id: str, room_id: str, new_name: str):
+    name_clean = (new_name or "").strip()
+    if not name_clean:
+        st.warning("⚠️ Room name cannot be empty.")
+        return False
+
+    try:
+        sb = get_supabase(_token())
+        target = (
+            sb.table("project_rooms")
+            .select("id,name")
+            .eq("id", room_id)
+            .eq("project_id", project_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if not target:
+            st.error("❌ Room not found for this project.")
+            return False
+
+        existing = (
+            sb.table("project_rooms")
+            .select("id")
+            .eq("project_id", project_id)
+            .eq("name", name_clean)
+            .execute()
+            .data
+            or []
+        )
+        if any(str(row.get("id")) != str(room_id) for row in existing):
+            st.warning(f"⚠️ Room '{name_clean}' already exists in this project.")
+            return False
+
+        sb.table("project_rooms").update({"name": name_clean}).eq("id", room_id).eq("project_id", project_id).execute()
+        _touch_project(project_id)
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to rename room: {e}")
+        return False
+
+
+def add_project_room(project_id: str, room_name: str, template_map: dict | None = None):
+    room_clean = (room_name or "").strip()
+    if not room_clean:
+        st.warning("⚠️ Room name cannot be empty.")
+        return False
+
+    try:
+        sb = get_supabase(_token())
+        existing = (
+            sb.table("project_rooms")
+            .select("id")
+            .eq("project_id", project_id)
+            .eq("name", room_clean)
+            .execute()
+            .data
+            or []
+        )
+        if existing:
+            st.warning(f"⚠️ Room '{room_clean}' already exists.")
+            return False
+
+        room_res = (
+            sb.table("project_rooms")
+            .insert({"project_id": project_id, "name": room_clean})
+            .execute()
+        )
+        created = room_res.data[0] if room_res.data else None
+        if not created:
+            raise RuntimeError("Failed to create room.")
+
+        template_source = _normalize_template_map(template_map) or _normalize_template_map(SMALL_VILLA_TEMPLATE)
+        objects_payload = []
+        for obj in _template_objects_for_room_name(template_source, room_clean):
+            objects_payload.append(
+                {
+                    "room_id": created["id"],
+                    "object_key": str(obj.get("key") or "").strip() or _slugify(obj.get("name") or "item"),
+                    "object_name": str(obj.get("name") or "").strip() or "Item",
+                    "category": obj.get("category"),
+                    "qty": _safe_qty(obj.get("qty", 1)),
+                    "status": "unassigned",
+                    "material_id": None,
+                }
+            )
+
+        if objects_payload:
+            sb.table("room_objects").insert(objects_payload).execute()
+
+        _touch_project(project_id)
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to add room: {e}")
+        return False
+
+
+def _prune_project_cart_object_metadata(project_id: str, object_ids):
+    object_keys = {str(oid) for oid in (object_ids or []) if oid is not None}
+    if not object_keys:
+        return
+
+    try:
+        items, cart_meta = _project_cart_items_and_meta(project_id)
+        if isinstance(items, list):
+            next_items = []
+            for row in items:
+                if not isinstance(row, dict):
+                    next_items.append(row)
+                    continue
+                ref_id = row.get("object_id")
+                if ref_id is not None and str(ref_id) in object_keys:
+                    continue
+                next_items.append(row)
+            cart_meta["items"] = next_items
+
+        for key in ["comments", "approval_history", "assignment_notes"]:
+            block = cart_meta.get(key)
+            if isinstance(block, dict):
+                cart_meta[key] = {str(k): v for k, v in block.items() if str(k) not in object_keys}
+
+        procurement = cart_meta.get("procurement")
+        if isinstance(procurement, dict):
+            clean_procurement = dict(procurement)
+            for key in ["notes", "quote_status", "priority", "target_price"]:
+                block = clean_procurement.get(key)
+                if isinstance(block, dict):
+                    clean_procurement[key] = {
+                        str(k): v for k, v in block.items() if str(k) not in object_keys
+                    }
+            cart_meta["procurement"] = clean_procurement
+
+        _save_project_cart(project_id, cart_meta)
+    except Exception:
+        # Best effort cleanup to avoid surfacing unrelated failures to users.
+        pass
+
+
+def delete_project_room(project_id: str, room_id: str):
+    try:
+        sb = get_supabase(_token())
+        target = (
+            sb.table("project_rooms")
+            .select("id")
+            .eq("id", room_id)
+            .eq("project_id", project_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if not target:
+            st.error("❌ Room not found for this project.")
+            return False
+
+        obj_rows = (
+            sb.table("room_objects")
+            .select("id")
+            .eq("room_id", room_id)
+            .execute()
+            .data
+            or []
+        )
+        object_ids = [str(row.get("id")) for row in obj_rows if row.get("id") is not None]
+
+        if object_ids:
+            sb.table("room_objects").delete().eq("room_id", room_id).execute()
+            _prune_project_cart_object_metadata(project_id, object_ids)
+
+        sb.table("project_rooms").delete().eq("id", room_id).eq("project_id", project_id).execute()
+        _touch_project(project_id)
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to delete room: {e}")
+        return False
+
+
 def get_current_cart(projects, project_id: str):
     """Return cart for the selected project id from the provided list."""
     for p in projects:

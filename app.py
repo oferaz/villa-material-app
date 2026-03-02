@@ -32,6 +32,10 @@ from link_scraper import extract_material_payload_from_url
 from project_manager import (
     load_projects,
     create_project,
+    update_project_name,
+    rename_project_room,
+    add_project_room,
+    delete_project_room,
     load_project_rooms,
     load_room_objects,
     load_room_objects_batch,
@@ -1176,6 +1180,86 @@ if page == "Projects Workspace":
                 room_spend_map[str(rid_iter)] = metrics
                 project_spend += metrics["spend"]
                 project_missing_prices += metrics["missing_price"]
+
+            st.markdown("---")
+            _render_editorial_title("Manage Project", "Live Edit")
+            st.caption("Rename this project and add, rename, or delete rooms while working.")
+
+            manage_panel_key = f"show_manage_panel_{pid}"
+            if manage_panel_key not in st.session_state:
+                st.session_state[manage_panel_key] = False
+
+            if st.button("Manage Project", type="primary", key=f"toggle_manage_panel_{pid}"):
+                st.session_state[manage_panel_key] = not st.session_state[manage_panel_key]
+
+            if st.session_state[manage_panel_key]:
+                project_name_key = f"manage_project_name_{pid}"
+                if project_name_key not in st.session_state:
+                    st.session_state[project_name_key] = proj.get("name", "")
+
+                st.markdown("#### Project name")
+                st.text_input("Project name", key=project_name_key)
+                if st.button("Save project name", key=f"save_project_name_{pid}"):
+                    if update_project_name(pid, st.session_state.get(project_name_key, "")):
+                        st.success("Project name updated.")
+                        st.rerun()
+
+                st.markdown("#### Add room")
+                add_room_key = f"manage_add_room_name_{pid}"
+                if add_room_key not in st.session_state:
+                    st.session_state[add_room_key] = ""
+
+                add_cols = st.columns([0.75, 0.25])
+                with add_cols[0]:
+                    st.text_input("New room name", key=add_room_key, placeholder="e.g. Media Room")
+                with add_cols[1]:
+                    if st.button("Add room", key=f"add_room_btn_{pid}", type="secondary"):
+                        next_room = st.session_state.get(add_room_key, "").strip()
+                        if add_project_room(
+                            pid,
+                            next_room,
+                            template_map=st.session_state.get("user_template_map") or default_user_template(),
+                        ):
+                            st.session_state[add_room_key] = ""
+                            st.success(f"Added room: {next_room}")
+                            st.rerun()
+
+                st.markdown("#### Existing rooms")
+                if not rooms:
+                    st.info("No rooms yet. Add your first room above.")
+                else:
+                    for room_row in rooms:
+                        rid_manage = str(room_row.get("id"))
+                        room_name = str(room_row.get("name") or "Room")
+                        room_name_key = f"manage_room_name_{pid}_{rid_manage}"
+                        if room_name_key not in st.session_state:
+                            st.session_state[room_name_key] = room_name
+
+                        with st.expander(room_name, expanded=False):
+                            st.text_input("Room name", key=room_name_key)
+
+                            row_cols = st.columns([0.3, 0.35, 0.35])
+                            with row_cols[0]:
+                                if st.button("Rename", key=f"rename_room_btn_{pid}_{rid_manage}"):
+                                    next_name = st.session_state.get(room_name_key, "").strip()
+                                    if rename_project_room(pid, rid_manage, next_name):
+                                        st.success("Room renamed.")
+                                        st.rerun()
+                            with row_cols[1]:
+                                confirm_key = f"confirm_delete_room_{pid}_{rid_manage}"
+                                st.checkbox("Confirm delete", key=confirm_key)
+                            with row_cols[2]:
+                                if st.button(
+                                    "Delete room",
+                                    key=f"delete_room_btn_{pid}_{rid_manage}",
+                                    disabled=not st.session_state.get(confirm_key, False),
+                                ):
+                                    if delete_project_room(pid, rid_manage):
+                                        if str(st.session_state.get("current_room_id")) == rid_manage:
+                                            st.session_state.current_room_id = None
+                                            st.session_state.current_object_id = None
+                                        st.success("Room deleted.")
+                                        st.rerun()
 
             _render_editorial_title("Project Rhythm", "Progress")
             st.progress((assigned / total) if total else 0.0)
