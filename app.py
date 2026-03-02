@@ -1208,6 +1208,73 @@ if page == "Projects Workspace":
             if project_missing_prices:
                 st.caption(f"{project_missing_prices} assigned objects have no material price and are excluded from spend.")
 
+            budget_panel_key = f"show_budget_panel_{pid}"
+            if budget_panel_key not in st.session_state:
+                st.session_state[budget_panel_key] = False
+
+            panel_toggle_label = "Manage Budget"
+            if st.button(panel_toggle_label, type="primary", key=f"toggle_budget_panel_{pid}"):
+                st.session_state[budget_panel_key] = not st.session_state[budget_panel_key]
+
+            if st.session_state[budget_panel_key]:
+                st.info("Set the overall project budget and optional room budgets.")
+
+                proj_default = float(project_budget) if project_budget is not None else 0.0
+                proj_budget_input = st.number_input(
+                    "Project budget (THB)",
+                    min_value=0.0,
+                    value=proj_default,
+                    step=1000.0,
+                    key=f"project_budget_input_{pid}",
+                )
+                set_proj_budget = st.checkbox(
+                    "Enable project budget",
+                    value=(project_budget is not None),
+                    key=f"enable_project_budget_{pid}",
+                )
+
+                st.markdown("Room budgets (optional)")
+                edited_room_budgets = {}
+                for r in rooms:
+                    rid = str(r["id"])
+                    current_room_budget = _safe_float(room_budgets.get(rid))
+                    room_budget_value = st.number_input(
+                        f"{r.get('name', 'Room')} budget (THB)",
+                        min_value=0.0,
+                        value=float(current_room_budget) if current_room_budget is not None else 0.0,
+                        step=500.0,
+                        key=f"room_budget_input_{pid}_{rid}",
+                    )
+                    include_room_budget = st.checkbox(
+                        f"Enable {r.get('name', 'Room')} budget",
+                        value=(current_room_budget is not None),
+                        key=f"room_budget_enabled_{pid}_{rid}",
+                    )
+                    if include_room_budget:
+                        edited_room_budgets[rid] = room_budget_value
+
+                total_room_budget = sum(edited_room_budgets.values())
+                st.caption(f"Total enabled room budgets: {total_room_budget:,.0f} THB")
+
+                save_col, clear_col = st.columns([1, 1])
+                with save_col:
+                    if st.button("Save budgets", type="primary", key=f"save_budgets_{pid}"):
+                        next_project_budget = proj_budget_input if set_proj_budget else None
+                        if next_project_budget is not None and total_room_budget > next_project_budget:
+                            st.error(
+                                "Total room budgets cannot exceed the project budget. "
+                                f"Room budgets: {total_room_budget:,.0f} THB, "
+                                f"Project budget: {next_project_budget:,.0f} THB."
+                            )
+                        elif save_project_budget(pid, next_project_budget, edited_room_budgets):
+                            st.success("Budgets saved.")
+                            st.rerun()
+                with clear_col:
+                    if st.button("Clear all budgets", key=f"clear_budgets_{pid}"):
+                        if save_project_budget(pid, None, {}):
+                            st.success("All budgets cleared.")
+                            st.rerun()
+
             st.markdown("---")
             _render_editorial_title("Procurement Pulse", "Purchasing Lens")
             procurement_stats = _procurement_metrics(room_objects_map, material_lookup, procurement_meta)
@@ -1342,73 +1409,6 @@ if page == "Projects Workspace":
                             f"- {_format_ts(event.get('created_at'))} - {event.get('actor_name')} "
                             f"{event.get('action')} {event.get('room_name')} / {event.get('object_name')}"
                         )
-
-            budget_panel_key = f"show_budget_panel_{pid}"
-            if budget_panel_key not in st.session_state:
-                st.session_state[budget_panel_key] = False
-
-            panel_toggle_label = "Manage Budget"
-            if st.button(panel_toggle_label, type="primary", key=f"toggle_budget_panel_{pid}"):
-                st.session_state[budget_panel_key] = not st.session_state[budget_panel_key]
-
-            if st.session_state[budget_panel_key]:
-                st.info("Set the overall project budget and optional room budgets.")
-
-                proj_default = float(project_budget) if project_budget is not None else 0.0
-                proj_budget_input = st.number_input(
-                    "Project budget (THB)",
-                    min_value=0.0,
-                    value=proj_default,
-                    step=1000.0,
-                    key=f"project_budget_input_{pid}",
-                )
-                set_proj_budget = st.checkbox(
-                    "Enable project budget",
-                    value=(project_budget is not None),
-                    key=f"enable_project_budget_{pid}",
-                )
-
-                st.markdown("Room budgets (optional)")
-                edited_room_budgets = {}
-                for r in rooms:
-                    rid = str(r["id"])
-                    current_room_budget = _safe_float(room_budgets.get(rid))
-                    room_budget_value = st.number_input(
-                        f"{r.get('name', 'Room')} budget (THB)",
-                        min_value=0.0,
-                        value=float(current_room_budget) if current_room_budget is not None else 0.0,
-                        step=500.0,
-                        key=f"room_budget_input_{pid}_{rid}",
-                    )
-                    include_room_budget = st.checkbox(
-                        f"Enable {r.get('name', 'Room')} budget",
-                        value=(current_room_budget is not None),
-                        key=f"room_budget_enabled_{pid}_{rid}",
-                    )
-                    if include_room_budget:
-                        edited_room_budgets[rid] = room_budget_value
-
-                total_room_budget = sum(edited_room_budgets.values())
-                st.caption(f"Total enabled room budgets: {total_room_budget:,.0f} THB")
-
-                save_col, clear_col = st.columns([1, 1])
-                with save_col:
-                    if st.button("Save budgets", type="primary", key=f"save_budgets_{pid}"):
-                        next_project_budget = proj_budget_input if set_proj_budget else None
-                        if next_project_budget is not None and total_room_budget > next_project_budget:
-                            st.error(
-                                "Total room budgets cannot exceed the project budget. "
-                                f"Room budgets: {total_room_budget:,.0f} THB, "
-                                f"Project budget: {next_project_budget:,.0f} THB."
-                            )
-                        elif save_project_budget(pid, next_project_budget, edited_room_budgets):
-                            st.success("Budgets saved.")
-                            st.rerun()
-                with clear_col:
-                    if st.button("Clear all budgets", key=f"clear_budgets_{pid}"):
-                        if save_project_budget(pid, None, {}):
-                            st.success("All budgets cleared.")
-                            st.rerun()
 
             st.markdown("---")
             _render_editorial_title("Room Chapters", "Execution")
