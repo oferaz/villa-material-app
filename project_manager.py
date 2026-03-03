@@ -92,13 +92,24 @@ def _template_objects_for_room_name(template_map: dict, room_name: str):
     return []
 
 def load_projects():
-    """Fetch projects visible to the logged-in user (RLS will filter later)."""
+    """Fetch projects for the logged-in user only (defense in depth)."""
     try:
-        sb = get_supabase(_token())
-        res = sb.table("projects").select("*").order("updated_at", desc=True).execute()
+        access_token = _token()
+        user_id = str(st.session_state.get("user_id") or "").strip()
+        if not access_token or not user_id:
+            return []
+
+        sb = get_supabase(access_token)
+        res = (
+            sb.table("projects")
+            .select("*")
+            .eq("owner_id", user_id)
+            .order("updated_at", desc=True)
+            .execute()
+        )
         return res.data or []
     except Exception as e:
-        st.error(f"❌ Failed to load projects from Supabase: {e}")
+        st.error(f"Failed to load projects from Supabase: {e}")
         return []
 
 
@@ -399,6 +410,47 @@ def delete_project_room(project_id: str, room_id: str):
         return True
     except Exception as e:
         st.error(f"❌ Failed to delete room: {e}")
+        return False
+
+
+def delete_project(project_id: str):
+    project_key = str(project_id or "").strip()
+    if not project_key:
+        st.warning("Project id is required.")
+        return False
+
+    try:
+        sb = get_supabase(_token())
+        user_id = str(st.session_state.get("user_id") or "").strip()
+
+        target_query = sb.table("projects").select("id").eq("id", project_key).limit(1)
+        if user_id:
+            target_query = target_query.eq("owner_id", user_id)
+        target = target_query.execute().data or []
+        if not target:
+            st.error("Project not found.")
+            return False
+
+        room_rows = (
+            sb.table("project_rooms")
+            .select("id")
+            .eq("project_id", project_key)
+            .execute()
+            .data
+            or []
+        )
+        room_ids = [str(row.get("id")) for row in room_rows if row.get("id") is not None]
+        if room_ids:
+            sb.table("room_objects").delete().in_("room_id", room_ids).execute()
+            sb.table("project_rooms").delete().eq("project_id", project_key).execute()
+
+        delete_query = sb.table("projects").delete().eq("id", project_key)
+        if user_id:
+            delete_query = delete_query.eq("owner_id", user_id)
+        delete_query.execute()
+        return True
+    except Exception as e:
+        st.error(f"Failed to delete project: {e}")
         return False
 
 
@@ -1056,3 +1108,4 @@ def project_status(project_id: str):
     return load_projects_statuses([project_id]).get(
         str(project_id), {"rooms": 0, "total": 0, "assigned": 0, "designer_ok": 0, "client_ok": 0}
     )
+

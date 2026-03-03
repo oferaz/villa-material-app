@@ -54,6 +54,7 @@ add_project_room = getattr(_project_manager, "add_project_room", _missing_projec
 delete_project_room = getattr(
     _project_manager, "delete_project_room", _missing_project_manager_fn("delete_project_room")
 )
+delete_project = getattr(_project_manager, "delete_project", _missing_project_manager_fn("delete_project"))
 load_project_rooms = getattr(
     _project_manager, "load_project_rooms", _missing_project_manager_fn("load_project_rooms")
 )
@@ -676,7 +677,11 @@ st.markdown(
 # Sidebar Navigation
 # -----------------------------
 st.sidebar.markdown("### Navigation")
-page = st.sidebar.radio("", ["Projects Workspace", "Materials Gallery", "My Materials"], label_visibility="collapsed")
+page = st.sidebar.radio(
+    "",
+    ["Projects Workspace", "Materials Gallery", "My Materials", "Suggestions"],
+    label_visibility="collapsed",
+)
 
 workspace_focus_options = ["Dashboard", "Project Setup", "Material Selection", "Client Review", "Procurement"]
 if "workspace_focus" not in st.session_state:
@@ -746,6 +751,36 @@ def _safe_float(value):
         return float(value)
     except Exception:
         return None
+
+
+def _submit_app_suggestion(
+    access_token: str | None,
+    user_id: str | None,
+    user_name: str,
+    user_email: str,
+    title: str,
+    category: str,
+    suggestion_text: str,
+    allow_contact: bool,
+):
+    if not access_token or not user_id:
+        return False, "Login is required before sending suggestions."
+    try:
+        sb = get_supabase(access_token)
+        payload = {
+            "user_id": str(user_id),
+            "user_name": (user_name or "").strip() or None,
+            "user_email": (user_email or "").strip() or None,
+            "title": title.strip(),
+            "category": category.strip(),
+            "suggestion": suggestion_text.strip(),
+            "allow_contact": bool(allow_contact),
+            "status": "new",
+        }
+        sb.table("app_suggestions").insert(payload).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 
 def _procurement_from_row(project_row: dict | None):
@@ -1238,7 +1273,7 @@ if page == "Projects Workspace":
 
             st.markdown("---")
             _render_editorial_title("Manage Project", "Live Edit")
-            st.caption("Rename this project and add, rename, or delete rooms while working.")
+            st.caption("Rename this project, manage rooms, or delete the project while working.")
 
             manage_panel_key = f"show_manage_panel_{pid}"
             if manage_panel_key not in st.session_state:
@@ -1315,6 +1350,23 @@ if page == "Projects Workspace":
                                             st.session_state.current_object_id = None
                                         st.success("Room deleted.")
                                         st.rerun()
+
+                st.markdown("#### Delete project")
+                st.caption("This will permanently delete this project, all rooms, and all room objects.")
+                project_confirm_key = f"confirm_delete_project_{pid}"
+                st.checkbox("I understand this cannot be undone", key=project_confirm_key)
+                if st.button(
+                    "Delete project",
+                    key=f"delete_project_btn_{pid}",
+                    disabled=not st.session_state.get(project_confirm_key, False),
+                ):
+                    if delete_project(pid):
+                        remaining_projects = [p for p in projects if str(p.get("id")) != str(pid)]
+                        st.session_state.current_project_id = remaining_projects[0]["id"] if remaining_projects else None
+                        st.session_state.current_room_id = None
+                        st.session_state.current_object_id = None
+                        st.success("Project deleted.")
+                        st.rerun()
 
             _render_editorial_title("Project Rhythm", "Progress")
             st.progress((assigned / total) if total else 0.0)
@@ -2204,4 +2256,92 @@ elif page == "My Materials":
                 tags = r.get("tags") or []
                 if isinstance(tags, list) and tags:
                     st.caption("Tags: " + ", ".join(tags))
+
+# -----------------------------
+# Page: Suggestions
+# -----------------------------
+elif page == "Suggestions":
+    st.title("Suggestions")
+    st.caption("Share feature requests and improvements directly with the app owner.")
+
+    with st.form("suggestion_form", clear_on_submit=True):
+        suggestion_title = st.text_input(
+            "Title",
+            placeholder="Short summary of your idea",
+        )
+        suggestion_category = st.selectbox(
+            "Type",
+            ["Feature request", "Improvement", "Bug / issue", "Other"],
+            index=0,
+        )
+        suggestion_text = st.text_area(
+            "Details",
+            placeholder="Describe what you want, why it helps, and any examples.",
+            height=160,
+        )
+        allow_contact = st.checkbox("Allow owner to contact me about this suggestion", value=True)
+        submit_clicked = st.form_submit_button(
+            "Send suggestion",
+            type="primary",
+            disabled=not (access_token and user_id),
+        )
+
+    if submit_clicked:
+        clean_title = suggestion_title.strip()
+        clean_text = suggestion_text.strip()
+        if len(clean_title) < 4:
+            st.warning("Please add a clearer title (at least 4 characters).")
+        elif len(clean_text) < 12:
+            st.warning("Please add more detail (at least 12 characters).")
+        else:
+            ok, err = _submit_app_suggestion(
+                access_token=access_token,
+                user_id=user_id,
+                user_name=full_name,
+                user_email=st.session_state.get("user_email", ""),
+                title=clean_title,
+                category=suggestion_category,
+                suggestion_text=clean_text,
+                allow_contact=allow_contact,
+            )
+            if ok:
+                st.success("Thanks, your suggestion was sent.")
+            else:
+                st.error(f"Could not save suggestion: {err}")
+
+    if not (access_token and user_id):
+        st.caption("Login is required to submit suggestions.")
+
+    with st.expander("One-time Supabase setup (run in SQL Editor)", expanded=False):
+        st.code(
+            """
+create table if not exists public.app_suggestions (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  user_name text,
+  user_email text,
+  title text not null,
+  category text not null,
+  suggestion text not null,
+  allow_contact boolean not null default true,
+  status text not null default 'new'
+);
+
+alter table public.app_suggestions enable row level security;
+
+create policy if not exists "suggestions_insert_own"
+on public.app_suggestions
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+create policy if not exists "suggestions_select_own"
+on public.app_suggestions
+for select
+to authenticated
+using (auth.uid() = user_id);
+            """.strip(),
+            language="sql",
+        )
 
