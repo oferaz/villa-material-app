@@ -147,6 +147,14 @@ def inject_custom_css():
             padding-top: 0.8rem;
         }
 
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] p,
+        section[data-testid="stSidebar"] span,
+        section[data-testid="stSidebar"] div {
+            color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
+        }
+
         [data-testid="stSidebarNav"],
         [data-testid="stSidebarNavSeparator"] {
             display: none;
@@ -282,6 +290,35 @@ def inject_custom_css():
             color: var(--text) !important;
         }
 
+        [data-testid="stRadio"] label,
+        [data-testid="stRadio"] p,
+        [data-testid="stRadio"] span,
+        [data-testid="stRadio"] div,
+        [data-testid="stCheckbox"] label,
+        [data-testid="stCheckbox"] p,
+        [data-testid="stCheckbox"] span,
+        [data-testid="stCheckbox"] div {
+            color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
+        }
+
+        [data-baseweb="radio"] *,
+        [data-baseweb="checkbox"] * {
+            color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
+        }
+
+        [data-baseweb="radio"] > div,
+        [data-baseweb="checkbox"] > div {
+            background-color: var(--surface) !important;
+            border-color: var(--forest-700) !important;
+        }
+
+        [data-baseweb="radio"] svg,
+        [data-baseweb="checkbox"] svg {
+            fill: var(--forest-700) !important;
+        }
+
         div[data-testid="stMetric"] {
             border: 1px solid var(--line);
             background: var(--surface);
@@ -293,6 +330,14 @@ def inject_custom_css():
         div[data-testid="stMetric"] label {
             color: var(--muted) !important;
             font-weight: 500;
+        }
+
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricValue"] *,
+        [data-testid="stMetricDelta"],
+        [data-testid="stMetricDelta"] * {
+            color: var(--forest-800) !important;
+            -webkit-text-fill-color: var(--forest-800) !important;
         }
 
         [data-testid="stExpander"] {
