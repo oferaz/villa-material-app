@@ -144,6 +144,7 @@ def inject_custom_css():
             background: linear-gradient(180deg, #f8f4ec 0%, #efe7dc 100%) !important;
             border-right: 1px solid var(--line);
             box-shadow: 6px 0 18px rgba(36, 44, 37, 0.05);
+            color: var(--text) !important;
         }
 
         section[data-testid="stSidebar"] > div {
@@ -153,10 +154,6 @@ def inject_custom_css():
         [data-testid="stSidebarNav"],
         [data-testid="stSidebarNavSeparator"] {
             display: none;
-        }
-
-        section[data-testid="stSidebar"] * {
-            color: var(--text) !important;
         }
 
         .welcome-box {
