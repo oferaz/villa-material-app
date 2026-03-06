@@ -707,9 +707,6 @@ if page == "Projects Workspace":
         label_visibility="collapsed",
     )
 
-    has_project_context = bool(st.session_state.get("current_project_id"))
-    st.sidebar.markdown("### Shortcuts")
-    st.sidebar.caption("These jump straight to common tasks.")
     if st.sidebar.button(
         "New project",
         key="qa_new_project",
@@ -719,22 +716,6 @@ if page == "Projects Workspace":
     ):
         st.session_state.workspace_focus = "Project Setup"
         st.session_state.open_create_project = True
-    if st.sidebar.button(
-        "Assign materials",
-        key="qa_assign",
-        use_container_width=True,
-        help="Jump to material assignment for the currently selected project.",
-        disabled=not has_project_context,
-    ):
-        st.session_state.workspace_focus = "Material Selection"
-    if st.sidebar.button(
-        "Client review",
-        key="qa_share",
-        use_container_width=True,
-        help="Open the client review section for the currently selected project.",
-        disabled=not has_project_context,
-    ):
-        st.session_state.workspace_focus = "Client Review"
 
 # -----------------------------
 # Shared: Load embedding model + catalog
