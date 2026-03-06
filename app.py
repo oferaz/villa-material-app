@@ -177,6 +177,10 @@ def _template_map_from_json(raw_text: str):
     return template_map, None
 
 
+def _copy_session_value(source_key: str, target_key: str):
+    st.session_state[target_key] = st.session_state.get(source_key)
+
+
 def _create_project_compat(name: str, rooms=None, template_map: dict | None = None):
     """Call create_project with optional template_map only when supported."""
     kwargs = {"rooms": rooms}
@@ -1788,19 +1792,19 @@ if page == "Projects Workspace":
                         if preview_rows:
                             keyboard_options = [str(m.get("id")) for m in preview_rows if m.get("id") is not None]
                             if keyboard_options:
+                                radio_key = f"obj_keyboard_pick_{oid}"
                                 if str(selected_material_id) in keyboard_options:
-                                    default_index = keyboard_options.index(str(selected_material_id))
-                                else:
-                                    default_index = 0
-                                kb_pick = st.radio(
+                                    st.session_state[radio_key] = str(selected_material_id)
+                                elif st.session_state.get(radio_key) not in keyboard_options:
+                                    st.session_state[radio_key] = keyboard_options[0]
+                                st.radio(
                                     "Navigate top matches (use up/down arrows, press Enter on Assign)",
                                     options=keyboard_options,
-                                    index=default_index,
                                     format_func=lambda mid: material_labels.get(mid, mid),
-                                    key=f"obj_keyboard_pick_{oid}",
+                                    key=radio_key,
+                                    on_change=_copy_session_value,
+                                    args=(radio_key, select_key),
                                 )
-                                st.session_state[select_key] = kb_pick
-                                selected_material_id = kb_pick
 
                         if material_error:
                             st.warning(f"Could not search materials: {material_error}")

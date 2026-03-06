@@ -294,9 +294,32 @@ def inject_custom_css():
             caret-color: var(--text) !important;
         }
 
+        [data-baseweb="menu"],
+        [data-baseweb="popover"] > div,
+        [role="listbox"] {
+            background: #fffdf9 !important;
+            border: 1px solid var(--line) !important;
+            border-radius: var(--radius-sm) !important;
+            box-shadow: 0 16px 32px rgba(28, 38, 31, 0.16) !important;
+        }
+
         [data-baseweb="menu"] *,
         [data-baseweb="popover"] * {
             color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
+        }
+
+        [role="option"] {
+            background: #fffdf9 !important;
+        }
+
+        [role="option"][aria-selected="true"] {
+            background: #efe7dc !important;
+        }
+
+        [role="option"]:hover,
+        [role="option"]:focus-visible {
+            background: #f5eee3 !important;
         }
 
         [data-testid="stRadio"] label,
