@@ -79,6 +79,23 @@ def _normalize_template_map(template_map):
     return clean
 
 
+def _normalize_room_names(room_names) -> list[str]:
+    clean = []
+    seen = set()
+
+    for room_name in room_names or []:
+        room_clean = str(room_name or "").strip()
+        if not room_clean:
+            continue
+        room_key = room_clean.casefold()
+        if room_key in seen:
+            continue
+        seen.add(room_key)
+        clean.append(room_clean)
+
+    return clean
+
+
 def _template_objects_for_room_name(template_map: dict, room_name: str):
     if not isinstance(template_map, dict):
         return []
@@ -123,6 +140,7 @@ def create_project(name: str, rooms=None, template: str = "small_villa", templat
       - if provided: this template overrides SMALL_VILLA_TEMPLATE
     """
     name_clean = (name or "").strip()
+    project_id = None
 
     if not name_clean:
         st.warning("⚠️ Project name cannot be empty.")
@@ -158,14 +176,21 @@ def create_project(name: str, rooms=None, template: str = "small_villa", templat
         # 2) Decide room names
         rooms = rooms or []
         if rooms:
-            room_names = rooms
+            room_names = _normalize_room_names(rooms)
         else:
-            room_names = list(template_source.keys())
+            room_names = _normalize_room_names(list(template_source.keys()))
+
+        if not room_names:
+            sb.table("projects").delete().eq("id", project_id).execute()
+            raise RuntimeError("Failed to create project rooms.")
 
         # 3) Insert rooms (bulk)
         rooms_payload = [{"project_id": project_id, "name": rname} for rname in room_names]
         room_res = sb.table("project_rooms").insert(rooms_payload).execute()
         created_rooms = room_res.data or []
+        if not created_rooms:
+            sb.table("projects").delete().eq("id", project_id).execute()
+            raise RuntimeError("Failed to create project rooms.")
 
         # 4) Insert room objects (bulk)
         objects_payload = []
@@ -194,6 +219,12 @@ def create_project(name: str, rooms=None, template: str = "small_villa", templat
         return load_projects()
 
     except Exception as e:
+        if project_id:
+            try:
+                sb.table("projects").delete().eq("id", project_id).execute()
+            except Exception:
+                pass
+            st.session_state.pop("current_project_id", None)
         st.error(f"❌ Failed to create project: {e}")
         return load_projects()
 
@@ -981,7 +1012,31 @@ def load_project_rooms(project_id: str):
     # Some deployments do not have project_rooms.created_at.
     # Keep a deterministic order without relying on optional schema columns.
     res = sb.table("project_rooms").select("*").eq("project_id", project_id).order("name").execute()
-    return res.data or []
+    rooms = res.data or []
+    if rooms:
+        return rooms
+
+    legacy_project_rows = (
+        sb.table("projects")
+        .select("rooms")
+        .eq("id", project_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    legacy_rooms = _normalize_room_names((legacy_project_rows[0] or {}).get("rooms") if legacy_project_rows else [])
+    if not legacy_rooms:
+        return []
+
+    created = (
+        sb.table("project_rooms")
+        .insert([{"project_id": project_id, "name": room_name} for room_name in legacy_rooms])
+        .execute()
+        .data
+        or []
+    )
+    return created
 
 
 def load_room_objects(room_id: str):
