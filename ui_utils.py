@@ -192,6 +192,11 @@ def inject_custom_css():
             box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
         }
 
+        .stButton > button *,
+        .stDownloadButton > button * {
+            color: inherit !important;
+        }
+
         section[data-testid="stSidebar"] .stButton > button,
         section[data-testid="stSidebar"] .stDownloadButton > button {
             width: 100%;
@@ -212,6 +217,12 @@ def inject_custom_css():
             box-shadow: 0 8px 18px rgba(196, 110, 69, 0.25);
         }
 
+        .stButton > button[kind="primary"] *,
+        .stDownloadButton > button[kind="primary"] * {
+            color: #fff8f3 !important;
+            fill: #fff8f3 !important;
+        }
+
         .stButton > button[kind="primary"]:hover {
             background: #a35a37;
             border-color: #a35a37;
@@ -225,6 +236,12 @@ def inject_custom_css():
             box-shadow: none;
             cursor: not-allowed;
             opacity: 1;
+        }
+
+        .stButton > button:disabled *,
+        .stDownloadButton > button:disabled * {
+            color: #8a978f !important;
+            fill: #8a978f !important;
         }
 
         .stButton > button:disabled:hover,
