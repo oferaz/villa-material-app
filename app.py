@@ -684,28 +684,49 @@ page = st.sidebar.radio(
 )
 
 workspace_focus_options = ["Dashboard", "Project Setup", "Material Selection", "Client Review", "Procurement"]
+workspace_focus_labels = {
+    "Dashboard": "Overview dashboard",
+    "Project Setup": "Project setup and brief",
+    "Material Selection": "Assign materials",
+    "Client Review": "Client review and sharing",
+    "Procurement": "Procurement tracking",
+}
 if "workspace_focus" not in st.session_state:
     st.session_state.workspace_focus = "Dashboard"
 
 if page == "Projects Workspace":
-    st.sidebar.markdown("### Workspace focus")
+    st.sidebar.markdown("### Workspace section")
+    st.sidebar.caption("Choose which project workflow section to show in the main panel.")
     st.session_state.workspace_focus = st.sidebar.radio(
         "",
         workspace_focus_options,
         index=workspace_focus_options.index(st.session_state.workspace_focus)
         if st.session_state.workspace_focus in workspace_focus_options
         else 0,
+        format_func=lambda option: workspace_focus_labels.get(option, option),
         label_visibility="collapsed",
     )
 
-    st.sidebar.markdown("### Quick actions")
+    has_project_context = bool(st.session_state.get("current_project_id"))
+    st.sidebar.markdown("### Shortcuts")
+    st.sidebar.caption("These jump straight to common tasks.")
     qa_cols = st.sidebar.columns(3)
-    if qa_cols[0].button("New", key="qa_new_project"):
+    if qa_cols[0].button("New project", key="qa_new_project", help="Open the project setup panel to create a new project."):
         st.session_state.workspace_focus = "Project Setup"
         st.session_state.open_create_project = True
-    if qa_cols[1].button("Assign", key="qa_assign"):
+    if qa_cols[1].button(
+        "Assign",
+        key="qa_assign",
+        help="Jump to material assignment for the currently selected project.",
+        disabled=not has_project_context,
+    ):
         st.session_state.workspace_focus = "Material Selection"
-    if qa_cols[2].button("Share", key="qa_share"):
+    if qa_cols[2].button(
+        "Share",
+        key="qa_share",
+        help="Open the client review section for the currently selected project.",
+        disabled=not has_project_context,
+    ):
         st.session_state.workspace_focus = "Client Review"
 
 # -----------------------------
@@ -958,6 +979,7 @@ if page == "Projects Workspace":
     show_selection = focus in ["Dashboard", "Material Selection", "Procurement", "Client Review"]
     show_review = focus in ["Dashboard", "Client Review"]
     show_procurement = focus in ["Dashboard", "Procurement"]
+    open_create_project_panel = bool(st.session_state.pop("open_create_project", False))
 
     _render_editorial_title("Projects Workspace", "Projects")
 
@@ -965,98 +987,100 @@ if page == "Projects Workspace":
     project_statuses = load_projects_statuses([p["id"] for p in projects]) if projects else {}
 
     # Sidebar: Create project (simple + works)
-    with st.sidebar.expander("Create New Project", expanded=bool(st.session_state.pop("open_create_project", False))):
-        st.markdown("#### My Base Template")
-        st.caption("New projects can start from this template. You can edit room names and object rows in JSON.")
+    if show_setup or open_create_project_panel:
+        with st.sidebar.expander("New Project Setup", expanded=open_create_project_panel):
+            st.caption("Create a project and choose whether to start from your saved room template.")
+            st.markdown("#### My Base Template")
+            st.caption("New projects can start from this template. You can edit room names and object rows in JSON.")
 
-        template_text = st.text_area(
-            "Template JSON",
-            key="user_template_editor_json",
-            height=260,
-            help='Use format: {"rooms":[{"name":"Room","objects":[{"name":"Item","category":"Furniture","qty":1}]}]}',
-        )
+            template_text = st.text_area(
+                "Template JSON",
+                key="user_template_editor_json",
+                height=260,
+                help='Use format: {"rooms":[{"name":"Room","objects":[{"name":"Item","category":"Furniture","qty":1}]}]}',
+            )
 
-        template_buttons = st.columns(3)
-        with template_buttons[0]:
-            if st.button("Apply JSON", key="template_apply_json_btn"):
-                parsed_template, parse_error = _template_map_from_json(template_text)
-                if parse_error:
-                    st.error(parse_error)
-                else:
-                    st.session_state.user_template_map = parsed_template
-                    st.success(f"Loaded template with {len(parsed_template)} room(s).")
-        with template_buttons[1]:
-            if st.button(
-                "Save as my template",
-                key="template_save_profile_btn",
-                disabled=not (access_token and user_id),
-            ):
-                parsed_template, parse_error = _template_map_from_json(template_text)
-                if parse_error:
-                    st.error(parse_error)
-                else:
-                    ok, err = save_user_template(access_token, user_id, profile, parsed_template)
-                    if ok:
-                        st.session_state.user_template_map = parsed_template
-                        st.success("Template saved to your profile.")
+            template_buttons = st.columns(3)
+            with template_buttons[0]:
+                if st.button("Apply JSON", key="template_apply_json_btn"):
+                    parsed_template, parse_error = _template_map_from_json(template_text)
+                    if parse_error:
+                        st.error(parse_error)
                     else:
-                        st.error(f"Could not save template: {err}")
-        with template_buttons[2]:
-            if st.button("Reset default", key="template_reset_default_btn"):
-                reset_template = default_user_template()
-                st.session_state.user_template_map = reset_template
-                st.session_state.user_template_editor_json = _template_json_from_map(reset_template)
-                st.success("Reset editor to default villa template.")
+                        st.session_state.user_template_map = parsed_template
+                        st.success(f"Loaded template with {len(parsed_template)} room(s).")
+            with template_buttons[1]:
+                if st.button(
+                    "Save as my template",
+                    key="template_save_profile_btn",
+                    disabled=not (access_token and user_id),
+                ):
+                    parsed_template, parse_error = _template_map_from_json(template_text)
+                    if parse_error:
+                        st.error(parse_error)
+                    else:
+                        ok, err = save_user_template(access_token, user_id, profile, parsed_template)
+                        if ok:
+                            st.session_state.user_template_map = parsed_template
+                            st.success("Template saved to your profile.")
+                        else:
+                            st.error(f"Could not save template: {err}")
+            with template_buttons[2]:
+                if st.button("Reset default", key="template_reset_default_btn"):
+                    reset_template = default_user_template()
+                    st.session_state.user_template_map = reset_template
+                    st.session_state.user_template_editor_json = _template_json_from_map(reset_template)
+                    st.success("Reset editor to default villa template.")
 
-        active_template_map = st.session_state.get("user_template_map") or default_user_template()
-        active_room_names = list(active_template_map.keys())
-        st.caption(
-            f"Active template: {len(active_room_names)} room(s). "
-            f"{', '.join(active_room_names[:5])}{' ...' if len(active_room_names) > 5 else ''}"
-        )
-        use_my_template = st.checkbox("Use my base template for new projects", value=True, key="use_my_template_for_new_project")
+            active_template_map = st.session_state.get("user_template_map") or default_user_template()
+            active_room_names = list(active_template_map.keys())
+            st.caption(
+                f"Active template: {len(active_room_names)} room(s). "
+                f"{', '.join(active_room_names[:5])}{' ...' if len(active_room_names) > 5 else ''}"
+            )
+            use_my_template = st.checkbox("Use my base template for new projects", value=True, key="use_my_template_for_new_project")
 
-        st.markdown("---")
-        new_proj = st.text_input("Project Name", key="new_proj_name")
+            st.markdown("---")
+            new_proj = st.text_input("Project Name", key="new_proj_name")
 
-        predefined = [
-            "Living Room", "Kitchen", "Dining Room", "Bedroom", "Master Bedroom", "Guest Bedroom",
-            "Bathroom", "Guest Bathroom", "Outdoor / Terrace", "Garden", "Balcony", "Pool Area",
-            "Entrance", "Walk-in Closet", "Pantry", "Laundry Room", "Garage", "Storage Room",
-            "Office / Study", "Kids Room", "Play Area", "Hallway"
-        ]
+            predefined = [
+                "Living Room", "Kitchen", "Dining Room", "Bedroom", "Master Bedroom", "Guest Bedroom",
+                "Bathroom", "Guest Bathroom", "Outdoor / Terrace", "Garden", "Balcony", "Pool Area",
+                "Entrance", "Walk-in Closet", "Pantry", "Laundry Room", "Garage", "Storage Room",
+                "Office / Study", "Kids Room", "Play Area", "Hallway"
+            ]
 
-        room_counts = {}
-        st.markdown("#### Rooms")
-        for room in predefined:
-            count = st.number_input(room, min_value=0, max_value=10, value=0, step=1, key=f"cnt_{room}")
-            if count > 0:
-                room_counts[room] = count
+            room_counts = {}
+            st.markdown("#### Rooms")
+            for room in predefined:
+                count = st.number_input(room, min_value=0, max_value=10, value=0, step=1, key=f"cnt_{room}")
+                if count > 0:
+                    room_counts[room] = count
 
-        custom_rooms = st.text_input("Custom Rooms (comma-separated)", "", key="custom_rooms")
+            custom_rooms = st.text_input("Custom Rooms (comma-separated)", "", key="custom_rooms")
 
-        if st.button("Create", type="primary", key="create_project_btn"):
-            all_rooms = []
-            for room, count in room_counts.items():
-                for i in range(count):
-                    label = f"{room} {i+1}" if count > 1 else room
-                    all_rooms.append(label)
+            if st.button("Create", type="primary", key="create_project_btn"):
+                all_rooms = []
+                for room, count in room_counts.items():
+                    for i in range(count):
+                        label = f"{room} {i+1}" if count > 1 else room
+                        all_rooms.append(label)
 
-            all_rooms.extend([r.strip() for r in custom_rooms.split(",") if r.strip()])
+                all_rooms.extend([r.strip() for r in custom_rooms.split(",") if r.strip()])
 
-            if not new_proj.strip():
-                st.warning("Please enter a project name.")
-            else:
-                rooms_arg = all_rooms if all_rooms else None
-                if use_my_template:
-                    _create_project_compat(
-                        new_proj.strip(),
-                        rooms=rooms_arg,
-                        template_map=st.session_state.get("user_template_map") or default_user_template(),
-                    )
+                if not new_proj.strip():
+                    st.warning("Please enter a project name.")
                 else:
-                    _create_project_compat(new_proj.strip(), rooms=rooms_arg)
-                st.rerun()
+                    rooms_arg = all_rooms if all_rooms else None
+                    if use_my_template:
+                        _create_project_compat(
+                            new_proj.strip(),
+                            rooms=rooms_arg,
+                            template_map=st.session_state.get("user_template_map") or default_user_template(),
+                        )
+                    else:
+                        _create_project_compat(new_proj.strip(), rooms=rooms_arg)
+                    st.rerun()
 
     # pick selected project (by id)
     if "current_project_id" not in st.session_state:
@@ -2311,37 +2335,4 @@ elif page == "Suggestions":
 
     if not (access_token and user_id):
         st.caption("Login is required to submit suggestions.")
-
-    with st.expander("One-time Supabase setup (run in SQL Editor)", expanded=False):
-        st.code(
-            """
-create table if not exists public.app_suggestions (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  user_name text,
-  user_email text,
-  title text not null,
-  category text not null,
-  suggestion text not null,
-  allow_contact boolean not null default true,
-  status text not null default 'new'
-);
-
-alter table public.app_suggestions enable row level security;
-
-create policy if not exists "suggestions_insert_own"
-on public.app_suggestions
-for insert
-to authenticated
-with check (auth.uid() = user_id);
-
-create policy if not exists "suggestions_select_own"
-on public.app_suggestions
-for select
-to authenticated
-using (auth.uid() = user_id);
-            """.strip(),
-            language="sql",
-        )
 
