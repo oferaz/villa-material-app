@@ -202,8 +202,9 @@ def inject_custom_css():
         section[data-testid="stSidebar"] .stDownloadButton > button {
             width: 100%;
             justify-content: center;
-            background: var(--surface) !important;
+            background: #fffefb !important;
             color: var(--text) !important;
+            border-color: #ddd1bf !important;
         }
 
         section[data-testid="stSidebar"] .stButton > button *,
@@ -223,6 +224,12 @@ def inject_custom_css():
             border-color: #c7b9a2;
             background: #f5eee3;
             transform: translateY(-1px);
+        }
+
+        section[data-testid="stSidebar"] .stButton > button:hover,
+        section[data-testid="stSidebar"] .stDownloadButton > button:hover {
+            background: #fbf6ef !important;
+            border-color: #cfbea6 !important;
         }
 
         .stButton > button[kind="primary"] {
