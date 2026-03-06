@@ -3,6 +3,45 @@ from embedding import get_embedder
 import ast
 import numpy as np
 
+
+GENERAL_TAG_ALIASES = {
+    "general",
+    "generic",
+    "baseline",
+    "default",
+    "common",
+}
+
+
+def _normalize_tags(value) -> list[str]:
+    if value is None:
+        return []
+    raw = value
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return []
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                parsed = ast.literal_eval(text)
+                raw = parsed
+            except Exception:
+                raw = text
+        else:
+            raw = text
+    if isinstance(raw, (list, tuple)):
+        return [str(t).strip() for t in raw if str(t).strip()]
+    return [str(raw).strip()] if str(raw).strip() else []
+
+
+def _is_general_material(material_row: dict) -> bool:
+    category = str(material_row.get("category") or "").strip().lower()
+    if category == "general":
+        return True
+    tags = [t.lower() for t in _normalize_tags(material_row.get("tags"))]
+    return any(tag in GENERAL_TAG_ALIASES for tag in tags)
+
+
 def list_materials(access_token: str):
     sb = get_supabase(access_token)
     res = sb.table("materials").select("*").order("created_at", desc=True).execute()
@@ -12,11 +51,7 @@ def list_materials(access_token: str):
 
 
 def _material_text_for_embedding(payload: dict) -> str:
-    tags = payload.get("tags") or []
-    if isinstance(tags, list):
-        tags_text = " ".join(str(t).strip() for t in tags if str(t).strip())
-    else:
-        tags_text = str(tags).strip()
+    tags_text = " ".join(_normalize_tags(payload.get("tags")))
 
     parts = [
         str(payload.get("name") or "").strip(),
@@ -122,20 +157,47 @@ def search_materials_semantic(access_token: str, query: str, limit: int = 20):
             token_hits = sum(1 for tok in tokens if tok in haystack)
             phrase_hit = 1 if q_lower in haystack else 0
 
-            score = (2.0 * phrase_hit) + (0.8 * token_hits)
+            lexical_score = (2.0 * phrase_hit) + (0.8 * token_hits)
+            score = lexical_score
 
             row_vec = _coerce_vec(row.get("embedding"))
+            semantic_score = None
             if query_vec is not None and row_vec is not None and row_vec.shape == query_vec.shape:
                 denom = float(np.linalg.norm(query_vec) * np.linalg.norm(row_vec))
                 if denom > 0:
-                    score += float(np.dot(query_vec, row_vec) / denom)
+                    semantic_score = float(np.dot(query_vec, row_vec) / denom)
+                    score += max(semantic_score, 0.0) * 0.55
 
-            if score > 0:
+            is_general = _is_general_material(row)
+            if is_general:
+                # Keep generally tagged rows visible in object search to avoid repetitive dead-ends.
+                score += 0.15
+
+            matches_query = lexical_score > 0
+            semantically_relevant = semantic_score is not None and semantic_score >= 0.20
+            if matches_query or semantically_relevant or is_general:
                 ranked.append((score, row))
 
         if ranked:
             ranked.sort(key=lambda item: (item[0], str(item[1].get("created_at") or "")), reverse=True)
-            return [row for _, row in ranked[:limit]]
+            top_rows = [row for _, row in ranked[:limit]]
+            seen_ids = {str(r.get("id")) for r in top_rows if r.get("id")}
+
+            # If search is narrow, backfill with "general" rows so users always see broad alternatives.
+            if len(top_rows) < limit:
+                general_rows = [
+                    row
+                    for row in rows
+                    if _is_general_material(row) and str(row.get("id")) not in seen_ids
+                ]
+                if general_rows:
+                    general_rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+                    for row in general_rows:
+                        top_rows.append(row)
+                        if len(top_rows) >= limit:
+                            break
+
+            return top_rows[:limit]
 
     sb = get_supabase(access_token)
 
