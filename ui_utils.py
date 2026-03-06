@@ -150,6 +150,11 @@ def inject_custom_css():
             padding-top: 0.8rem;
         }
 
+        [data-testid="stSidebarNav"],
+        [data-testid="stSidebarNavSeparator"] {
+            display: none;
+        }
+
         section[data-testid="stSidebar"] * {
             color: var(--text) !important;
         }
@@ -187,6 +192,12 @@ def inject_custom_css():
             box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
         }
 
+        section[data-testid="stSidebar"] .stButton > button,
+        section[data-testid="stSidebar"] .stDownloadButton > button {
+            width: 100%;
+            justify-content: center;
+        }
+
         .stButton > button:hover,
         .stDownloadButton > button:hover {
             border-color: #c7b9a2;
@@ -204,6 +215,23 @@ def inject_custom_css():
         .stButton > button[kind="primary"]:hover {
             background: #a35a37;
             border-color: #a35a37;
+        }
+
+        .stButton > button:disabled,
+        .stDownloadButton > button:disabled {
+            background: #f1ebe1 !important;
+            border-color: #d8cdbd !important;
+            color: #8a978f !important;
+            box-shadow: none;
+            cursor: not-allowed;
+            opacity: 1;
+        }
+
+        .stButton > button:disabled:hover,
+        .stDownloadButton > button:disabled:hover {
+            background: #f1ebe1 !important;
+            border-color: #d8cdbd !important;
+            transform: none;
         }
 
         [data-baseweb="input"],

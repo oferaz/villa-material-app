@@ -710,20 +710,27 @@ if page == "Projects Workspace":
     has_project_context = bool(st.session_state.get("current_project_id"))
     st.sidebar.markdown("### Shortcuts")
     st.sidebar.caption("These jump straight to common tasks.")
-    qa_cols = st.sidebar.columns(3)
-    if qa_cols[0].button("New project", key="qa_new_project", help="Open the project setup panel to create a new project."):
+    if st.sidebar.button(
+        "New project",
+        key="qa_new_project",
+        type="primary",
+        use_container_width=True,
+        help="Open the project setup panel to create a new project.",
+    ):
         st.session_state.workspace_focus = "Project Setup"
         st.session_state.open_create_project = True
-    if qa_cols[1].button(
-        "Assign",
+    if st.sidebar.button(
+        "Assign materials",
         key="qa_assign",
+        use_container_width=True,
         help="Jump to material assignment for the currently selected project.",
         disabled=not has_project_context,
     ):
         st.session_state.workspace_focus = "Material Selection"
-    if qa_cols[2].button(
-        "Share",
+    if st.sidebar.button(
+        "Client review",
         key="qa_share",
+        use_container_width=True,
         help="Open the client review section for the currently selected project.",
         disabled=not has_project_context,
     ):
