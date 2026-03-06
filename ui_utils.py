@@ -323,14 +323,15 @@ def inject_custom_css():
 
         [data-testid="stSelectbox"] [data-baseweb="select"] [aria-disabled="true"],
         [data-testid="stMultiSelect"] [data-baseweb="select"] [aria-disabled="true"] {
-            background: #f2ece2 !important;
-            color: #6e7b73 !important;
+            background: #ece3d5 !important;
+            color: #33473d !important;
+            border-color: #c6b8a3 !important;
         }
 
         [data-testid="stSelectbox"] [data-baseweb="select"] [aria-disabled="true"] *,
         [data-testid="stMultiSelect"] [data-baseweb="select"] [aria-disabled="true"] * {
-            color: #6e7b73 !important;
-            -webkit-text-fill-color: #6e7b73 !important;
+            color: #33473d !important;
+            -webkit-text-fill-color: #33473d !important;
         }
 
         [data-baseweb="menu"] *,
@@ -501,6 +502,64 @@ def inject_custom_css():
             font-size: 0.74rem;
             margin: 0 0.3rem 0.28rem 0;
             padding: 0.12rem 0.56rem;
+        }
+
+        .procurement-indicators {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 0.2rem 0 0.55rem 0;
+        }
+
+        .procurement-pill {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            padding: 0.2rem 0.62rem;
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .procurement-pill.proc-pill-disabled {
+            opacity: 0.74;
+        }
+
+        .proc-tone-neutral {
+            color: #284034;
+            background: #e9e2d5;
+            border-color: #cdbfa8;
+        }
+
+        .proc-tone-amber {
+            color: #6a3f00;
+            background: #fde7bd;
+            border-color: #efc777;
+        }
+
+        .proc-tone-blue {
+            color: #0f4272;
+            background: #dceefe;
+            border-color: #9cc7f2;
+        }
+
+        .proc-tone-purple {
+            color: #4a2a76;
+            background: #ecddff;
+            border-color: #c8a5f2;
+        }
+
+        .proc-tone-green {
+            color: #1a5638;
+            background: #d9f3e2;
+            border-color: #95d3ad;
+        }
+
+        .proc-tone-red {
+            color: #7a1f2a;
+            background: #ffdce1;
+            border-color: #f3a1ad;
         }
 
         .inspire-empty {

@@ -930,6 +930,26 @@ def _procurement_priority_label(priority: str):
     return labels.get(str(priority or "").strip().lower(), "Routine")
 
 
+def _procurement_quote_tone(status: str):
+    tones = {
+        "not_started": "proc-tone-neutral",
+        "quote_requested": "proc-tone-amber",
+        "quote_received": "proc-tone-blue",
+        "po_ready": "proc-tone-purple",
+        "po_sent": "proc-tone-green",
+    }
+    return tones.get(str(status or "").strip().lower(), "proc-tone-neutral")
+
+
+def _procurement_priority_tone(priority: str):
+    tones = {
+        "routine": "proc-tone-neutral",
+        "high": "proc-tone-amber",
+        "critical": "proc-tone-red",
+    }
+    return tones.get(str(priority or "").strip().lower(), "proc-tone-neutral")
+
+
 def _room_spend(objects, material_prices):
     spend = 0.0
     assigned = 0
@@ -1785,6 +1805,12 @@ if page == "Projects Workspace":
                             select_options.append(current_material_id)
 
                         select_key = f"obj_material_select_{oid}"
+                        pending_select_key = f"obj_material_select_pending_{oid}"
+                        pending_material_id = st.session_state.get(pending_select_key)
+                        if pending_material_id in select_options:
+                            st.session_state[select_key] = pending_material_id
+                        if pending_select_key in st.session_state:
+                            st.session_state.pop(pending_select_key, None)
                         if select_key not in st.session_state:
                             st.session_state[select_key] = current_material_id if current_material_id in select_options else None
                         elif st.session_state[select_key] not in select_options:
@@ -1866,6 +1892,20 @@ if page == "Projects Workspace":
                             format_func=_procurement_quote_label,
                             key=quote_key,
                             disabled=not show_procurement,
+                        )
+                        priority_chip = _procurement_priority_label(purchasing_priority)
+                        quote_chip = _procurement_quote_label(quote_status)
+                        priority_tone = _procurement_priority_tone(purchasing_priority)
+                        quote_tone = _procurement_quote_tone(quote_status)
+                        disabled_class = " proc-pill-disabled" if not show_procurement else ""
+                        st.markdown(
+                            (
+                                '<div class="procurement-indicators">'
+                                f'<span class="procurement-pill {priority_tone}{disabled_class}">Priority: {html.escape(priority_chip)}</span>'
+                                f'<span class="procurement-pill {quote_tone}{disabled_class}">Quote: {html.escape(quote_chip)}</span>'
+                                "</div>"
+                            ),
+                            unsafe_allow_html=True,
                         )
 
                         target_price_default = _safe_float(procurement_targets.get(str(oid)))
@@ -2042,7 +2082,7 @@ if page == "Projects Workspace":
                                     if m.get("description"):
                                         st.write(str(m.get("description"))[:220])
                                     if mid and st.button("Use this", key=f"obj_pick_mat_{oid}_{mid}"):
-                                        st.session_state[select_key] = mid
+                                        st.session_state[pending_select_key] = mid
                                         st.rerun()
                                     st.markdown("</div>", unsafe_allow_html=True)
 
