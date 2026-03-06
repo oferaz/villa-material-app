@@ -1958,9 +1958,11 @@ if page == "Projects Workspace":
                         with action_cols[0]:
                             if st.button("Assign", key=f"assign_obj_material_{oid}", type="primary", disabled=not (access_token and selected_material_id)):
                                 sb = get_supabase(access_token)
-                                update_payload = {"material_id": selected_material_id}
-                                if (obj.get("status") or "unassigned") == "unassigned":
-                                    update_payload["status"] = "selected"
+                                next_status = new_status if new_status in status_options else (obj.get("status") or "unassigned")
+                                # A material assignment should not keep the object unassigned.
+                                if next_status == "unassigned":
+                                    next_status = "selected"
+                                update_payload = {"material_id": selected_material_id, "status": next_status}
                                 sb.table("room_objects").update(update_payload).eq("id", oid).execute()
 
                                 next_notes = dict(assignment_notes)
