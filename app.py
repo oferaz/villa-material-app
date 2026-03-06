@@ -1742,7 +1742,7 @@ if page == "Projects Workspace":
                     else:
                         _render_editorial_title(f"Edit: {obj.get('object_name')}", "Object Studio")
                         st.markdown(
-                            '<div class="quick-actions"><strong>Guided workflow:</strong> 1) Pick material 2) Save context 3) Set approval</div>',
+                            '<div class="quick-actions"><strong>Guided workflow:</strong> 1) Pick material 2) Optional context 3) Assign material + save</div>',
                             unsafe_allow_html=True,
                         )
 
@@ -1805,12 +1805,6 @@ if page == "Projects Workspace":
                             select_options.append(current_material_id)
 
                         select_key = f"obj_material_select_{oid}"
-                        pending_select_key = f"obj_material_select_pending_{oid}"
-                        pending_material_id = st.session_state.get(pending_select_key)
-                        if pending_material_id in select_options:
-                            st.session_state[select_key] = pending_material_id
-                        if pending_select_key in st.session_state:
-                            st.session_state.pop(pending_select_key, None)
                         if select_key not in st.session_state:
                             st.session_state[select_key] = current_material_id if current_material_id in select_options else None
                         elif st.session_state[select_key] not in select_options:
@@ -1851,62 +1845,27 @@ if page == "Projects Workspace":
                                 unsafe_allow_html=True,
                             )
 
-                        st.markdown("#### Step 2 · Capture design + purchasing context")
                         assignment_notes = _object_assignment_notes_from_row(proj)
-                        note_key = f"obj_why_note_{oid}"
-                        if note_key not in st.session_state:
-                            st.session_state[note_key] = assignment_notes.get(str(oid), "")
-                        why_this_works = st.text_area(
-                            "Why this works",
-                            key=note_key,
-                            height=84,
-                            placeholder="Explain fit with mood, light, durability, and budget intent.",
-                        )
-
                         procurement_notes = procurement_meta.get("notes") or {}
                         procurement_quotes = procurement_meta.get("quote_status") or {}
                         procurement_priorities = procurement_meta.get("priority") or {}
                         procurement_targets = procurement_meta.get("target_price") or {}
+
+                        note_key = f"obj_why_note_{oid}"
+                        if note_key not in st.session_state:
+                            st.session_state[note_key] = assignment_notes.get(str(oid), "")
 
                         priority_options = ["routine", "high", "critical"]
                         priority_key = f"obj_proc_priority_{oid}"
                         if priority_key not in st.session_state:
                             priority_value = str(procurement_priorities.get(str(oid)) or "routine").strip().lower()
                             st.session_state[priority_key] = priority_value if priority_value in priority_options else "routine"
-                        purchasing_priority = st.selectbox(
-                            "Sourcing priority",
-                            options=priority_options,
-                            format_func=_procurement_priority_label,
-                            key=priority_key,
-                            disabled=not show_procurement,
-                        )
 
                         quote_options = ["not_started", "quote_requested", "quote_received", "po_ready", "po_sent"]
                         quote_key = f"obj_proc_quote_{oid}"
                         if quote_key not in st.session_state:
                             quote_value = str(procurement_quotes.get(str(oid)) or "not_started").strip().lower()
                             st.session_state[quote_key] = quote_value if quote_value in quote_options else "not_started"
-                        quote_status = st.selectbox(
-                            "Quote status",
-                            options=quote_options,
-                            format_func=_procurement_quote_label,
-                            key=quote_key,
-                            disabled=not show_procurement,
-                        )
-                        priority_chip = _procurement_priority_label(purchasing_priority)
-                        quote_chip = _procurement_quote_label(quote_status)
-                        priority_tone = _procurement_priority_tone(purchasing_priority)
-                        quote_tone = _procurement_quote_tone(quote_status)
-                        disabled_class = " proc-pill-disabled" if not show_procurement else ""
-                        st.markdown(
-                            (
-                                '<div class="procurement-indicators">'
-                                f'<span class="procurement-pill {priority_tone}{disabled_class}">Priority: {html.escape(priority_chip)}</span>'
-                                f'<span class="procurement-pill {quote_tone}{disabled_class}">Quote: {html.escape(quote_chip)}</span>'
-                                "</div>"
-                            ),
-                            unsafe_allow_html=True,
-                        )
 
                         target_price_default = _safe_float(procurement_targets.get(str(oid)))
                         target_toggle_key = f"obj_proc_target_enabled_{oid}"
@@ -1916,32 +1875,74 @@ if page == "Projects Workspace":
                         if target_price_key not in st.session_state:
                             st.session_state[target_price_key] = float(target_price_default) if target_price_default is not None else 0.0
 
-                        target_cols = st.columns([0.35, 0.65])
-                        with target_cols[0]:
-                            use_target_price = st.checkbox("Set target price", key=target_toggle_key, disabled=not show_procurement)
-                        with target_cols[1]:
-                            target_price_input = st.number_input(
-                                "Target price (THB)",
-                                min_value=0.0,
-                                value=float(st.session_state[target_price_key]),
-                                step=10.0,
-                                key=target_price_key,
-                                disabled=(not use_target_price) or (not show_procurement),
-                            )
-                        target_price_value = target_price_input if use_target_price else None
-
                         procurement_note_key = f"obj_proc_note_{oid}"
                         if procurement_note_key not in st.session_state:
                             st.session_state[procurement_note_key] = procurement_notes.get(str(oid), "")
-                        purchasing_note = st.text_area(
-                            "Purchasing note",
-                            key=procurement_note_key,
-                            height=82,
-                            placeholder="Capture quote context, alternates, and supplier constraints.",
-                            disabled=not show_procurement,
-                        )
 
-                        st.markdown("#### Step 3 · Confirm status and finalize")
+                        st.markdown("#### Step 2 - Optional context")
+                        with st.expander("Optional: Design + purchasing context", expanded=False):
+                            st.text_area(
+                                "Why this works",
+                                key=note_key,
+                                height=84,
+                                placeholder="Explain fit with mood, light, durability, and budget intent.",
+                            )
+
+                            purchasing_priority = st.selectbox(
+                                "Sourcing priority",
+                                options=priority_options,
+                                format_func=_procurement_priority_label,
+                                key=priority_key,
+                                disabled=not show_procurement,
+                            )
+                            quote_status = st.selectbox(
+                                "Quote status",
+                                options=quote_options,
+                                format_func=_procurement_quote_label,
+                                key=quote_key,
+                                disabled=not show_procurement,
+                            )
+                            priority_chip = _procurement_priority_label(purchasing_priority)
+                            quote_chip = _procurement_quote_label(quote_status)
+                            priority_tone = _procurement_priority_tone(purchasing_priority)
+                            quote_tone = _procurement_quote_tone(quote_status)
+                            disabled_class = " proc-pill-disabled" if not show_procurement else ""
+                            st.markdown(
+                                (
+                                    '<div class="procurement-indicators">'
+                                    f'<span class="procurement-pill {priority_tone}{disabled_class}">Priority: {html.escape(priority_chip)}</span>'
+                                    f'<span class="procurement-pill {quote_tone}{disabled_class}">Quote: {html.escape(quote_chip)}</span>'
+                                    "</div>"
+                                ),
+                                unsafe_allow_html=True,
+                            )
+
+                            target_cols = st.columns([0.35, 0.65])
+                            with target_cols[0]:
+                                use_target_price = st.checkbox(
+                                    "Set target price",
+                                    key=target_toggle_key,
+                                    disabled=not show_procurement,
+                                )
+                            with target_cols[1]:
+                                st.number_input(
+                                    "Target price (THB)",
+                                    min_value=0.0,
+                                    value=float(st.session_state[target_price_key]),
+                                    step=10.0,
+                                    key=target_price_key,
+                                    disabled=(not use_target_price) or (not show_procurement),
+                                )
+
+                            st.text_area(
+                                "Purchasing note",
+                                key=procurement_note_key,
+                                height=82,
+                                placeholder="Capture quote context, alternates, and supplier constraints.",
+                                disabled=not show_procurement,
+                            )
+
+                        st.markdown("#### Step 3 - Assign material + save")
                         status_options = ["unassigned", "selected", "designer_approved", "client_approved"]
                         current_status = obj.get("status") or "unassigned"
                         if current_status not in status_options:
@@ -1954,82 +1955,55 @@ if page == "Projects Workspace":
                             key=f"obj_status_select_{oid}",
                         )
 
-                        action_cols = st.columns([1, 1, 1, 1, 1, 1])
+                        def _assign_material_and_save(material_id_value: str):
+                            sb = get_supabase(access_token)
+                            next_status = new_status if new_status in status_options else (obj.get("status") or "unassigned")
+                            if next_status == "unassigned":
+                                next_status = "selected"
+                            sb.table("room_objects").update({"material_id": material_id_value, "status": next_status}).eq("id", oid).execute()
+
+                            next_notes = dict(assignment_notes)
+                            clean_why = str(st.session_state.get(note_key) or "").strip()
+                            if clean_why:
+                                next_notes[str(oid)] = clean_why
+                            else:
+                                next_notes.pop(str(oid), None)
+
+                            raw_quote = str(st.session_state.get(quote_key) or "not_started").strip().lower()
+                            raw_priority = str(st.session_state.get(priority_key) or "routine").strip().lower()
+                            raw_proc_note = str(st.session_state.get(procurement_note_key) or "").strip()
+                            raw_target_value = _safe_float(st.session_state.get(target_price_key))
+                            use_target_value = bool(st.session_state.get(target_toggle_key))
+                            target_price_value = raw_target_value if use_target_value else None
+
+                            next_procurement = _update_procurement_for_object(
+                                procurement_meta,
+                                str(oid),
+                                raw_proc_note,
+                                raw_quote if raw_quote != "not_started" else "",
+                                raw_priority if raw_priority != "routine" else "",
+                                target_price_value,
+                            )
+                            return _save_project_cart_fields(
+                                access_token,
+                                str(pid),
+                                {"assignment_notes": next_notes, "procurement": next_procurement},
+                            )
+
+                        action_cols = st.columns([2, 1, 1])
                         with action_cols[0]:
-                            if st.button("Assign", key=f"assign_obj_material_{oid}", type="primary", disabled=not (access_token and selected_material_id)):
-                                sb = get_supabase(access_token)
-                                next_status = new_status if new_status in status_options else (obj.get("status") or "unassigned")
-                                # A material assignment should not keep the object unassigned.
-                                if next_status == "unassigned":
-                                    next_status = "selected"
-                                update_payload = {"material_id": selected_material_id, "status": next_status}
-                                sb.table("room_objects").update(update_payload).eq("id", oid).execute()
-
-                                next_notes = dict(assignment_notes)
-                                clean_why = why_this_works.strip()
-                                if clean_why:
-                                    next_notes[str(oid)] = clean_why
-                                else:
-                                    next_notes.pop(str(oid), None)
-
-                                next_procurement = _update_procurement_for_object(
-                                    procurement_meta,
-                                    str(oid),
-                                    purchasing_note,
-                                    quote_status if quote_status != "not_started" else "",
-                                    purchasing_priority if purchasing_priority != "routine" else "",
-                                    target_price_value,
-                                )
-                                ok, err = _save_project_cart_fields(
-                                    access_token,
-                                    str(pid),
-                                    {"assignment_notes": next_notes, "procurement": next_procurement},
-                                )
+                            if st.button(
+                                "Assign Material + Save",
+                                key=f"assign_obj_material_{oid}",
+                                type="primary",
+                                disabled=not (access_token and selected_material_id),
+                            ):
+                                ok, err = _assign_material_and_save(str(selected_material_id))
                                 if not ok:
                                     st.warning(f"Material was assigned, but notes were not saved: {err}")
                                 st.success("Material assigned with design and purchasing context.")
                                 st.rerun()
                         with action_cols[1]:
-                            save_notes_label = "Save Notes + Quote" if show_procurement else "Save Notes"
-                            if st.button(save_notes_label, key=f"save_obj_notes_{oid}", disabled=not access_token):
-                                next_notes = dict(assignment_notes)
-                                clean_why = why_this_works.strip()
-                                if clean_why:
-                                    next_notes[str(oid)] = clean_why
-                                else:
-                                    next_notes.pop(str(oid), None)
-
-                                next_procurement = _update_procurement_for_object(
-                                    procurement_meta,
-                                    str(oid),
-                                    purchasing_note,
-                                    quote_status if quote_status != "not_started" else "",
-                                    purchasing_priority if purchasing_priority != "routine" else "",
-                                    target_price_value,
-                                )
-                                ok, err = _save_project_cart_fields(
-                                    access_token,
-                                    str(pid),
-                                    {"assignment_notes": next_notes, "procurement": next_procurement},
-                                )
-                                if ok:
-                                    st.success("Design and purchasing notes and quote status saved.")
-                                    st.rerun()
-                                else:
-                                    st.error(f"Could not save notes: {err}")
-                        with action_cols[2]:
-                            if st.button("Save Status", key=f"save_obj_status_{oid}", disabled=not access_token):
-                                sb = get_supabase(access_token)
-                                sb.table("room_objects").update({"status": new_status}).eq("id", oid).execute()
-                                st.success("Status updated.")
-                                st.rerun()
-                        with action_cols[3]:
-                            if st.button("Design Approve", key=f"approve_obj_status_{oid}", disabled=not access_token):
-                                sb = get_supabase(access_token)
-                                sb.table("room_objects").update({"status": "designer_approved"}).eq("id", oid).execute()
-                                st.success("Marked as design approved.")
-                                st.rerun()
-                        with action_cols[4]:
                             if st.button("Clear", key=f"clear_obj_material_{oid}", disabled=not access_token):
                                 sb = get_supabase(access_token)
                                 sb.table("room_objects").update({"material_id": None, "status": "unassigned"}).eq("id", oid).execute()
@@ -2051,7 +2025,7 @@ if page == "Projects Workspace":
                                 )
                                 st.success("Material, status, and notes reset.")
                                 st.rerun()
-                        with action_cols[5]:
+                        with action_cols[2]:
                             if st.button("Close", key=f"close_obj_editor_{oid}"):
                                 st.session_state.current_object_id = None
                                 st.rerun()
@@ -2083,8 +2057,11 @@ if page == "Projects Workspace":
                                         st.caption(f"Category: {m.get('category')}")
                                     if m.get("description"):
                                         st.write(str(m.get("description"))[:220])
-                                    if mid and st.button("Use this", key=f"obj_pick_mat_{oid}_{mid}"):
-                                        st.session_state[pending_select_key] = mid
+                                    if mid and st.button("Use this", key=f"obj_pick_mat_{oid}_{mid}", disabled=not access_token):
+                                        ok, err = _assign_material_and_save(mid)
+                                        if not ok:
+                                            st.warning(f"Material was assigned, but notes were not saved: {err}")
+                                        st.success("Material assigned from top matches.")
                                         st.rerun()
                                     st.markdown("</div>", unsafe_allow_html=True)
 
