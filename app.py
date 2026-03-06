@@ -4,11 +4,14 @@ import os
 import html
 import json
 import inspect
+import base64
+from io import BytesIO
 from datetime import datetime, timezone
 import streamlit as st
 import pandas as pd
 import numpy as np
 from sentence_transformers import util
+from PIL import Image
 
 from ui_utils import inject_custom_css, apply_custom_css, render_product_card, set_background_image
 from config import CATALOG_PKL
@@ -181,6 +184,30 @@ def _copy_session_value(source_key: str, target_key: str):
     st.session_state[target_key] = st.session_state.get(source_key)
 
 
+def _normalize_mood_image_refs(values, limit: int = 6) -> list[str]:
+    refs = []
+    for value in (values or []):
+        text = str(value or "").strip()
+        if not text:
+            continue
+        if text.startswith("http://") or text.startswith("https://") or text.startswith("data:image/"):
+            refs.append(text)
+    return refs[:limit]
+
+
+def _uploaded_mood_file_to_data_url(uploaded_file) -> str | None:
+    try:
+        image = Image.open(uploaded_file)
+        image = image.convert("RGB")
+        image.thumbnail((1600, 1600))
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=85, optimize=True)
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return f"data:image/jpeg;base64,{encoded}"
+    except Exception:
+        return None
+
+
 def _create_project_compat(name: str, rooms=None, template_map: dict | None = None):
     """Call create_project with optional template_map only when supported."""
     kwargs = {"rooms": rooms}
@@ -222,7 +249,7 @@ def _design_brief_from_row(project_row: dict | None):
         "keywords": [str(x).strip() for x in keywords if str(x).strip()],
         "references": str(brief.get("references") or "").strip(),
         "materials_mood": str(brief.get("materials_mood") or "").strip(),
-        "mood_images": [str(x).strip() for x in mood_images if str(x).strip()],
+        "mood_images": _normalize_mood_image_refs(mood_images, limit=6),
         "hero_material_ids": [str(x).strip() for x in hero_material_ids if str(x).strip()],
     }
 
@@ -314,7 +341,7 @@ def _render_editorial_title(title: str, kicker: str | None = None):
 
 
 def _render_mood_strip(image_urls: list[str]):
-    clean_urls = [u for u in image_urls if isinstance(u, str) and u.strip().startswith("http")][:6]
+    clean_urls = _normalize_mood_image_refs(image_urls, limit=6)
     if not clean_urls:
         st.markdown(
             '<div class="inspire-empty">Start with a concept board: add 3-6 mood references to shape palette and form language.</div>',
@@ -1223,13 +1250,16 @@ if page == "Projects Workspace":
                         height=78,
                         placeholder="e.g. limewash walls, soft bronze accents, warm travertine.",
                     )
-                    brief_mood_urls = st.text_area(
-                        "Mood strip image URLs (one per line, 3-6)",
-                        value="\n".join(design_brief.get("mood_images", [])),
-                        key=f"brief_mood_urls_{pid}",
-                        height=110,
-                        placeholder="https://...",
+                    existing_mood_images = _normalize_mood_image_refs(design_brief.get("mood_images", []), limit=6)
+                    st.caption(f"Current mood images: {len(existing_mood_images)}")
+                    uploaded_mood_files = st.file_uploader(
+                        "Mood strip image files (upload 3-6)",
+                        type=["png", "jpg", "jpeg", "webp"],
+                        accept_multiple_files=True,
+                        key=f"brief_mood_files_{pid}",
+                        help="Uploading files replaces the current mood strip images.",
                     )
+                    clear_mood_images = st.checkbox("Clear current mood images", key=f"brief_mood_clear_{pid}", value=False)
                     hero_options = sorted(material_name_map.keys(), key=lambda mid: material_name_map.get(mid, ""))
                     selected_hero_ids = st.multiselect(
                         "Hero materials",
@@ -1240,23 +1270,41 @@ if page == "Projects Workspace":
                     )
 
                     if st.button("Save Mood Direction", type="primary", key=f"save_mood_brief_{pid}"):
-                        next_brief = {
-                            "keywords": [x.strip() for x in brief_keywords_text.split(",") if x.strip()],
-                            "references": brief_references_text.strip(),
-                            "materials_mood": brief_materials_mood.strip(),
-                            "mood_images": [
-                                x.strip()
-                                for x in brief_mood_urls.splitlines()
-                                if x.strip().startswith("http")
-                            ][:6],
-                            "hero_material_ids": selected_hero_ids[:6],
-                        }
-                        ok, err = _save_project_cart_fields(access_token, str(pid), {"design_brief": next_brief})
-                        if ok:
-                            st.success("Mood direction saved.")
-                            st.rerun()
-                        else:
-                            st.error(f"Could not save mood direction: {err}")
+                        mood_images_for_save = list(existing_mood_images)
+                        can_save_mood = True
+                        if clear_mood_images:
+                            mood_images_for_save = []
+                        elif uploaded_mood_files:
+                            converted_mood_images = []
+                            failed_uploads = 0
+                            for uploaded_file in uploaded_mood_files[:6]:
+                                data_url = _uploaded_mood_file_to_data_url(uploaded_file)
+                                if data_url:
+                                    converted_mood_images.append(data_url)
+                                else:
+                                    failed_uploads += 1
+                            if failed_uploads:
+                                st.warning(f"{failed_uploads} mood image file(s) could not be processed.")
+                            if converted_mood_images:
+                                mood_images_for_save = converted_mood_images
+                            else:
+                                st.error("Could not process uploaded mood images. Please use PNG/JPG/WEBP files.")
+                                can_save_mood = False
+
+                        if can_save_mood:
+                            next_brief = {
+                                "keywords": [x.strip() for x in brief_keywords_text.split(",") if x.strip()],
+                                "references": brief_references_text.strip(),
+                                "materials_mood": brief_materials_mood.strip(),
+                                "mood_images": mood_images_for_save[:6],
+                                "hero_material_ids": selected_hero_ids[:6],
+                            }
+                            ok, err = _save_project_cart_fields(access_token, str(pid), {"design_brief": next_brief})
+                            if ok:
+                                st.success("Mood direction saved.")
+                                st.rerun()
+                            else:
+                                st.error(f"Could not save mood direction: {err}")
 
                     hero_names = [material_name_map.get(mid, mid) for mid in selected_hero_ids[:6]]
                     if hero_names:
