@@ -116,10 +116,6 @@ def inject_custom_css():
             color: var(--forest-800);
         }
 
-        p, span, label, li, div {
-            color: var(--text);
-        }
-
         [data-testid="stCaptionContainer"],
         .stCaption,
         small {
@@ -198,6 +194,20 @@ def inject_custom_css():
         section[data-testid="stSidebar"] .stDownloadButton > button {
             width: 100%;
             justify-content: center;
+            background: var(--surface) !important;
+            color: var(--text) !important;
+        }
+
+        section[data-testid="stSidebar"] .stButton > button *,
+        section[data-testid="stSidebar"] .stDownloadButton > button *,
+        section[data-testid="stSidebar"] .stButton > button p,
+        section[data-testid="stSidebar"] .stDownloadButton > button p,
+        section[data-testid="stSidebar"] .stButton > button span,
+        section[data-testid="stSidebar"] .stDownloadButton > button span,
+        section[data-testid="stSidebar"] .stButton > button div,
+        section[data-testid="stSidebar"] .stDownloadButton > button div {
+            color: inherit !important;
+            -webkit-text-fill-color: currentColor !important;
         }
 
         .stButton > button:hover,
@@ -218,6 +228,7 @@ def inject_custom_css():
         .stDownloadButton > button[kind="primary"] * {
             color: #fff8f3 !important;
             fill: #fff8f3 !important;
+            -webkit-text-fill-color: #fff8f3 !important;
         }
 
         .stButton > button[kind="primary"]:hover {
