@@ -659,7 +659,7 @@ def get_project_share_from_row(project_row: dict | None):
 
     token = share.get("token")
     created_at = share.get("created_at")
-    enabled = bool(share.get("enabled"))
+    enabled = _coerce_bool(share.get("enabled"))
     if not isinstance(token, str) or not token.strip():
         token = None
     if not isinstance(created_at, str) or not created_at.strip():
@@ -824,6 +824,16 @@ def _clean_share_token(share_token: str | None):
     return token or None
 
 
+def _coerce_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+    return False
+
+
 def get_shared_project_by_token(share_token: str | None):
     """
     Return one project that has a matching enabled share token.
@@ -837,13 +847,19 @@ def get_shared_project_by_token(share_token: str | None):
         rows = (
             sb.table("projects")
             .select("*")
-            .contains("cart", {"share": {"token": token, "enabled": True}})
+            .contains("cart", {"share": {"token": token}})
             .limit(1)
             .execute()
             .data
             or []
         )
-        return rows[0] if rows else None
+        if not rows:
+            return None
+        project = rows[0]
+        share_meta = get_project_share_from_row(project)
+        if not share_meta.get("enabled"):
+            return None
+        return project
     except Exception as e:
         st.error(f"❌ Failed to load shared project: {e}")
         return None

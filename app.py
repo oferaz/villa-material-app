@@ -1196,14 +1196,25 @@ if page == "Projects Workspace":
                                 st.success("Shareable customer link created.")
                                 st.rerun()
                     with controls[1]:
+                        share_toggle_key = f"share_enabled_{pid}"
+                        share_toggle_token_key = f"share_enabled_token_{pid}"
+                        if (
+                            share_toggle_key not in st.session_state
+                            or st.session_state.get(share_toggle_token_key) != (share_token_value or "")
+                            or bool(st.session_state.get(share_toggle_key)) != bool(share_enabled)
+                        ):
+                            st.session_state[share_toggle_key] = bool(share_enabled)
+                            st.session_state[share_toggle_token_key] = share_token_value or ""
+
                         enable_value = st.checkbox(
                             "Allow customer access",
-                            value=share_enabled,
-                            key=f"share_enabled_{pid}",
+                            key=share_toggle_key,
                             disabled=not bool(share_token_value),
                         )
                         if share_token_value and enable_value != share_enabled:
                             if set_project_share_enabled(pid, enable_value):
+                                st.session_state[share_toggle_key] = bool(enable_value)
+                                st.session_state[share_toggle_token_key] = share_token_value or ""
                                 st.success("Customer link access updated.")
                                 st.rerun()
                     with controls[2]:
