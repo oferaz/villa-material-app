@@ -126,6 +126,8 @@ def inject_custom_css():
             max-width: 1280px;
             padding-top: 1.2rem;
             padding-bottom: 2.2rem;
+            padding-left: 1.4rem;
+            padding-right: 1.4rem;
         }
 
         .main > div {
@@ -463,6 +465,11 @@ def inject_custom_css():
         }
 
         @media (max-width: 980px) {
+            [data-testid="stAppViewContainer"] .main .block-container {
+                padding-left: 0.9rem;
+                padding-right: 0.9rem;
+            }
+
             .mood-strip-wrap {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
             }
