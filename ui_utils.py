@@ -303,6 +303,36 @@ def inject_custom_css():
             box-shadow: 0 16px 32px rgba(28, 38, 31, 0.16) !important;
         }
 
+        [data-testid="stSelectbox"] [data-baseweb="select"] > div,
+        [data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+            background: #fffdf9 !important;
+            border: 1px solid var(--line) !important;
+            color: var(--text) !important;
+        }
+
+        [data-testid="stSelectbox"] [data-baseweb="select"] *,
+        [data-testid="stMultiSelect"] [data-baseweb="select"] * {
+            color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
+        }
+
+        [data-testid="stSelectbox"] [data-baseweb="select"] svg,
+        [data-testid="stMultiSelect"] [data-baseweb="select"] svg {
+            fill: var(--text) !important;
+        }
+
+        [data-testid="stSelectbox"] [data-baseweb="select"] [aria-disabled="true"],
+        [data-testid="stMultiSelect"] [data-baseweb="select"] [aria-disabled="true"] {
+            background: #f2ece2 !important;
+            color: #6e7b73 !important;
+        }
+
+        [data-testid="stSelectbox"] [data-baseweb="select"] [aria-disabled="true"] *,
+        [data-testid="stMultiSelect"] [data-baseweb="select"] [aria-disabled="true"] * {
+            color: #6e7b73 !important;
+            -webkit-text-fill-color: #6e7b73 !important;
+        }
+
         [data-baseweb="menu"] *,
         [data-baseweb="popover"] * {
             color: var(--text) !important;
@@ -311,6 +341,12 @@ def inject_custom_css():
 
         [role="option"] {
             background: #fffdf9 !important;
+            color: var(--text) !important;
+        }
+
+        [role="option"] * {
+            color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
         }
 
         [role="option"][aria-selected="true"] {
