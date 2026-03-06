@@ -751,7 +751,8 @@ def load_materials_cached(token: str | None):
 
 
 @st.cache_data(ttl=45, show_spinner=False)
-def search_materials_cached(token: str | None, query: str, limit: int = 20):
+def search_materials_cached(token: str | None, query: str, limit: int = 20, refresh_nonce: int = 0):
+    _ = refresh_nonce
     if not token:
         return []
     return search_materials_semantic(token, query, limit=limit)
@@ -1741,12 +1742,20 @@ if page == "Projects Workspace":
                             key=query_key,
                             placeholder="Type texture, style, or usage",
                         )
+                        refresh_key = f"obj_material_refresh_{oid}"
+                        if refresh_key not in st.session_state:
+                            st.session_state[refresh_key] = 0
                         if search_cols[1].button("Search", key=f"obj_search_btn_{oid}"):
-                            st.rerun()
+                            st.session_state[refresh_key] += 1
 
                         if access_token and query_text.strip():
                             try:
-                                material_options = search_materials_cached(access_token, query_text.strip(), limit=20)
+                                material_options = search_materials_cached(
+                                    access_token,
+                                    query_text.strip(),
+                                    limit=20,
+                                    refresh_nonce=int(st.session_state.get(refresh_key, 0)),
+                                )
                             except Exception as e:
                                 material_error = str(e)
 
