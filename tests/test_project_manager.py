@@ -210,3 +210,95 @@ def test_load_project_rooms_backfills_legacy_rooms_when_project_rows_are_empty(m
     assert len(rooms) == 2
     assert {row["name"] for row in rooms} == {"Living Room", "Kitchen"}
     assert [row["name"] for row in fake_sb.db["project_rooms"]] == ["Living Room", "Kitchen"]
+
+
+class ShareLookupResult:
+    def __init__(self, data):
+        self.data = data
+
+
+class ShareLookupTable:
+    def __init__(self, rows):
+        self._rows = list(rows or [])
+        self._limit = None
+        self._share_token = None
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def contains(self, key, value):
+        assert key == "cart"
+        share = value.get("share") if isinstance(value, dict) else {}
+        self._share_token = str(share.get("token") or "").strip()
+        return self
+
+    def limit(self, count):
+        self._limit = count
+        return self
+
+    def execute(self):
+        token = self._share_token
+        matched = []
+        for row in self._rows:
+            cart = row.get("cart") if isinstance(row, dict) else {}
+            share = cart.get("share") if isinstance(cart, dict) else {}
+            row_token = str(share.get("token") or "").strip()
+            if token and row_token == token:
+                matched.append(dict(row))
+        if self._limit is not None:
+            matched = matched[: self._limit]
+        return ShareLookupResult(matched)
+
+
+class ShareLookupSupabase:
+    def __init__(self, rows):
+        self._rows = list(rows or [])
+
+    def table(self, table_name):
+        assert table_name == "projects"
+        return ShareLookupTable(self._rows)
+
+
+def test_get_project_share_from_row_coerces_enabled_variants():
+    row_true = {"cart": {"share": {"token": "abc", "enabled": "true"}}}
+    row_false = {"cart": {"share": {"token": "abc", "enabled": "false"}}}
+    row_numeric = {"cart": {"share": {"token": "abc", "enabled": 1}}}
+
+    assert pm.get_project_share_from_row(row_true)["enabled"] is True
+    assert pm.get_project_share_from_row(row_false)["enabled"] is False
+    assert pm.get_project_share_from_row(row_numeric)["enabled"] is True
+
+
+def test_get_shared_project_by_token_accepts_string_enabled_true(monkeypatch):
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(pm, "st", fake_st)
+    rows = [
+        {
+            "id": "project-1",
+            "name": "Project One",
+            "cart": {"share": {"token": "tok-1", "enabled": "true"}},
+        }
+    ]
+    monkeypatch.setattr(pm, "get_supabase", lambda _access_token: ShareLookupSupabase(rows))
+
+    project = pm.get_shared_project_by_token("tok-1")
+
+    assert project is not None
+    assert project["id"] == "project-1"
+
+
+def test_get_shared_project_by_token_rejects_disabled_share(monkeypatch):
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(pm, "st", fake_st)
+    rows = [
+        {
+            "id": "project-1",
+            "name": "Project One",
+            "cart": {"share": {"token": "tok-1", "enabled": False}},
+        }
+    ]
+    monkeypatch.setattr(pm, "get_supabase", lambda _access_token: ShareLookupSupabase(rows))
+
+    project = pm.get_shared_project_by_token("tok-1")
+
+    assert project is None
