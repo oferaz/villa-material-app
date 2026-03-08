@@ -4,6 +4,7 @@ import re
 import time
 import json
 import base64
+from urllib.parse import unquote_plus
 from supabase_client import get_supabase
 from data_utils import APP_DATA_DIR
 
@@ -185,6 +186,123 @@ def _friendly_verify_error(error_text: str) -> str | None:
     return None
 
 
+def _read_query_param(name: str) -> str:
+    raw = st.query_params.get(name, "")
+    if isinstance(raw, list):
+        raw = raw[0] if raw else ""
+    return str(raw or "").strip()
+
+
+def _auth_redirect_url() -> str | None:
+    redirect_url = None
+    if hasattr(st, "secrets"):
+        redirect_url = (
+            st.secrets.get("SUPABASE_AUTH_REDIRECT_URL")
+            or st.secrets.get("PUBLIC_APP_URL")
+        )
+    if not redirect_url:
+        redirect_url = (
+            os.getenv("SUPABASE_AUTH_REDIRECT_URL")
+            or os.getenv("PUBLIC_APP_URL")
+        )
+    text = str(redirect_url or "").strip()
+    return text or None
+
+
+def _clear_oauth_query_params() -> None:
+    for key in ("code", "error", "error_code", "error_description", "state"):
+        try:
+            del st.query_params[key]
+        except Exception:
+            pass
+
+
+def _capture_pkce_code_verifier(sb) -> None:
+    auth_client = getattr(sb, "auth", None)
+    storage = getattr(auth_client, "_storage", None)
+    storage_key = getattr(auth_client, "_storage_key", None)
+    if not storage or not storage_key:
+        return
+
+    getter = getattr(storage, "get_item", None)
+    if not callable(getter):
+        return
+
+    code_verifier = getter(f"{storage_key}-code-verifier")
+    if code_verifier:
+        st.session_state.sb_oauth_code_verifier = str(code_verifier)
+
+
+def _begin_google_oauth() -> str:
+    sb = get_supabase()
+    credentials = {"provider": "google"}
+
+    redirect_to = _auth_redirect_url()
+    if redirect_to:
+        credentials["options"] = {"redirect_to": redirect_to}
+        st.session_state.sb_oauth_redirect_to = redirect_to
+
+    oauth_res = sb.auth.sign_in_with_oauth(credentials)
+    _capture_pkce_code_verifier(sb)
+
+    oauth_url = getattr(oauth_res, "url", None)
+    if not oauth_url:
+        raise RuntimeError("Supabase did not return an OAuth URL.")
+    return str(oauth_url)
+
+
+def _complete_google_oauth_callback() -> bool:
+    code = _read_query_param("code")
+    error_code = _read_query_param("error") or _read_query_param("error_code")
+    error_description = _read_query_param("error_description")
+
+    if error_code:
+        _clear_oauth_query_params()
+        st.session_state.pop("sb_oauth_code_verifier", None)
+        st.session_state.pop("sb_oauth_redirect_to", None)
+
+        details = unquote_plus(error_description) if error_description else error_code
+        st.error(f"Google sign-in failed: {details}")
+        return True
+
+    if not code:
+        return False
+
+    try:
+        sb = get_supabase()
+        exchange_params = {"auth_code": code}
+
+        code_verifier = st.session_state.get("sb_oauth_code_verifier")
+        if code_verifier:
+            exchange_params["code_verifier"] = code_verifier
+
+        redirect_to = st.session_state.get("sb_oauth_redirect_to") or _auth_redirect_url()
+        if redirect_to:
+            exchange_params["redirect_to"] = redirect_to
+
+        res = sb.auth.exchange_code_for_session(exchange_params)
+        session = res.session
+        user = res.user
+
+        _clear_oauth_query_params()
+        st.session_state.pop("sb_oauth_code_verifier", None)
+        st.session_state.pop("sb_oauth_redirect_to", None)
+
+        if not _set_auth_state(session, user):
+            clear_auth_state()
+            st.error("Google login succeeded but no session was returned. Please try again.")
+            return True
+
+        st.rerun()
+        return True
+    except Exception:
+        _clear_oauth_query_params()
+        st.session_state.pop("sb_oauth_code_verifier", None)
+        st.session_state.pop("sb_oauth_redirect_to", None)
+        st.error("Could not complete Google sign-in. Please try again.")
+        return True
+
+
 def _save_persisted_session(session, user) -> None:
     if not _session_persistence_enabled():
         return
@@ -259,6 +377,8 @@ def clear_auth_state(extra_keys: list[str] | None = None) -> None:
         "sb_access_token",
         "sb_refresh_token",
         "sb_access_expires_at",
+        "sb_oauth_code_verifier",
+        "sb_oauth_redirect_to",
         "user_id",
         "user_email",
         "pending_email",
@@ -293,6 +413,7 @@ def require_login():
         return
 
     _hide_sidebar_navigation_for_auth()
+    _complete_google_oauth_callback()
 
     _, login_col, _ = st.columns([1, 1.4, 1])
     with login_col:
@@ -302,12 +423,34 @@ def require_login():
             """
             <div class="welcome-box">
                 <h2>Welcome to Materia</h2>
-                <p>Sign in with a one-time code sent to your email.</p>
+                <p>Sign in with Google or with a one-time code sent to your email.</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        st.caption("How login works: enter your email, request a code, then paste the code to continue.")
+        st.caption("Choose Google sign-in, or request an email code and verify it below.")
+
+        try:
+            google_oauth_url = _begin_google_oauth()
+        except Exception:
+            google_oauth_url = ""
+
+        if google_oauth_url:
+            st.link_button(
+                "Continue with Google",
+                google_oauth_url,
+                type="primary",
+                use_container_width=True,
+            )
+        else:
+            st.button(
+                "Continue with Google",
+                disabled=True,
+                use_container_width=True,
+            )
+            st.caption("Google sign-in is temporarily unavailable.")
+
+        st.markdown("##### Or sign in with email code")
 
         email = st.text_input("Email address", placeholder="name@company.com")
         email_clean = _normalize_email(email)
