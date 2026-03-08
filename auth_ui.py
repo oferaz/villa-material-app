@@ -210,7 +210,21 @@ def _auth_redirect_url() -> str | None:
 
 
 def _clear_oauth_query_params() -> None:
-    for key in ("code", "error", "error_code", "error_description", "state"):
+    for key in (
+        "code",
+        "state",
+        "error",
+        "error_code",
+        "error_description",
+        "access_token",
+        "refresh_token",
+        "token_type",
+        "expires_in",
+        "expires_at",
+        "provider_token",
+        "provider_refresh_token",
+        "type",
+    ):
         try:
             del st.query_params[key]
         except Exception:
@@ -253,6 +267,8 @@ def _begin_google_oauth() -> str:
 
 def _complete_google_oauth_callback() -> bool:
     code = _read_query_param("code")
+    access_token = _read_query_param("access_token")
+    refresh_token = _read_query_param("refresh_token")
     error_code = _read_query_param("error") or _read_query_param("error_code")
     error_description = _read_query_param("error_description")
 
@@ -264,6 +280,43 @@ def _complete_google_oauth_callback() -> bool:
         details = unquote_plus(error_description) if error_description else error_code
         st.error(f"Google sign-in failed: {details}")
         return True
+
+    if access_token:
+        try:
+            sb = get_supabase()
+            if refresh_token:
+                res = sb.auth.set_session(access_token, refresh_token)
+                session = res.session
+                user = res.user
+            else:
+                user_res = sb.auth.get_user(access_token)
+                session = None
+                user = getattr(user_res, "user", None)
+
+            _clear_oauth_query_params()
+            st.session_state.pop("sb_oauth_code_verifier", None)
+            st.session_state.pop("sb_oauth_redirect_to", None)
+
+            if session and _set_auth_state(session, user):
+                st.rerun()
+                return True
+
+            if access_token and user:
+                st.session_state.sb_access_token = access_token
+                st.session_state.user_id = getattr(user, "id", None)
+                st.session_state.user_email = getattr(user, "email", None)
+                st.rerun()
+                return True
+
+            clear_auth_state()
+            st.error("Google login succeeded but no session was returned. Please try again.")
+            return True
+        except Exception:
+            _clear_oauth_query_params()
+            st.session_state.pop("sb_oauth_code_verifier", None)
+            st.session_state.pop("sb_oauth_redirect_to", None)
+            st.error("Could not complete Google sign-in. Please try again.")
+            return True
 
     if not code:
         return False
