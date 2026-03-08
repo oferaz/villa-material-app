@@ -17,7 +17,7 @@ def _resolve_auth_flow_type() -> str:
     flow_text = str(flow or "").strip().lower()
     if flow_text in {"pkce", "implicit"}:
         return flow_text
-    return "implicit"
+    return "pkce"
 
 
 def _build_client_options():

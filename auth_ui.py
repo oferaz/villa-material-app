@@ -4,12 +4,14 @@ import re
 import time
 import json
 import base64
+import secrets
 from urllib.parse import unquote_plus
 from supabase_client import get_supabase
 from data_utils import APP_DATA_DIR
 
 AUTH_SESSION_FILE = os.path.join(APP_DATA_DIR, "auth_session.json")
 LOGO_PNG_PATH = os.path.join("assets", "materia_logo.png")
+_OAUTH_PKCE_VERIFIERS: dict[str, tuple[str, float]] = {}
 
 
 def _jwt_exp_epoch(access_token: str | None) -> float | None:
@@ -193,6 +195,16 @@ def _read_query_param(name: str) -> str:
     return str(raw or "").strip()
 
 
+def _set_query_param(url: str, key: str, value: str) -> str:
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    parsed = urlparse(str(url or "").strip())
+    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    params[str(key)] = str(value)
+    query = urlencode(params)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment))
+
+
 def _auth_redirect_url() -> str | None:
     redirect_url = None
     if hasattr(st, "secrets"):
@@ -212,6 +224,7 @@ def _auth_redirect_url() -> str | None:
 def _clear_oauth_query_params() -> None:
     for key in (
         "code",
+        "oauth_nonce",
         "state",
         "error",
         "error_code",
@@ -229,6 +242,30 @@ def _clear_oauth_query_params() -> None:
             del st.query_params[key]
         except Exception:
             pass
+
+
+def _remember_oauth_pkce_verifier(oauth_nonce: str, code_verifier: str) -> None:
+    nonce = str(oauth_nonce or "").strip()
+    verifier = str(code_verifier or "").strip()
+    if not nonce or not verifier:
+        return
+    now = time.time()
+    # Keep entries briefly; only needed for a single OAuth callback round-trip.
+    for key, (_, created_at) in list(_OAUTH_PKCE_VERIFIERS.items()):
+        if (now - float(created_at)) > 900:
+            _OAUTH_PKCE_VERIFIERS.pop(key, None)
+    _OAUTH_PKCE_VERIFIERS[nonce] = (verifier, now)
+
+
+def _pop_oauth_pkce_verifier(oauth_nonce: str) -> str | None:
+    nonce = str(oauth_nonce or "").strip()
+    if not nonce:
+        return None
+    item = _OAUTH_PKCE_VERIFIERS.pop(nonce, None)
+    if not item:
+        return None
+    verifier, _created_at = item
+    return str(verifier or "").strip() or None
 
 
 def _capture_pkce_code_verifier(sb) -> None:
@@ -252,12 +289,20 @@ def _begin_google_oauth() -> str:
     credentials = {"provider": "google"}
 
     redirect_to = _auth_redirect_url()
+    oauth_nonce = ""
     if redirect_to:
-        credentials["options"] = {"redirect_to": redirect_to}
+        oauth_nonce = secrets.token_urlsafe(16)
+        redirect_with_nonce = _set_query_param(redirect_to, "oauth_nonce", oauth_nonce)
+        credentials["options"] = {"redirect_to": redirect_with_nonce}
         st.session_state.sb_oauth_redirect_to = redirect_to
+        st.session_state.sb_oauth_nonce = oauth_nonce
 
     oauth_res = sb.auth.sign_in_with_oauth(credentials)
     _capture_pkce_code_verifier(sb)
+    if oauth_nonce:
+        verifier = st.session_state.get("sb_oauth_code_verifier")
+        if verifier:
+            _remember_oauth_pkce_verifier(oauth_nonce, str(verifier))
 
     oauth_url = getattr(oauth_res, "url", None)
     if not oauth_url:
@@ -267,6 +312,7 @@ def _begin_google_oauth() -> str:
 
 def _complete_google_oauth_callback() -> bool:
     code = _read_query_param("code")
+    oauth_nonce = _read_query_param("oauth_nonce")
     access_token = _read_query_param("access_token")
     refresh_token = _read_query_param("refresh_token")
     error_code = _read_query_param("error") or _read_query_param("error_code")
@@ -276,6 +322,7 @@ def _complete_google_oauth_callback() -> bool:
         _clear_oauth_query_params()
         st.session_state.pop("sb_oauth_code_verifier", None)
         st.session_state.pop("sb_oauth_redirect_to", None)
+        st.session_state.pop("sb_oauth_nonce", None)
 
         details = unquote_plus(error_description) if error_description else error_code
         st.error(f"Google sign-in failed: {details}")
@@ -296,6 +343,7 @@ def _complete_google_oauth_callback() -> bool:
             _clear_oauth_query_params()
             st.session_state.pop("sb_oauth_code_verifier", None)
             st.session_state.pop("sb_oauth_redirect_to", None)
+            st.session_state.pop("sb_oauth_nonce", None)
 
             if session and _set_auth_state(session, user):
                 st.rerun()
@@ -315,6 +363,7 @@ def _complete_google_oauth_callback() -> bool:
             _clear_oauth_query_params()
             st.session_state.pop("sb_oauth_code_verifier", None)
             st.session_state.pop("sb_oauth_redirect_to", None)
+            st.session_state.pop("sb_oauth_nonce", None)
             st.error("Could not complete Google sign-in. Please try again.")
             return True
 
@@ -326,6 +375,8 @@ def _complete_google_oauth_callback() -> bool:
         exchange_params = {"auth_code": code}
 
         code_verifier = st.session_state.get("sb_oauth_code_verifier")
+        if (not code_verifier) and oauth_nonce:
+            code_verifier = _pop_oauth_pkce_verifier(oauth_nonce)
         if code_verifier:
             exchange_params["code_verifier"] = code_verifier
 
@@ -340,6 +391,7 @@ def _complete_google_oauth_callback() -> bool:
         _clear_oauth_query_params()
         st.session_state.pop("sb_oauth_code_verifier", None)
         st.session_state.pop("sb_oauth_redirect_to", None)
+        st.session_state.pop("sb_oauth_nonce", None)
 
         if not _set_auth_state(session, user):
             clear_auth_state()
@@ -352,6 +404,7 @@ def _complete_google_oauth_callback() -> bool:
         _clear_oauth_query_params()
         st.session_state.pop("sb_oauth_code_verifier", None)
         st.session_state.pop("sb_oauth_redirect_to", None)
+        st.session_state.pop("sb_oauth_nonce", None)
         st.error("Could not complete Google sign-in. Please try again.")
         return True
 
@@ -432,6 +485,7 @@ def clear_auth_state(extra_keys: list[str] | None = None) -> None:
         "sb_access_expires_at",
         "sb_oauth_code_verifier",
         "sb_oauth_redirect_to",
+        "sb_oauth_nonce",
         "user_id",
         "user_email",
         "pending_email",
