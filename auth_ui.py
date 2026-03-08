@@ -4,7 +4,7 @@ import re
 import time
 import json
 import base64
-from urllib.parse import unquote_plus
+from urllib.parse import unquote_plus, urlencode, urlparse, urlunparse, parse_qsl
 from supabase_client import get_supabase
 from data_utils import APP_DATA_DIR
 
@@ -233,6 +233,30 @@ def _capture_pkce_code_verifier(sb) -> None:
         st.session_state.sb_oauth_code_verifier = str(code_verifier)
 
 
+def _oauth_state_encode(verifier: str) -> str:
+    raw = str(verifier or "").encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _oauth_state_decode(state_value: str) -> str | None:
+    text = str(state_value or "").strip()
+    if not text:
+        return None
+    try:
+        padded = text + "=" * (-len(text) % 4)
+        return base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+    except Exception:
+        return None
+
+
+def _set_query_param(url: str, key: str, value: str) -> str:
+    parsed = urlparse(str(url or "").strip())
+    query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query_items[key] = value
+    new_query = urlencode(query_items)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+
+
 def _begin_google_oauth() -> str:
     sb = get_supabase()
     credentials = {"provider": "google"}
@@ -248,11 +272,19 @@ def _begin_google_oauth() -> str:
     oauth_url = getattr(oauth_res, "url", None)
     if not oauth_url:
         raise RuntimeError("Supabase did not return an OAuth URL.")
+
+    code_verifier = str(st.session_state.get("sb_oauth_code_verifier") or "").strip()
+    if code_verifier:
+        # Carry verifier in OAuth state so callback exchange still works
+        # even if Streamlit session_state is new after redirect.
+        oauth_state = _oauth_state_encode(code_verifier)
+        return _set_query_param(str(oauth_url), "state", oauth_state)
     return str(oauth_url)
 
 
 def _complete_google_oauth_callback() -> bool:
     code = _read_query_param("code")
+    oauth_state = _read_query_param("state")
     error_code = _read_query_param("error") or _read_query_param("error_code")
     error_description = _read_query_param("error_description")
 
@@ -273,6 +305,8 @@ def _complete_google_oauth_callback() -> bool:
         exchange_params = {"auth_code": code}
 
         code_verifier = st.session_state.get("sb_oauth_code_verifier")
+        if (not code_verifier) and oauth_state:
+            code_verifier = _oauth_state_decode(oauth_state)
         if code_verifier:
             exchange_params["code_verifier"] = code_verifier
 
@@ -445,7 +479,6 @@ def require_login():
                 )
             except Exception:
                 st.markdown(f"[Continue with Google]({google_oauth_url})")
-            st.caption(f"If the button does not appear, use this link: {google_oauth_url}")
         else:
             st.button(
                 "Continue with Google",
