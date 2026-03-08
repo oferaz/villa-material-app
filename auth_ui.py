@@ -436,12 +436,16 @@ def require_login():
             google_oauth_url = ""
 
         if google_oauth_url:
-            st.link_button(
-                "Continue with Google",
-                google_oauth_url,
-                type="primary",
-                use_container_width=True,
-            )
+            try:
+                st.link_button(
+                    "Continue with Google",
+                    google_oauth_url,
+                    type="primary",
+                    use_container_width=True,
+                )
+            except Exception:
+                st.markdown(f"[Continue with Google]({google_oauth_url})")
+            st.caption(f"If the button does not appear, use this link: {google_oauth_url}")
         else:
             st.button(
                 "Continue with Google",
