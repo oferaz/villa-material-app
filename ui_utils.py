@@ -162,6 +162,18 @@ def inject_custom_css():
             display: none;
         }
 
+        /* Remove Streamlit top/bottom chrome for a cleaner app shell */
+        header[data-testid="stHeader"],
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        #MainMenu,
+        footer,
+        [data-testid="stStatusWidget"],
+        .viewerBadge_container__1QSob {
+            display: none !important;
+            visibility: hidden !important;
+        }
+
         .welcome-box {
             background: linear-gradient(125deg, var(--surface) 0%, var(--surface-2) 100%);
             border: 1px solid var(--line);
