@@ -625,6 +625,7 @@ def build_project_items_export_frames(project_id: str, access_token: str | None 
 
 
 def build_project_items_excel_bytes(project_id: str, access_token: str | None = None):
+    pd = _pd()
     frames = build_project_items_export_frames(project_id, access_token=access_token)
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
