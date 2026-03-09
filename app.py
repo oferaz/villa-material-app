@@ -133,17 +133,6 @@ apply_custom_css()
 set_background_image()
 
 
-def _ensure_embed_mode():
-    embed_raw = st.query_params.get("embed", "")
-    if isinstance(embed_raw, list):
-        embed_raw = embed_raw[0] if embed_raw else ""
-    embed_text = str(embed_raw or "").strip().lower()
-    if embed_text in {"1", "true", "yes", "on"}:
-        return
-    st.query_params["embed"] = "true"
-    st.rerun()
-
-
 def _app_base_url():
     url = None
     if hasattr(st, "secrets"):
@@ -637,8 +626,6 @@ share_param = st.query_params.get("share", "")
 if isinstance(share_param, list):
     share_param = share_param[0] if share_param else ""
 share_token = str(share_param or "").strip()
-
-_ensure_embed_mode()
 
 if share_token:
     render_client_portal(share_token)
