@@ -163,15 +163,28 @@ def inject_custom_css():
         }
 
         /* Remove Streamlit top/bottom chrome for a cleaner app shell */
+        header,
         header[data-testid="stHeader"],
+        [data-testid="stHeader"],
         [data-testid="stToolbar"],
         [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        [data-testid="stAppDeployButton"],
+        [data-testid="stMainMenu"],
         #MainMenu,
         footer,
-        [data-testid="stStatusWidget"],
-        .viewerBadge_container__1QSob {
+        [data-testid="stFooter"],
+        [data-testid="stBottom"],
+        [data-testid="stBottomBlockContainer"],
+        .viewerBadge_container__1QSob,
+        [class*="viewerBadge_container__"],
+        [class*="viewerBadge_link__"] {
             display: none !important;
             visibility: hidden !important;
+        }
+
+        [data-testid="stAppViewContainer"] {
+            margin-top: 0 !important;
         }
 
         .welcome-box {
