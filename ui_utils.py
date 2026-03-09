@@ -283,7 +283,8 @@ def inject_custom_css():
             border-color: #cfbea6 !important;
         }
 
-        .stButton > button[kind="primary"] {
+        .stButton > button[kind="primary"],
+        .stDownloadButton > button[kind="primary"] {
             background: linear-gradient(135deg, var(--accent) 0%, #ad5e39 100%);
             border-color: #ad5e39;
             color: #fff8f3 !important;
@@ -297,7 +298,8 @@ def inject_custom_css():
             -webkit-text-fill-color: #fff8f3 !important;
         }
 
-        .stButton > button[kind="primary"]:hover {
+        .stButton > button[kind="primary"]:hover,
+        .stDownloadButton > button[kind="primary"]:hover {
             background: #a35a37;
             border-color: #a35a37;
         }

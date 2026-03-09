@@ -2067,7 +2067,6 @@ if page == "Projects Workspace":
                     relational_error = str(e)
 
             with st.expander("Export Procurement to Excel", expanded=False):
-                st.caption("Primary source: relational project_items (new model).")
                 if relational_error:
                     st.warning(f"Relational model unavailable: {relational_error}")
 
