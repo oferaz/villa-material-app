@@ -79,13 +79,15 @@ def _extract_jsonld_product(soup: BeautifulSoup) -> dict:
             brand = node.get("brand")
             if isinstance(brand, dict):
                 brand = brand.get("name")
+            brand_name = _first_non_empty(brand)
 
             return {
                 "name": _first_non_empty(node.get("name")),
                 "description": _first_non_empty(node.get("description")),
                 "image_url": _first_non_empty(image),
                 "price": _parse_price(_first_non_empty(offers.get("price"), node.get("price"))),
-                "category": _first_non_empty(node.get("category"), brand),
+                "category": _first_non_empty(node.get("category"), brand_name),
+                "supplier": brand_name,
             }
     return {}
 
@@ -154,6 +156,8 @@ def extract_material_payload_from_url(url: str) -> dict:
             "name": title or "Unnamed Product",
             "description": description or None,
             "category": category or None,
+            "supplier": _first_non_empty(jsonld.get("supplier"), host),
+            "lead_time_days": None,
             "price": price,
             "link": src,
             "image_url": image_url or None,

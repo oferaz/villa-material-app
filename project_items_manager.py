@@ -1,0 +1,635 @@
+from __future__ import annotations
+
+from collections import defaultdict
+from io import BytesIO
+from typing import Any
+
+import streamlit as st
+
+from supabase_client import get_supabase
+
+
+CATEGORY_VALUES = [
+    "sanitary",
+    "tiles",
+    "furniture",
+    "lighting",
+    "paint",
+    "kitchen",
+    "appliances",
+    "decor",
+    "outdoor",
+    "hardware",
+    "other",
+]
+
+STATUS_VALUES = ["draft", "quoted", "approved", "ordered", "delivered", "paid"]
+
+CATEGORY_ALIASES = {
+    "bathroom": "sanitary",
+    "plumbing": "sanitary",
+    "tile": "tiles",
+    "light": "lighting",
+    "appliance": "appliances",
+    "decoration": "decor",
+    "fixture": "hardware",
+}
+
+
+def _token(access_token: str | None = None) -> str | None:
+    return access_token or st.session_state.get("sb_access_token")
+
+
+def _pd():
+    import pandas as _pandas
+
+    return _pandas
+
+
+def _normalize_category(value: str | None) -> str:
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    text = CATEGORY_ALIASES.get(text, text)
+    if text in CATEGORY_VALUES:
+        return text
+    return "other"
+
+
+def _normalize_status(value: str | None) -> str:
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if text in STATUS_VALUES:
+        return text
+    return "draft"
+
+
+def _clean_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _safe_number(value: Any, default: float | None = None) -> float | None:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _safe_positive(value: Any, default: float = 1.0) -> float:
+    number = _safe_number(value, default=default)
+    if number is None or number <= 0:
+        return default
+    return float(number)
+
+
+def _ensure_supplier(access_token: str | None, supplier_name: str | None):
+    clean_name = _clean_text(supplier_name)
+    if not clean_name:
+        return None
+    sb = get_supabase(_token(access_token))
+    existing = (
+        sb.table("suppliers")
+        .select("id,name")
+        .eq("name", clean_name)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if existing:
+        return existing[0].get("id")
+    created = sb.table("suppliers").insert({"name": clean_name}).execute().data or []
+    return created[0].get("id") if created else None
+
+
+def list_projects(access_token: str | None = None, user_id: str | None = None):
+    sb = get_supabase(_token(access_token))
+    query = sb.table("projects").select("*").order("updated_at", desc=True)
+    uid = str(user_id or st.session_state.get("user_id") or "").strip()
+    if uid:
+        scoped = query.eq("owner_id", uid).execute().data or []
+        if scoped:
+            return scoped
+        return sb.table("projects").select("*").eq("created_by", uid).order("updated_at", desc=True).execute().data or []
+    return query.execute().data or []
+
+
+def create_project(
+    name: str,
+    client_name: str | None = None,
+    currency: str = "THB",
+    created_by: str | None = None,
+    access_token: str | None = None,
+):
+    clean_name = str(name or "").strip()
+    if not clean_name:
+        raise ValueError("Project name is required.")
+
+    uid = str(created_by or st.session_state.get("user_id") or "").strip() or None
+    payload = {
+        "name": clean_name,
+        "client_name": _clean_text(client_name),
+        "currency": (str(currency or "THB").strip().upper() or "THB"),
+        "created_by": uid,
+    }
+    if uid:
+        payload["owner_id"] = uid
+
+    sb = get_supabase(_token(access_token))
+    created = sb.table("projects").insert(payload).execute().data or []
+    if not created:
+        raise RuntimeError("Failed to create project.")
+    return created[0]
+
+
+def create_room(
+    project_id: str,
+    name: str,
+    room_type: str,
+    sort_order: int = 0,
+    access_token: str | None = None,
+):
+    clean_name = str(name or "").strip()
+    clean_type = str(room_type or "custom").strip().lower().replace(" ", "_")
+    if not clean_name:
+        raise ValueError("Room name is required.")
+    if not clean_type:
+        clean_type = "custom"
+
+    payload = {
+        "project_id": str(project_id),
+        "name": clean_name,
+        "type": clean_type,
+        "sort_order": int(sort_order or 0),
+    }
+    sb = get_supabase(_token(access_token))
+    created = sb.table("rooms").insert(payload).execute().data or []
+    if not created:
+        raise RuntimeError("Failed to create room.")
+    return created[0]
+
+
+def list_rooms(project_id: str, access_token: str | None = None):
+    sb = get_supabase(_token(access_token))
+    rows = (
+        sb.table("rooms")
+        .select("*")
+        .eq("project_id", str(project_id))
+        .order("sort_order")
+        .order("name")
+        .execute()
+        .data
+        or []
+    )
+    return rows
+
+
+def add_project_item(
+    project_id: str,
+    name: str,
+    category: str,
+    *,
+    room_id: str | None = None,
+    catalog_item_id: str | None = None,
+    supplier_id: str | None = None,
+    supplier_name: str | None = None,
+    spec: str | None = None,
+    quantity: float = 1,
+    unit: str | None = None,
+    unit_price: float | None = None,
+    currency: str = "THB",
+    discount_pct: float = 0,
+    tax_pct: float = 0,
+    status: str = "draft",
+    priority: str | None = None,
+    due_date: str | None = None,
+    notes: str | None = None,
+    access_token: str | None = None,
+):
+    clean_name = str(name or "").strip()
+    if not clean_name:
+        raise ValueError("Project item name is required.")
+
+    supplier_ref = supplier_id or _ensure_supplier(access_token, supplier_name)
+
+    payload = {
+        "project_id": str(project_id),
+        "room_id": str(room_id) if room_id else None,
+        "catalog_item_id": str(catalog_item_id) if catalog_item_id else None,
+        "name": clean_name,
+        "category": _normalize_category(category),
+        "supplier_id": str(supplier_ref) if supplier_ref else None,
+        "spec": _clean_text(spec),
+        "quantity": _safe_positive(quantity, default=1.0),
+        "unit": _clean_text(unit),
+        "unit_price": _safe_number(unit_price),
+        "currency": (str(currency or "THB").strip().upper() or "THB"),
+        "discount_pct": _safe_number(discount_pct, default=0.0) or 0.0,
+        "tax_pct": _safe_number(tax_pct, default=0.0) or 0.0,
+        "status": _normalize_status(status),
+        "priority": _clean_text(priority),
+        "due_date": _clean_text(due_date),
+        "notes": _clean_text(notes),
+    }
+
+    sb = get_supabase(_token(access_token))
+    created = sb.table("project_items").insert(payload).execute().data or []
+    if not created:
+        raise RuntimeError("Failed to add project item.")
+    return created[0]
+
+
+def update_project_item(project_item_id: str, updates: dict, access_token: str | None = None):
+    allowed = {
+        "room_id",
+        "catalog_item_id",
+        "name",
+        "category",
+        "supplier_id",
+        "spec",
+        "quantity",
+        "unit",
+        "unit_price",
+        "currency",
+        "discount_pct",
+        "tax_pct",
+        "status",
+        "priority",
+        "due_date",
+        "notes",
+    }
+    payload = {}
+    for key, value in (updates or {}).items():
+        if key not in allowed:
+            continue
+        if key == "name":
+            clean_name = str(value or "").strip()
+            if not clean_name:
+                raise ValueError("Project item name cannot be empty.")
+            payload[key] = clean_name
+        elif key == "category":
+            payload[key] = _normalize_category(value)
+        elif key == "status":
+            payload[key] = _normalize_status(value)
+        elif key == "quantity":
+            payload[key] = _safe_positive(value, default=1.0)
+        elif key in {"unit_price", "discount_pct", "tax_pct"}:
+            payload[key] = _safe_number(value)
+        elif key == "currency":
+            payload[key] = (str(value or "THB").strip().upper() or "THB")
+        elif key in {"room_id", "catalog_item_id", "supplier_id"}:
+            payload[key] = str(value) if value else None
+        elif key in {"spec", "unit", "priority", "due_date", "notes"}:
+            payload[key] = _clean_text(value)
+        else:
+            payload[key] = value
+
+    if not payload:
+        return None
+
+    sb = get_supabase(_token(access_token))
+    rows = (
+        sb.table("project_items")
+        .update(payload)
+        .eq("id", str(project_item_id))
+        .execute()
+        .data
+        or []
+    )
+    return rows[0] if rows else None
+
+
+def delete_project_item(project_item_id: str, access_token: str | None = None):
+    sb = get_supabase(_token(access_token))
+    sb.table("project_items").delete().eq("id", str(project_item_id)).execute()
+    return True
+
+
+def _maps_for_project(project_id: str, access_token: str | None = None):
+    sb = get_supabase(_token(access_token))
+    rooms = list_rooms(project_id, access_token=access_token)
+    suppliers = sb.table("suppliers").select("id,name").execute().data or []
+    room_map = {str(r.get("id")): r for r in rooms}
+    supplier_map = {str(s.get("id")): s for s in suppliers if s.get("id")}
+    return room_map, supplier_map
+
+
+def _enrich_project_items(project_id: str, rows: list[dict], access_token: str | None = None):
+    room_map, supplier_map = _maps_for_project(project_id, access_token=access_token)
+    out = []
+    for row in rows or []:
+        room = room_map.get(str(row.get("room_id")))
+        supplier = supplier_map.get(str(row.get("supplier_id")))
+        qty = _safe_positive(row.get("quantity"), default=1.0)
+        price = _safe_number(row.get("unit_price"))
+        out.append(
+            {
+                **row,
+                "room_name": (room or {}).get("name") or "Unassigned",
+                "room_sort_order": int((room or {}).get("sort_order") or 0),
+                "room_type": (room or {}).get("type") or "custom",
+                "supplier_name": (supplier or {}).get("name") or "Unspecified",
+                "quantity": qty,
+                "unit_price": price,
+                "line_total": (qty * price) if price is not None else None,
+            }
+        )
+    return out
+
+
+def list_project_items(project_id: str, access_token: str | None = None):
+    sb = get_supabase(_token(access_token))
+    rows = (
+        sb.table("project_items")
+        .select("*")
+        .eq("project_id", str(project_id))
+        .order("created_at")
+        .execute()
+        .data
+        or []
+    )
+    return _enrich_project_items(project_id, rows, access_token=access_token)
+
+
+def _group_items(items: list[dict], key_name: str, label_name: str):
+    grouped = defaultdict(list)
+    for item in items:
+        key = item.get(key_name) or item.get(label_name) or "unassigned"
+        grouped[str(key)].append(item)
+
+    output = []
+    for _, rows in grouped.items():
+        label = rows[0].get(label_name) or "Unassigned"
+        total_value = sum((row.get("line_total") or 0.0) for row in rows)
+        output.append(
+            {
+                "label": label,
+                "count": len(rows),
+                "total_value": total_value,
+                "items": sorted(rows, key=lambda r: (str(r.get("category") or ""), str(r.get("name") or ""))),
+            }
+        )
+    output.sort(key=lambda g: str(g.get("label") or ""))
+    return output
+
+
+def list_project_items_grouped_by_room(project_id: str, access_token: str | None = None):
+    items = list_project_items(project_id, access_token=access_token)
+    grouped = _group_items(items, "room_id", "room_name")
+    grouped.sort(
+        key=lambda g: min(int(item.get("room_sort_order") or 0) for item in g["items"]) if g.get("items") else 0
+    )
+    return grouped
+
+
+def list_project_items_grouped_by_supplier(project_id: str, access_token: str | None = None):
+    items = list_project_items(project_id, access_token=access_token)
+    return _group_items(items, "supplier_id", "supplier_name")
+
+
+def list_project_items_grouped_by_category(project_id: str, access_token: str | None = None):
+    items = list_project_items(project_id, access_token=access_token)
+    grouped = defaultdict(list)
+    for item in items:
+        grouped[str(item.get("category") or "other")].append(item)
+
+    out = []
+    for category, rows in grouped.items():
+        out.append(
+            {
+                "label": category,
+                "count": len(rows),
+                "total_value": sum((row.get("line_total") or 0.0) for row in rows),
+                "items": sorted(rows, key=lambda r: (str(r.get("room_name") or ""), str(r.get("name") or ""))),
+            }
+        )
+    out.sort(key=lambda g: str(g.get("label") or ""))
+    return out
+
+
+def add_catalog_item_to_project(
+    project_id: str,
+    room_id: str | None,
+    catalog_item_id: str,
+    *,
+    quantity: float = 1,
+    unit: str | None = None,
+    notes: str | None = None,
+    overrides: dict | None = None,
+    access_token: str | None = None,
+):
+    sb = get_supabase(_token(access_token))
+    rows = (
+        sb.table("catalog_items")
+        .select("*")
+        .eq("id", str(catalog_item_id))
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        raise RuntimeError("Catalog item not found.")
+    catalog_row = rows[0]
+
+    payload = {
+        "project_id": str(project_id),
+        "room_id": str(room_id) if room_id else None,
+        "catalog_item_id": str(catalog_item_id),
+        "name": str(catalog_row.get("name") or "Catalog Item"),
+        "category": _normalize_category(catalog_row.get("category")),
+        "supplier_id": catalog_row.get("supplier_id"),
+        "spec": _clean_text(catalog_row.get("description")),
+        "quantity": _safe_positive(quantity, default=1.0),
+        "unit": _clean_text(unit),
+        "unit_price": _safe_number(catalog_row.get("default_price")),
+        "currency": (str(catalog_row.get("currency") or "THB").strip().upper() or "THB"),
+        "status": "draft",
+        "notes": _clean_text(notes),
+    }
+
+    for key, value in (overrides or {}).items():
+        if key == "category":
+            payload[key] = _normalize_category(value)
+        elif key == "status":
+            payload[key] = _normalize_status(value)
+        elif key == "quantity":
+            payload[key] = _safe_positive(value, default=1.0)
+        elif key in {"unit_price", "discount_pct", "tax_pct"}:
+            payload[key] = _safe_number(value)
+        elif key == "currency":
+            payload[key] = (str(value or payload["currency"]).strip().upper() or "THB")
+        elif key in payload:
+            payload[key] = value
+
+    created = sb.table("project_items").insert(payload).execute().data or []
+    if not created:
+        raise RuntimeError("Failed to create project item snapshot from catalog.")
+    return created[0]
+
+
+def generate_room_checklist(
+    project_id: str,
+    room_id: str,
+    *,
+    replace_existing: bool = False,
+    access_token: str | None = None,
+):
+    sb = get_supabase(_token(access_token))
+    room_rows = (
+        sb.table("rooms")
+        .select("id,project_id,type")
+        .eq("id", str(room_id))
+        .eq("project_id", str(project_id))
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not room_rows:
+        raise RuntimeError("Room not found in project.")
+
+    room_row = room_rows[0]
+    room_type = str(room_row.get("type") or "custom")
+
+    template_rows = (
+        sb.table("room_templates")
+        .select("*")
+        .eq("room_type", room_type)
+        .order("sort_order")
+        .execute()
+        .data
+        or []
+    )
+    if not template_rows:
+        return {"inserted": 0, "skipped": 0}
+
+    existing = []
+    if not replace_existing:
+        existing = (
+            sb.table("project_items")
+            .select("name,category")
+            .eq("project_id", str(project_id))
+            .eq("room_id", str(room_id))
+            .execute()
+            .data
+            or []
+        )
+    existing_keys = {
+        (str(row.get("name") or "").strip().casefold(), str(row.get("category") or "").strip().casefold())
+        for row in existing
+    }
+
+    to_insert = []
+    skipped = 0
+    for tpl in template_rows:
+        clean_name = str(tpl.get("name") or "").strip()
+        clean_category = _normalize_category(tpl.get("category"))
+        item_key = (clean_name.casefold(), clean_category.casefold())
+        if item_key in existing_keys:
+            skipped += 1
+            continue
+        to_insert.append(
+            {
+                "project_id": str(project_id),
+                "room_id": str(room_id),
+                "name": clean_name,
+                "category": clean_category,
+                "quantity": _safe_positive(tpl.get("default_qty"), default=1.0),
+                "unit": _clean_text(tpl.get("default_unit")),
+                "status": "draft",
+            }
+        )
+
+    if to_insert:
+        sb.table("project_items").insert(to_insert).execute()
+    return {"inserted": len(to_insert), "skipped": skipped}
+
+
+def _project_items_dataframe(project_id: str, access_token: str | None = None):
+    pd = _pd()
+    rows = list_project_items(project_id, access_token=access_token)
+    if not rows:
+        return pd.DataFrame(
+            columns=[
+                "Project",
+                "Room",
+                "Supplier",
+                "Category",
+                "Item Name",
+                "Quantity",
+                "Unit",
+                "Unit Price",
+                "Total",
+                "Status",
+                "Notes",
+            ]
+        )
+
+    project_map = {str(p.get("id")): p for p in list_projects(access_token=access_token)}
+    project_name = str((project_map.get(str(project_id)) or {}).get("name") or "Project")
+
+    out_rows = []
+    for row in rows:
+        qty = _safe_positive(row.get("quantity"), default=1.0)
+        unit_price = _safe_number(row.get("unit_price"))
+        total = (qty * unit_price) if unit_price is not None else None
+        out_rows.append(
+            {
+                "Project": project_name,
+                "Room": row.get("room_name") or "Unassigned",
+                "Supplier": row.get("supplier_name") or "Unspecified",
+                "Category": row.get("category") or "other",
+                "Item Name": row.get("name") or "",
+                "Quantity": qty,
+                "Unit": row.get("unit") or "",
+                "Unit Price": unit_price,
+                "Total": total,
+                "Status": _normalize_status(row.get("status")),
+                "Notes": row.get("notes") or "",
+            }
+        )
+    return pd.DataFrame(out_rows)
+
+
+def build_project_items_export_frames(project_id: str, access_token: str | None = None):
+    pd = _pd()
+    df = _project_items_dataframe(project_id, access_token=access_token)
+    for col_name in ["Quantity", "Unit Price", "Total"]:
+        if col_name in df.columns:
+            df[col_name] = pd.to_numeric(df[col_name], errors="coerce")
+
+    if df.empty:
+        summary = pd.DataFrame(columns=["Project", "Room", "Supplier", "Category", "Status", "Line Count", "Total"])
+        by_room = pd.DataFrame(columns=["Room", "Category", "Item Name", "Supplier", "Quantity", "Unit", "Unit Price", "Total", "Status", "Notes"])
+        by_supplier = pd.DataFrame(columns=["Supplier", "Room", "Category", "Item Name", "Quantity", "Unit", "Unit Price", "Total", "Status"])
+        by_category = pd.DataFrame(columns=["Category", "Room", "Supplier", "Item Name", "Quantity", "Unit Price", "Total"])
+        return {"summary": summary, "by_room": by_room, "by_supplier": by_supplier, "by_category": by_category}
+
+    summary = (
+        df.groupby(["Project", "Room", "Supplier", "Category", "Status"], dropna=False)
+        .agg(**{"Line Count": ("Item Name", "count"), "Total": ("Total", "sum")})
+        .reset_index()
+        .sort_values(["Room", "Supplier", "Category", "Status"])
+    )
+    by_room = df[
+        ["Room", "Category", "Item Name", "Supplier", "Quantity", "Unit", "Unit Price", "Total", "Status", "Notes"]
+    ].sort_values(["Room", "Category", "Item Name"])
+    by_supplier = df[
+        ["Supplier", "Room", "Category", "Item Name", "Quantity", "Unit", "Unit Price", "Total", "Status"]
+    ].sort_values(["Supplier", "Room", "Category", "Item Name"])
+    by_category = df[
+        ["Category", "Room", "Supplier", "Item Name", "Quantity", "Unit Price", "Total"]
+    ].sort_values(["Category", "Room", "Supplier", "Item Name"])
+    return {"summary": summary, "by_room": by_room, "by_supplier": by_supplier, "by_category": by_category}
+
+
+def build_project_items_excel_bytes(project_id: str, access_token: str | None = None):
+    frames = build_project_items_export_frames(project_id, access_token=access_token)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        frames["summary"].to_excel(writer, sheet_name="Summary", index=False)
+        frames["by_room"].to_excel(writer, sheet_name="By Room", index=False)
+        frames["by_supplier"].to_excel(writer, sheet_name="By Supplier", index=False)
+        frames["by_category"].to_excel(writer, sheet_name="By Category", index=False)
+    return output.getvalue(), frames

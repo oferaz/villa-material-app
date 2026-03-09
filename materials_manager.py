@@ -76,6 +76,13 @@ def _try_build_embedding(payload: dict):
 def add_private_material(access_token: str, user_id: str, payload: dict):
     sb = get_supabase(access_token)
     embedding = _try_build_embedding(payload)
+    lead_time_days = payload.get("lead_time_days")
+    try:
+        lead_time_days = int(lead_time_days) if lead_time_days is not None else None
+    except Exception:
+        lead_time_days = None
+    if lead_time_days is not None and lead_time_days <= 0:
+        lead_time_days = None
 
     row = {
         "owner_id": user_id,
@@ -83,6 +90,9 @@ def add_private_material(access_token: str, user_id: str, payload: dict):
         "name": payload["name"],
         "description": payload.get("description"),
         "category": payload.get("category"),
+        "supplier": payload.get("supplier"),
+        "supplier_name": payload.get("supplier") or payload.get("supplier_name"),
+        "lead_time_days": lead_time_days,
         "price": payload.get("price"),
         "link": payload.get("link"),
         "image_url": payload.get("image_url"),
@@ -91,12 +101,30 @@ def add_private_material(access_token: str, user_id: str, payload: dict):
     if embedding is not None:
         row["embedding"] = embedding
 
-    try:
-        res = sb.table("materials").insert(row).execute()
-    except Exception:
-        # Backward compatibility: allow insert when DB has no embedding column yet.
-        row.pop("embedding", None)
-        res = sb.table("materials").insert(row).execute()
+    attempts = [dict(row)]
+    without_embedding = dict(row)
+    without_embedding.pop("embedding", None)
+    attempts.append(without_embedding)
+
+    without_optional_columns = dict(without_embedding)
+    without_optional_columns.pop("supplier", None)
+    without_optional_columns.pop("supplier_name", None)
+    without_optional_columns.pop("lead_time_days", None)
+    attempts.append(without_optional_columns)
+
+    last_error = None
+    res = None
+    for candidate in attempts:
+        try:
+            res = sb.table("materials").insert(candidate).execute()
+            last_error = None
+            break
+        except Exception as exc:
+            last_error = exc
+            continue
+
+    if last_error is not None:
+        raise last_error
 
     if not res.data:
         # This usually means RLS blocked it or the token isn't attached

@@ -7,6 +7,7 @@ import inspect
 import base64
 from io import BytesIO
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -33,6 +34,7 @@ from user_template_manager import (
 from materials_manager import list_materials, add_private_material, search_materials_semantic
 from link_scraper import extract_material_payload_from_url
 import project_manager as _project_manager
+import project_items_manager as _project_items_manager
 
 
 def _missing_project_manager_fn(name: str):
@@ -40,6 +42,16 @@ def _missing_project_manager_fn(name: str):
         raise RuntimeError(
             f"project_manager.{name} is unavailable. "
             "Deploy app.py and project_manager.py from the same revision."
+        )
+
+    return _missing
+
+
+def _missing_project_items_manager_fn(name: str):
+    def _missing(*args, **kwargs):
+        raise RuntimeError(
+            f"project_items_manager.{name} is unavailable. "
+            "Deploy app.py and project_items_manager.py from the same revision."
         )
 
     return _missing
@@ -112,6 +124,32 @@ append_object_comment_by_share_token = getattr(
     _project_manager,
     "append_object_comment_by_share_token",
     _missing_project_manager_fn("append_object_comment_by_share_token"),
+)
+
+list_project_items_relational = getattr(
+    _project_items_manager,
+    "list_project_items",
+    _missing_project_items_manager_fn("list_project_items"),
+)
+list_project_items_grouped_by_room_relational = getattr(
+    _project_items_manager,
+    "list_project_items_grouped_by_room",
+    _missing_project_items_manager_fn("list_project_items_grouped_by_room"),
+)
+list_project_items_grouped_by_supplier_relational = getattr(
+    _project_items_manager,
+    "list_project_items_grouped_by_supplier",
+    _missing_project_items_manager_fn("list_project_items_grouped_by_supplier"),
+)
+list_project_items_grouped_by_category_relational = getattr(
+    _project_items_manager,
+    "list_project_items_grouped_by_category",
+    _missing_project_items_manager_fn("list_project_items_grouped_by_category"),
+)
+build_project_items_excel_bytes_relational = getattr(
+    _project_items_manager,
+    "build_project_items_excel_bytes",
+    _missing_project_items_manager_fn("build_project_items_excel_bytes"),
 )
 
 # -----------------------------
@@ -795,6 +833,199 @@ def _safe_float(value):
         return None
 
 
+PROCUREMENT_STAGE_OPTIONS = [
+    "planning",
+    "start_construction",
+    "finish_roof",
+    "finish_plaster",
+    "finish_installation",
+    "finish_electricity",
+    "finish_floors",
+    "finish_windows",
+    "finish_paint",
+    "installation",
+    "house_ready",
+]
+PROCUREMENT_STAGE_LABELS = {
+    "planning": "Planning",
+    "start_construction": "Start Construction",
+    "finish_roof": "Finish Roof",
+    "finish_plaster": "Finish Plaster",
+    "finish_installation": "Finish Installation",
+    "finish_electricity": "Finish Electricity",
+    "finish_floors": "Finish Floors",
+    "finish_windows": "Finish Windows",
+    "finish_paint": "Finish Paint",
+    "installation": "Installation",
+    "house_ready": "House Ready",
+}
+PROCUREMENT_STAGE_RANK = {stage: idx for idx, stage in enumerate(PROCUREMENT_STAGE_OPTIONS)}
+PROCUREMENT_STAGE_ALIASES = {
+    "first_fix": "finish_electricity",
+    "finishing": "finish_plaster",
+    "final_install": "installation",
+    "delivered": "house_ready",
+    "start construction": "start_construction",
+    "finish roof": "finish_roof",
+    "finish plaster": "finish_plaster",
+    "finish installation prep": "finish_installation",
+    "finish_installation_prep": "finish_installation",
+    "finish installation": "finish_installation",
+    "finish electricity": "finish_electricity",
+    "finish floors": "finish_floors",
+    "finish windows": "finish_windows",
+    "finish paint": "finish_paint",
+    "house ready": "house_ready",
+}
+
+
+def _normalize_procurement_stage(stage: str | None):
+    value = str(stage or "").strip().lower().replace("-", "_")
+    value = PROCUREMENT_STAGE_ALIASES.get(value, value)
+    value = value.replace(" ", "_")
+    if value in PROCUREMENT_STAGE_LABELS:
+        return value
+    return None
+
+
+def _procurement_stage_label(stage: str):
+    stage_key = _normalize_procurement_stage(stage) or "planning"
+    return PROCUREMENT_STAGE_LABELS.get(stage_key, PROCUREMENT_STAGE_LABELS["planning"])
+
+
+def _suggest_procurement_stage(type_value: str):
+    text = str(type_value or "").strip().lower()
+    if not text:
+        return "planning"
+
+    roof_tokens = ["roof", "shingle", "waterproof membrane", "gutter"]
+    if any(token in text for token in roof_tokens):
+        return "finish_roof"
+
+    electricity_tokens = [
+        "electrical",
+        "switch",
+        "socket",
+        "wiring",
+        "cable",
+        "conduit",
+        "panel",
+        "breaker",
+        "light fitting",
+    ]
+    if any(token in text for token in electricity_tokens):
+        return "finish_electricity"
+
+    installation_prep_tokens = [
+        "sanitary",
+        "plumbing",
+        "pipe",
+        "toilet",
+        "shower",
+        "tap",
+        "mixer",
+        "drain",
+        "valve",
+        "hvac",
+        "ac ",
+        "air condition",
+        "vent",
+    ]
+    if any(token in text for token in installation_prep_tokens):
+        return "finish_installation"
+
+    floor_tokens = ["tile", "floor", "parquet", "vinyl", "marble floor", "wood floor"]
+    if any(token in text for token in floor_tokens):
+        return "finish_floors"
+
+    window_tokens = ["window", "glass", "aluminum frame", "curtain wall"]
+    if any(token in text for token in window_tokens):
+        return "finish_windows"
+
+    paint_tokens = ["paint", "coating", "primer"]
+    if any(token in text for token in paint_tokens):
+        return "finish_paint"
+
+    plaster_tokens = [
+        "stone",
+        "wall",
+        "ceiling",
+        "carpentry",
+        "cabinet",
+        "partition",
+        "gypsum",
+        "plaster",
+        "door",
+    ]
+    if any(token in text for token in plaster_tokens):
+        return "finish_plaster"
+
+    installation_tokens = [
+        "furniture",
+        "lighting",
+        "decor",
+        "appliance",
+        "mirror",
+        "table",
+        "chair",
+        "bed",
+    ]
+    if any(token in text for token in installation_tokens):
+        return "installation"
+
+    start_construction_tokens = [
+        "cement",
+        "concrete",
+        "block",
+        "rebar",
+        "steel",
+        "foundation",
+    ]
+    if any(token in text for token in start_construction_tokens):
+        return "start_construction"
+
+    ready_tokens = ["handover", "final cleaning", "snag", "as built"]
+    if any(token in text for token in ready_tokens):
+        return "house_ready"
+
+    return "planning"
+
+
+def _buy_from_value(material_row: dict):
+    if not isinstance(material_row, dict):
+        return "TBD"
+
+    supplier = str(material_row.get("supplier") or material_row.get("supplier_name") or "").strip()
+    if supplier:
+        return supplier
+
+    raw_link = str(material_row.get("link") or "").strip()
+    if raw_link.startswith("http://") or raw_link.startswith("https://"):
+        host = (urlparse(raw_link).netloc or "").strip().lower()
+        if host.startswith("www."):
+            host = host[4:]
+        if host:
+            return host
+    return "TBD"
+
+
+def _file_safe_name(text: str):
+    raw = str(text or "").strip().lower()
+    if not raw:
+        return "project"
+    chars = []
+    last_was_sep = False
+    for ch in raw:
+        if ("a" <= ch <= "z") or ("0" <= ch <= "9"):
+            chars.append(ch)
+            last_was_sep = False
+        elif not last_was_sep:
+            chars.append("_")
+            last_was_sep = True
+    safe = "".join(chars).strip("_")
+    return safe or "project"
+
+
 def _submit_app_suggestion(
     access_token: str | None,
     user_id: str | None,
@@ -833,6 +1064,7 @@ def _procurement_from_row(project_row: dict | None):
     quote_status = block.get("quote_status") if isinstance(block.get("quote_status"), dict) else {}
     priority = block.get("priority") if isinstance(block.get("priority"), dict) else {}
     target_price = block.get("target_price") if isinstance(block.get("target_price"), dict) else {}
+    order_stage = block.get("order_stage") if isinstance(block.get("order_stage"), dict) else {}
 
     clean_target_price = {}
     for key, value in target_price.items():
@@ -840,11 +1072,18 @@ def _procurement_from_row(project_row: dict | None):
         if cast_value is not None:
             clean_target_price[str(key)] = cast_value
 
+    clean_order_stage = {}
+    for key, value in order_stage.items():
+        stage_key = _normalize_procurement_stage(value)
+        if stage_key:
+            clean_order_stage[str(key)] = stage_key
+
     return {
         "notes": {str(k): str(v or "") for k, v in notes.items()},
         "quote_status": {str(k): str(v or "").strip().lower() for k, v in quote_status.items() if str(v or "").strip()},
         "priority": {str(k): str(v or "").strip().lower() for k, v in priority.items() if str(v or "").strip()},
         "target_price": clean_target_price,
+        "order_stage": clean_order_stage,
     }
 
 
@@ -855,12 +1094,14 @@ def _update_procurement_for_object(
     quote_status: str,
     priority: str,
     target_price: float | None,
+    order_stage: str,
 ):
     next_block = {
         "notes": dict(procurement_block.get("notes") or {}),
         "quote_status": dict(procurement_block.get("quote_status") or {}),
         "priority": dict(procurement_block.get("priority") or {}),
         "target_price": dict(procurement_block.get("target_price") or {}),
+        "order_stage": dict(procurement_block.get("order_stage") or {}),
     }
     key = str(object_id)
 
@@ -868,6 +1109,7 @@ def _update_procurement_for_object(
     clean_quote = str(quote_status or "").strip().lower()
     clean_priority = str(priority or "").strip().lower()
     clean_target = _safe_float(target_price)
+    clean_stage = _normalize_procurement_stage(order_stage)
 
     if clean_note:
         next_block["notes"][key] = clean_note
@@ -888,6 +1130,11 @@ def _update_procurement_for_object(
         next_block["target_price"][key] = clean_target
     else:
         next_block["target_price"].pop(key, None)
+
+    if clean_stage:
+        next_block["order_stage"][key] = clean_stage
+    else:
+        next_block["order_stage"].pop(key, None)
 
     return next_block
 
@@ -976,6 +1223,196 @@ def _procurement_priority_tone(priority: str):
         "critical": "proc-tone-red",
     }
     return tones.get(str(priority or "").strip().lower(), "proc-tone-neutral")
+
+
+def _build_procurement_export_rows(
+    project_row: dict | None,
+    rooms: list,
+    room_objects_map: dict,
+    material_lookup: dict,
+    procurement_block: dict,
+    include_internal_notes: bool = False,
+    stage_filter: str = "all",
+):
+    stage_filter_key = _normalize_procurement_stage(stage_filter)
+    assignment_notes = _object_assignment_notes_from_row(project_row)
+    quote_status_map = procurement_block.get("quote_status") or {}
+    priority_map = procurement_block.get("priority") or {}
+    target_price_map = procurement_block.get("target_price") or {}
+    procurement_notes_map = procurement_block.get("notes") or {}
+    order_stage_map = procurement_block.get("order_stage") or {}
+
+    room_name_map = {str(room.get("id")): str(room.get("name") or "Room") for room in (rooms or [])}
+    project_name = str((project_row or {}).get("name") or "Project")
+
+    rows = []
+    for room_id, objects in (room_objects_map or {}).items():
+        room_name = room_name_map.get(str(room_id), "Room")
+        for obj in (objects or []):
+            material_id = obj.get("material_id")
+            if not material_id:
+                continue
+
+            object_id = str(obj.get("id") or "")
+            material_row = material_lookup.get(str(material_id)) if material_id else {}
+            if not isinstance(material_row, dict):
+                material_row = {}
+
+            object_category = str(obj.get("category") or "").strip()
+            material_category = str(material_row.get("category") or "").strip()
+            object_type = object_category or "Uncategorized"
+            material_type = material_category or "Uncategorized"
+            if object_type.casefold() == material_type.casefold():
+                type_value = object_type
+            else:
+                type_value = f"{object_type} | {material_type}"
+
+            saved_stage = _normalize_procurement_stage(order_stage_map.get(object_id))
+            if saved_stage:
+                stage_value = saved_stage
+                stage_source = "Manual"
+            else:
+                stage_value = _suggest_procurement_stage(
+                    f"{object_type} {material_type} {obj.get('object_name') or ''}"
+                )
+                stage_source = "Auto"
+
+            if stage_filter_key and stage_value != stage_filter_key:
+                continue
+
+            qty_value = _safe_float(obj.get("qty"))
+            qty = qty_value if qty_value is not None and qty_value > 0 else 1.0
+            unit_price = _safe_float(material_row.get("price"))
+            line_total = (qty * unit_price) if unit_price is not None else None
+            lead_time = material_row.get("lead_time") or material_row.get("lead_time_days")
+
+            row_payload = {
+                "Project": project_name,
+                "Room": room_name,
+                "Object": str(obj.get("object_name") or "Object"),
+                "Type": type_value,
+                "Object Type": object_type,
+                "Material Type": material_type,
+                "Material": str(material_row.get("name") or ""),
+                "Qty": qty,
+                "Unit Price (THB)": unit_price,
+                "Line Total (THB)": line_total,
+                "Price Missing": "Yes" if unit_price is None else "No",
+                "Place to Buy": _buy_from_value(material_row),
+                "Material Link": str(material_row.get("link") or ""),
+                "Order Stage Key": stage_value,
+                "Order Stage": _procurement_stage_label(stage_value),
+                "Stage Source": stage_source,
+                "Quote Status": _procurement_quote_label(quote_status_map.get(object_id)),
+                "Priority": _procurement_priority_label(priority_map.get(object_id)),
+                "Target Price (THB)": _safe_float(target_price_map.get(object_id)),
+                "Object Status": str(obj.get("status") or "unassigned"),
+                "Lead Time": str(lead_time or "").strip(),
+            }
+            if include_internal_notes:
+                row_payload["Assignment Note"] = str(assignment_notes.get(object_id) or "").strip()
+                row_payload["Procurement Note"] = str(procurement_notes_map.get(object_id) or "").strip()
+            rows.append(row_payload)
+
+    rows.sort(
+        key=lambda row: (
+            PROCUREMENT_STAGE_RANK.get(str(row.get("Order Stage Key") or "planning"), 0),
+            str(row.get("Type") or "").lower(),
+            str(row.get("Place to Buy") or "").lower(),
+            str(row.get("Room") or "").lower(),
+            str(row.get("Object") or "").lower(),
+        )
+    )
+    return rows
+
+
+def _build_procurement_export_workbook(export_rows: list[dict], include_internal_notes: bool = False):
+    detail_columns = [
+        "Project",
+        "Order Stage",
+        "Stage Source",
+        "Type",
+        "Object Type",
+        "Material Type",
+        "Place to Buy",
+        "Room",
+        "Object",
+        "Material",
+        "Qty",
+        "Unit Price (THB)",
+        "Line Total (THB)",
+        "Price Missing",
+        "Quote Status",
+        "Priority",
+        "Target Price (THB)",
+        "Object Status",
+        "Lead Time",
+        "Material Link",
+    ]
+    if include_internal_notes:
+        detail_columns.extend(["Assignment Note", "Procurement Note"])
+    detail_df = pd.DataFrame(export_rows, columns=detail_columns)
+
+    if detail_df.empty:
+        supplier_df = pd.DataFrame(columns=["Order Stage", "Place to Buy", "Lines", "Total Qty", "Known Value (THB)", "Lines Missing Price"])
+        type_df = pd.DataFrame(columns=["Order Stage", "Type", "Lines", "Total Qty", "Known Value (THB)", "Lines Missing Price"])
+        room_df = pd.DataFrame(columns=["Order Stage", "Room", "Lines", "Total Qty", "Known Value (THB)", "Lines Missing Price"])
+    else:
+        for col_name in ["Qty", "Line Total (THB)"]:
+            detail_df[col_name] = pd.to_numeric(detail_df[col_name], errors="coerce")
+
+        grouped = detail_df.assign(_missing_price=(detail_df["Price Missing"] == "Yes").astype(int))
+
+        supplier_df = (
+            grouped.groupby(["Order Stage", "Place to Buy"], dropna=False)
+            .agg(
+                Lines=("Object", "count"),
+                **{
+                    "Total Qty": ("Qty", "sum"),
+                    "Known Value (THB)": ("Line Total (THB)", "sum"),
+                    "Lines Missing Price": ("_missing_price", "sum"),
+                },
+            )
+            .reset_index()
+            .sort_values(["Order Stage", "Place to Buy"])
+        )
+
+        type_df = (
+            grouped.groupby(["Order Stage", "Type"], dropna=False)
+            .agg(
+                Lines=("Object", "count"),
+                **{
+                    "Total Qty": ("Qty", "sum"),
+                    "Known Value (THB)": ("Line Total (THB)", "sum"),
+                    "Lines Missing Price": ("_missing_price", "sum"),
+                },
+            )
+            .reset_index()
+            .sort_values(["Order Stage", "Type"])
+        )
+
+        room_df = (
+            grouped.groupby(["Order Stage", "Room"], dropna=False)
+            .agg(
+                Lines=("Object", "count"),
+                **{
+                    "Total Qty": ("Qty", "sum"),
+                    "Known Value (THB)": ("Line Total (THB)", "sum"),
+                    "Lines Missing Price": ("_missing_price", "sum"),
+                },
+            )
+            .reset_index()
+            .sort_values(["Order Stage", "Room"])
+        )
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        detail_df.to_excel(writer, sheet_name="Order List", index=False)
+        supplier_df.to_excel(writer, sheet_name="By Supplier", index=False)
+        type_df.to_excel(writer, sheet_name="By Type", index=False)
+        room_df.to_excel(writer, sheet_name="By Room", index=False)
+
+    return output.getvalue()
 
 
 def _room_spend(objects, material_prices):
@@ -1621,6 +2058,119 @@ if page == "Projects Workspace":
                     unsafe_allow_html=True,
                 )
 
+            relational_items = []
+            relational_error = None
+            if access_token:
+                try:
+                    relational_items = list_project_items_relational(str(pid), access_token=access_token) or []
+                except Exception as e:
+                    relational_error = str(e)
+
+            with st.expander("Export Procurement to Excel", expanded=False):
+                st.caption("Primary source: relational project_items (new model).")
+                if relational_error:
+                    st.warning(f"Relational model unavailable: {relational_error}")
+
+                if relational_items:
+                    group_mode = st.selectbox(
+                        "Preview grouping",
+                        ["By room", "By supplier", "By category"],
+                        key=f"rel_group_mode_{pid}",
+                    )
+                    if group_mode == "By room":
+                        grouped_blocks = list_project_items_grouped_by_room_relational(str(pid), access_token=access_token)
+                    elif group_mode == "By supplier":
+                        grouped_blocks = list_project_items_grouped_by_supplier_relational(str(pid), access_token=access_token)
+                    else:
+                        grouped_blocks = list_project_items_grouped_by_category_relational(str(pid), access_token=access_token)
+
+                    metrics_cols = st.columns(3)
+                    total_value = sum(float(item.get("line_total") or 0.0) for item in relational_items)
+                    priced_lines = sum(1 for item in relational_items if item.get("unit_price") is not None)
+                    metrics_cols[0].metric("Project items", len(relational_items))
+                    metrics_cols[1].metric("Priced lines", f"{priced_lines}/{len(relational_items)}")
+                    metrics_cols[2].metric("Known value", f"{total_value:,.0f} THB")
+
+                    preview_rows = []
+                    for group in grouped_blocks[:20]:
+                        preview_rows.append(
+                            {
+                                "Group": group.get("label"),
+                                "Items": group.get("count"),
+                                "Known Value (THB)": float(group.get("total_value") or 0.0),
+                            }
+                        )
+                    if preview_rows:
+                        st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
+
+                    workbook_bytes, frames = build_project_items_excel_bytes_relational(str(pid), access_token=access_token)
+                    summary_df = frames.get("summary") if isinstance(frames, dict) else None
+                    summary_rows = len(summary_df.index) if hasattr(summary_df, "index") else 0
+                    by_room_rows = len(frames.get("by_room", [])) if isinstance(frames, dict) else 0
+                    by_supplier_rows = len(frames.get("by_supplier", [])) if isinstance(frames, dict) else 0
+                    by_category_rows = len(frames.get("by_category", [])) if isinstance(frames, dict) else 0
+                    st.caption(
+                        "Workbook rows: "
+                        f"Summary={summary_rows}, By Room={by_room_rows}, "
+                        f"By Supplier={by_supplier_rows}, By Category={by_category_rows}"
+                    )
+                    project_slug = _file_safe_name(proj.get("name") or "project")
+                    timestamp_suffix = datetime.now().strftime("%Y%m%d_%H%M")
+                    export_filename = f"{project_slug}_project_items_{timestamp_suffix}.xlsx"
+                    st.download_button(
+                        "Download Excel (Relational)",
+                        data=workbook_bytes,
+                        file_name=export_filename,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"proc_export_download_rel_{pid}",
+                        type="primary",
+                    )
+                else:
+                    st.caption("Fallback source: legacy room objects (during migration period).")
+                    stage_filter_options = ["all"] + PROCUREMENT_STAGE_OPTIONS
+                    selected_stage_filter = st.selectbox(
+                        "Order stage filter",
+                        options=stage_filter_options,
+                        format_func=lambda value: "All stages" if value == "all" else _procurement_stage_label(value),
+                        key=f"proc_export_stage_filter_{pid}",
+                    )
+                    include_internal_notes_export = st.checkbox(
+                        "Include internal notes",
+                        value=False,
+                        key=f"proc_export_internal_notes_{pid}",
+                    )
+
+                    export_rows = _build_procurement_export_rows(
+                        project_row=proj,
+                        rooms=rooms,
+                        room_objects_map=room_objects_map,
+                        material_lookup=material_lookup,
+                        procurement_block=procurement_meta,
+                        include_internal_notes=include_internal_notes_export,
+                        stage_filter=selected_stage_filter,
+                    )
+                    st.caption(f"{len(export_rows)} rows included in fallback export.")
+
+                    if export_rows:
+                        workbook_bytes = _build_procurement_export_workbook(
+                            export_rows,
+                            include_internal_notes=include_internal_notes_export,
+                        )
+                        project_slug = _file_safe_name(proj.get("name") or "project")
+                        stage_slug = selected_stage_filter if selected_stage_filter != "all" else "all_stages"
+                        timestamp_suffix = datetime.now().strftime("%Y%m%d_%H%M")
+                        export_filename = f"{project_slug}_procurement_{stage_slug}_{timestamp_suffix}.xlsx"
+                        st.download_button(
+                            "Download Excel (Legacy)",
+                            data=workbook_bytes,
+                            file_name=export_filename,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"proc_export_download_{pid}",
+                            type="primary",
+                        )
+                    else:
+                        st.info("No rows matched this filter. Adjust filters or assign materials first.")
+
             st.markdown("---")
             _render_editorial_title("Client Pulse", "Feedback")
             object_map = {}
@@ -1910,6 +2460,7 @@ if page == "Projects Workspace":
                         procurement_quotes = procurement_meta.get("quote_status") or {}
                         procurement_priorities = procurement_meta.get("priority") or {}
                         procurement_targets = procurement_meta.get("target_price") or {}
+                        procurement_stages = procurement_meta.get("order_stage") or {}
 
                         note_key = f"obj_why_note_{oid}"
                         if note_key not in st.session_state:
@@ -1926,6 +2477,16 @@ if page == "Projects Workspace":
                         if quote_key not in st.session_state:
                             quote_value = str(procurement_quotes.get(str(oid)) or "not_started").strip().lower()
                             st.session_state[quote_key] = quote_value if quote_value in quote_options else "not_started"
+
+                        stage_options = PROCUREMENT_STAGE_OPTIONS
+                        stage_key = f"obj_proc_stage_{oid}"
+                        if stage_key not in st.session_state:
+                            stage_value = _normalize_procurement_stage(procurement_stages.get(str(oid)))
+                            if not stage_value:
+                                stage_value = _suggest_procurement_stage(
+                                    f"{obj.get('category') or ''} {obj.get('object_name') or ''}"
+                                )
+                            st.session_state[stage_key] = stage_value if stage_value in stage_options else "planning"
 
                         target_price_default = _safe_float(procurement_targets.get(str(oid)))
                         target_toggle_key = f"obj_proc_target_enabled_{oid}"
@@ -1962,8 +2523,16 @@ if page == "Projects Workspace":
                                 key=quote_key,
                                 disabled=not show_procurement,
                             )
+                            order_stage = st.selectbox(
+                                "Order stage",
+                                options=stage_options,
+                                format_func=_procurement_stage_label,
+                                key=stage_key,
+                                disabled=not show_procurement,
+                            )
                             priority_chip = _procurement_priority_label(purchasing_priority)
                             quote_chip = _procurement_quote_label(quote_status)
+                            stage_chip = _procurement_stage_label(order_stage)
                             priority_tone = _procurement_priority_tone(purchasing_priority)
                             quote_tone = _procurement_quote_tone(quote_status)
                             disabled_class = " proc-pill-disabled" if not show_procurement else ""
@@ -1976,6 +2545,7 @@ if page == "Projects Workspace":
                                 ),
                                 unsafe_allow_html=True,
                             )
+                            st.caption(f"Order stage: {stage_chip}")
 
                             target_cols = st.columns([0.35, 0.65])
                             with target_cols[0]:
@@ -2033,6 +2603,7 @@ if page == "Projects Workspace":
                             raw_priority = str(st.session_state.get(priority_key) or "routine").strip().lower()
                             raw_proc_note = str(st.session_state.get(procurement_note_key) or "").strip()
                             raw_target_value = _safe_float(st.session_state.get(target_price_key))
+                            raw_stage_value = _normalize_procurement_stage(st.session_state.get(stage_key))
                             use_target_value = bool(st.session_state.get(target_toggle_key))
                             target_price_value = raw_target_value if use_target_value else None
 
@@ -2043,6 +2614,7 @@ if page == "Projects Workspace":
                                 raw_quote if raw_quote != "not_started" else "",
                                 raw_priority if raw_priority != "routine" else "",
                                 target_price_value,
+                                raw_stage_value or "",
                             )
                             return _save_project_cart_fields(
                                 access_token,
@@ -2077,6 +2649,7 @@ if page == "Projects Workspace":
                                     "",
                                     "",
                                     None,
+                                    "",
                                 )
                                 _save_project_cart_fields(
                                     access_token,
@@ -2199,6 +2772,8 @@ elif page == "My Materials":
         name = st.text_input("Name", key="mat_name")
         description = st.text_area("Description", key="mat_desc")
         category = st.text_input("Category", key="mat_cat")
+        supplier = st.text_input("Supplier / Store", key="mat_supplier")
+        lead_time_days = st.number_input("Lead time (days)", min_value=0, step=1, value=0, key="mat_lead_days")
         price = st.number_input("Price (THB)", min_value=0.0, step=10.0, key="mat_price")
         link = st.text_input("Link", key="mat_link")
         image_url = st.text_input("Image URL", key="mat_img")
@@ -2213,6 +2788,8 @@ elif page == "My Materials":
                     "name": name.strip(),
                     "description": description.strip() or None,
                     "category": category.strip() or None,
+                    "supplier": supplier.strip() or None,
+                    "lead_time_days": int(lead_time_days) if int(lead_time_days) > 0 else None,
                     "price": float(price) if price else None,
                     "link": link.strip() or None,
                     "image_url": image_url.strip() or None,
@@ -2249,6 +2826,8 @@ elif page == "My Materials":
                 st.session_state["mat_link_price"] = float(payload.get("price") or 0.0)
                 st.session_state["mat_link_link"] = payload.get("link") or source_url
                 st.session_state["mat_link_img"] = payload.get("image_url") or ""
+                st.session_state["mat_link_supplier"] = payload.get("supplier") or ""
+                st.session_state["mat_link_lead_days"] = int(payload.get("lead_time_days") or 0)
                 st.session_state["mat_link_tags"] = ", ".join(payload.get("tags") or [])
                 st.success("Fetched product details. Review and save.")
 
@@ -2275,6 +2854,8 @@ elif page == "My Materials":
             st.text_input("Name", key="mat_link_name")
             st.text_area("Description", key="mat_link_desc")
             st.text_input("Category", key="mat_link_cat")
+            st.text_input("Supplier / Store", key="mat_link_supplier")
+            st.number_input("Lead time (days)", min_value=0, step=1, key="mat_link_lead_days")
             st.number_input("Price (THB)", min_value=0.0, step=10.0, key="mat_link_price")
             st.text_input("Source Link", key="mat_link_link")
             st.text_input("Image URL", key="mat_link_img")
@@ -2296,6 +2877,10 @@ elif page == "My Materials":
                         "name": st.session_state.get("mat_link_name", "").strip(),
                         "description": st.session_state.get("mat_link_desc", "").strip() or None,
                         "category": st.session_state.get("mat_link_cat", "").strip() or None,
+                        "supplier": st.session_state.get("mat_link_supplier", "").strip() or None,
+                        "lead_time_days": int(st.session_state.get("mat_link_lead_days") or 0)
+                        if int(st.session_state.get("mat_link_lead_days") or 0) > 0
+                        else None,
                         "price": float(st.session_state.get("mat_link_price") or 0.0)
                         if st.session_state.get("mat_link_price")
                         else None,
@@ -2344,6 +2929,12 @@ elif page == "My Materials":
                 meta_bits = []
                 if r.get("category"):
                     meta_bits.append(r["category"])
+                supplier_value = str(r.get("supplier") or r.get("supplier_name") or "").strip()
+                if supplier_value:
+                    meta_bits.append(supplier_value)
+                lead_days = _safe_float(r.get("lead_time_days"))
+                if lead_days is not None and lead_days > 0:
+                    meta_bits.append(f"{int(lead_days)}d lead")
                 if r.get("price") is not None:
                     meta_bits.append(f"{r['price']} THB")
                 if r.get("visibility") == "global":

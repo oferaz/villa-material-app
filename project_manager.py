@@ -391,7 +391,7 @@ def _prune_project_cart_object_metadata(project_id: str, object_ids):
         procurement = cart_meta.get("procurement")
         if isinstance(procurement, dict):
             clean_procurement = dict(procurement)
-            for key in ["notes", "quote_status", "priority", "target_price"]:
+            for key in ["notes", "quote_status", "priority", "target_price", "order_stage"]:
                 block = clean_procurement.get(key)
                 if isinstance(block, dict):
                     clean_procurement[key] = {

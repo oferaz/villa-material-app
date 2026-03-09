@@ -302,3 +302,31 @@ def test_get_shared_project_by_token_rejects_disabled_share(monkeypatch):
     project = pm.get_shared_project_by_token("tok-1")
 
     assert project is None
+
+
+def test_prune_project_cart_object_metadata_removes_order_stage(monkeypatch):
+    captured = {}
+
+    def fake_cart_items_and_meta(_project_id):
+        return [], {
+            "items": [],
+            "procurement": {
+                "notes": {"obj-1": "x", "obj-2": "y"},
+                "quote_status": {"obj-1": "po_ready", "obj-2": "quote_requested"},
+                "priority": {"obj-1": "high", "obj-2": "routine"},
+                "target_price": {"obj-1": 100.0, "obj-2": 200.0},
+                "order_stage": {"obj-1": "first_fix", "obj-2": "final_install"},
+            },
+        }
+
+    def fake_save_project_cart(_project_id, payload):
+        captured["payload"] = payload
+
+    monkeypatch.setattr(pm, "_project_cart_items_and_meta", fake_cart_items_and_meta)
+    monkeypatch.setattr(pm, "_save_project_cart", fake_save_project_cart)
+
+    pm._prune_project_cart_object_metadata("project-1", ["obj-1"])
+
+    procurement = captured["payload"]["procurement"]
+    assert procurement["order_stage"] == {"obj-2": "final_install"}
+    assert procurement["notes"] == {"obj-2": "y"}
