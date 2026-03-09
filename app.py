@@ -1241,7 +1241,7 @@ if page == "Projects Workspace":
             _render_mood_strip(design_brief.get("mood_images", []))
 
             if show_setup:
-                with st.expander("Mood Direction", expanded=True):
+                with st.expander("Mood Direction", expanded=False):
                     brief_keywords_text = st.text_input(
                         "Style keywords",
                         value=", ".join(design_brief.get("keywords", [])),

@@ -167,10 +167,13 @@ def inject_custom_css():
         header[data-testid="stHeader"],
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
+        [data-testid="stHeaderActionElements"],
         [data-testid="stDecoration"],
         [data-testid="stStatusWidget"],
         [data-testid="stAppDeployButton"],
         [data-testid="stMainMenu"],
+        [data-testid="stBadge"],
+        [data-testid="stBadgeLink"],
         #MainMenu,
         footer,
         [data-testid="stFooter"],
@@ -178,13 +181,34 @@ def inject_custom_css():
         [data-testid="stBottomBlockContainer"],
         .viewerBadge_container__1QSob,
         [class*="viewerBadge_container__"],
-        [class*="viewerBadge_link__"] {
+        [class*="viewerBadge_link__"],
+        [class*="stBadge"],
+        [aria-label*="Streamlit"],
+        [title*="Streamlit"] {
             display: none !important;
             visibility: hidden !important;
         }
 
         [data-testid="stAppViewContainer"] {
             margin-top: 0 !important;
+        }
+
+        @media (max-width: 900px) {
+            header,
+            [data-testid="stHeader"],
+            [data-testid="stToolbar"],
+            [data-testid="stStatusWidget"],
+            [data-testid="stAppDeployButton"],
+            [data-testid="stBadge"],
+            [data-testid="stBadgeLink"],
+            [class*="viewerBadge_container__"],
+            [class*="viewerBadge_link__"],
+            [class*="stBadge"],
+            [aria-label*="Streamlit"],
+            [title*="Streamlit"] {
+                display: none !important;
+                visibility: hidden !important;
+            }
         }
 
         .welcome-box {
