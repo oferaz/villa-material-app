@@ -268,6 +268,30 @@ def _portable_duplicate_cart_payload(source_cart):
     return payload or []
 
 
+def _delete_project_tree(sb, project_id: str):
+    """
+    Best-effort cleanup for project + rooms + room_objects.
+    """
+    project_key = str(project_id or "").strip()
+    if not project_key:
+        return
+
+    room_rows = (
+        sb.table("project_rooms")
+        .select("id")
+        .eq("project_id", project_key)
+        .execute()
+        .data
+        or []
+    )
+    for room_row in room_rows:
+        room_id = str(room_row.get("id") or "").strip()
+        if room_id:
+            sb.table("room_objects").delete().eq("room_id", room_id).execute()
+    sb.table("project_rooms").delete().eq("project_id", project_key).execute()
+    sb.table("projects").delete().eq("id", project_key).execute()
+
+
 def duplicate_project(
     project_id: str,
     new_name: str | None = None,
@@ -344,6 +368,7 @@ def duplicate_project(
             .data
             or []
         )
+        expected_rooms_count = len(source_rooms)
 
         room_id_map = {}
         for source_room in source_rooms:
@@ -396,9 +421,45 @@ def duplicate_project(
                         "material_id": material_id,
                     }
                 )
+        expected_objects_count = len(objects_payload)
 
         if objects_payload:
             sb.table("room_objects").insert(objects_payload).execute()
+
+        # Validate clone completeness. If counts mismatch, force rollback.
+        cloned_rooms = (
+            sb.table("project_rooms")
+            .select("id")
+            .eq("project_id", created_project_id)
+            .execute()
+            .data
+            or []
+        )
+        actual_rooms_count = len(cloned_rooms)
+        if actual_rooms_count != expected_rooms_count:
+            raise RuntimeError(
+                f"Incomplete duplicate: expected {expected_rooms_count} rooms, got {actual_rooms_count}."
+            )
+
+        actual_objects_count = 0
+        for cloned_room in cloned_rooms:
+            cloned_room_id = str(cloned_room.get("id") or "").strip()
+            if not cloned_room_id:
+                continue
+            room_objects = (
+                sb.table("room_objects")
+                .select("id")
+                .eq("room_id", cloned_room_id)
+                .execute()
+                .data
+                or []
+            )
+            actual_objects_count += len(room_objects)
+
+        if actual_objects_count != expected_objects_count:
+            raise RuntimeError(
+                f"Incomplete duplicate: expected {expected_objects_count} objects, got {actual_objects_count}."
+            )
 
         if show_feedback:
             st.success(f"✅ Created duplicate project: {target_name}")
@@ -406,10 +467,8 @@ def duplicate_project(
     except Exception as e:
         if sb is not None and created_project_id:
             try:
-                for room_id in created_room_ids:
-                    sb.table("room_objects").delete().eq("room_id", room_id).execute()
-                sb.table("project_rooms").delete().eq("project_id", created_project_id).execute()
-                sb.table("projects").delete().eq("id", created_project_id).execute()
+                # Query by project id instead of only tracked room ids, so partial inserts also get removed.
+                _delete_project_tree(sb, created_project_id)
             except Exception:
                 pass
         if show_feedback:

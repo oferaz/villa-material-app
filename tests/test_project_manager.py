@@ -99,6 +99,8 @@ class FakeTable:
                 raise RuntimeError("forced room insert failure")
             if self.client.room_insert_mode == "empty":
                 return []
+        if self.table_name == "room_objects" and self.client.partial_room_object_insert and len(payload_rows) > 1:
+            payload_rows = payload_rows[:-1]
 
         created = []
         for payload in payload_rows:
@@ -125,8 +127,17 @@ class FakeTable:
 
 
 class FakeSupabase:
-    def __init__(self, *, room_insert_mode="normal", projects=None, project_rooms=None, room_objects=None):
+    def __init__(
+        self,
+        *,
+        room_insert_mode="normal",
+        partial_room_object_insert=False,
+        projects=None,
+        project_rooms=None,
+        room_objects=None,
+    ):
         self.room_insert_mode = room_insert_mode
+        self.partial_room_object_insert = partial_room_object_insert
         self.db = {
             "projects": list(projects or []),
             "project_rooms": list(project_rooms or []),
@@ -339,6 +350,45 @@ def test_duplicate_project_bulk_rejects_non_positive_count(monkeypatch):
 
     assert new_ids == []
     assert fake_st.warnings
+
+
+def test_duplicate_project_rolls_back_incomplete_clone(monkeypatch):
+    fake_sb = FakeSupabase(
+        partial_room_object_insert=True,
+        projects=[{"id": "project-1", "name": "Master Villa", "owner_id": "user-1", "cart": []}],
+        project_rooms=[{"id": "room-1", "project_id": "project-1", "name": "Kitchen"}],
+        room_objects=[
+            {
+                "id": "object-1",
+                "room_id": "room-1",
+                "object_key": "countertop",
+                "object_name": "Countertop",
+                "category": "Surface",
+                "qty": 1,
+                "status": "selected",
+                "material_id": "mat-77",
+            },
+            {
+                "id": "object-2",
+                "room_id": "room-1",
+                "object_key": "sink",
+                "object_name": "Sink",
+                "category": "Sanitary",
+                "qty": 1,
+                "status": "selected",
+                "material_id": "mat-88",
+            },
+        ],
+    )
+    fake_st = _install_test_context(monkeypatch, fake_sb)
+
+    new_project_id = pm.duplicate_project("project-1", "Customer Copy", include_materials=True)
+
+    assert new_project_id is None
+    assert len(fake_sb.db["projects"]) == 1
+    assert len(fake_sb.db["project_rooms"]) == 1
+    assert len(fake_sb.db["room_objects"]) == 2
+    assert fake_st.errors
 
 
 def test_load_project_rooms_backfills_legacy_rooms_when_project_rows_are_empty(monkeypatch):
