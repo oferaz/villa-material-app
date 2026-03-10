@@ -1,5 +1,6 @@
 # project_manager.py — Supabase projects (safe, no global client)
 
+import copy
 import streamlit as st
 from supabase_client import get_supabase
 from assets.villa_template import SMALL_VILLA_TEMPLATE
@@ -227,6 +228,226 @@ def create_project(name: str, rooms=None, template: str = "small_villa", templat
             st.session_state.pop("current_project_id", None)
         st.error(f"❌ Failed to create project: {e}")
         return load_projects()
+
+
+def _project_name_exists(sb, project_name: str, user_id: str | None = None):
+    query = sb.table("projects").select("id").eq("name", project_name)
+    if user_id:
+        query = query.eq("owner_id", user_id)
+    rows = query.execute().data or []
+    return bool(rows)
+
+
+def _next_duplicate_project_name(sb, source_name: str, user_id: str | None = None):
+    query = sb.table("projects").select("name")
+    if user_id:
+        query = query.eq("owner_id", user_id)
+    rows = query.execute().data or []
+    existing_names = {str(row.get("name") or "").strip().casefold() for row in rows if row.get("name")}
+
+    base = f"{source_name} (Copy)"
+    if base.casefold() not in existing_names:
+        return base
+
+    index = 2
+    while True:
+        candidate = f"{source_name} (Copy {index})"
+        if candidate.casefold() not in existing_names:
+            return candidate
+        index += 1
+
+
+def _portable_duplicate_cart_payload(source_cart):
+    if not isinstance(source_cart, dict):
+        return []
+
+    payload = {}
+    design_brief = source_cart.get("design_brief")
+    if isinstance(design_brief, dict):
+        payload["design_brief"] = copy.deepcopy(design_brief)
+    return payload or []
+
+
+def duplicate_project(
+    project_id: str,
+    new_name: str | None = None,
+    include_materials: bool = False,
+    show_feedback: bool = True,
+):
+    """
+    Duplicate a project for the current user.
+    - include_materials=False: copy room/object structure only.
+    - include_materials=True: copy assigned material_id to each object and reset status to "selected".
+    Object-level comments/share metadata are intentionally not copied.
+    Returns new project id (str) on success, otherwise None.
+    """
+    source_project_id = str(project_id or "").strip()
+    if not source_project_id:
+        if show_feedback:
+            st.warning("Project id is required.")
+        return None
+
+    sb = None
+    created_project_id = None
+    created_room_ids = []
+
+    try:
+        sb = get_supabase(_token())
+        user_id = str(st.session_state.get("user_id") or "").strip()
+
+        source_query = (
+            sb.table("projects")
+            .select("id, name, cart, owner_id")
+            .eq("id", source_project_id)
+            .limit(1)
+        )
+        if user_id:
+            source_query = source_query.eq("owner_id", user_id)
+        source_rows = source_query.execute().data or []
+        if not source_rows:
+            if show_feedback:
+                st.error("Project not found.")
+            return None
+        source_project = source_rows[0]
+
+        source_name = str(source_project.get("name") or "Project").strip() or "Project"
+        target_name = str(new_name or "").strip()
+        if not target_name:
+            target_name = _next_duplicate_project_name(sb, source_name, user_id=user_id or None)
+
+        if _project_name_exists(sb, target_name, user_id=user_id or None):
+            if show_feedback:
+                st.warning(f"⚠️ Project '{target_name}' already exists.")
+            return None
+
+        project_payload = {
+            "name": target_name,
+            "cart": _portable_duplicate_cart_payload(source_project.get("cart")),
+        }
+        owner_id = str(source_project.get("owner_id") or user_id or "").strip()
+        if owner_id:
+            project_payload["owner_id"] = owner_id
+
+        inserted_project = sb.table("projects").insert(project_payload).execute().data or []
+        if not inserted_project:
+            raise RuntimeError("Failed to create duplicated project.")
+        created_project_id = str(inserted_project[0].get("id"))
+        if not created_project_id:
+            raise RuntimeError("Duplicated project id is missing.")
+
+        source_rooms = (
+            sb.table("project_rooms")
+            .select("id, name")
+            .eq("project_id", source_project_id)
+            .order("name")
+            .execute()
+            .data
+            or []
+        )
+
+        room_id_map = {}
+        for source_room in source_rooms:
+            source_room_id = str(source_room.get("id") or "").strip()
+            if not source_room_id:
+                continue
+            room_name = str(source_room.get("name") or "").strip() or "Room"
+            room_rows = (
+                sb.table("project_rooms")
+                .insert({"project_id": created_project_id, "name": room_name})
+                .execute()
+                .data
+                or []
+            )
+            if not room_rows:
+                raise RuntimeError("Failed to duplicate project rooms.")
+
+            created_room = room_rows[0]
+            created_room_id = str(created_room.get("id") or "").strip()
+            if not created_room_id:
+                raise RuntimeError("Duplicated room id is missing.")
+
+            created_room_ids.append(created_room_id)
+            room_id_map[source_room_id] = created_room_id
+
+        objects_payload = []
+        for source_room_id, target_room_id in room_id_map.items():
+            source_objects = (
+                sb.table("room_objects")
+                .select("object_key, object_name, category, qty, status, material_id")
+                .eq("room_id", source_room_id)
+                .execute()
+                .data
+                or []
+            )
+            for source_obj in source_objects:
+                source_material_id = source_obj.get("material_id")
+                material_id = source_material_id if (include_materials and source_material_id) else None
+                status = "selected" if material_id else "unassigned"
+
+                objects_payload.append(
+                    {
+                        "room_id": target_room_id,
+                        "object_key": str(source_obj.get("object_key") or "").strip()
+                        or _slugify(source_obj.get("object_name") or "item"),
+                        "object_name": str(source_obj.get("object_name") or "").strip() or "Item",
+                        "category": source_obj.get("category"),
+                        "qty": _safe_qty(source_obj.get("qty", 1)),
+                        "status": status,
+                        "material_id": material_id,
+                    }
+                )
+
+        if objects_payload:
+            sb.table("room_objects").insert(objects_payload).execute()
+
+        if show_feedback:
+            st.success(f"✅ Created duplicate project: {target_name}")
+        return created_project_id
+    except Exception as e:
+        if sb is not None and created_project_id:
+            try:
+                for room_id in created_room_ids:
+                    sb.table("room_objects").delete().eq("room_id", room_id).execute()
+                sb.table("project_rooms").delete().eq("project_id", created_project_id).execute()
+                sb.table("projects").delete().eq("id", created_project_id).execute()
+            except Exception:
+                pass
+        if show_feedback:
+            st.error(f"❌ Failed to duplicate project: {e}")
+        return None
+
+
+def duplicate_project_bulk(project_id: str, copies_count: int, include_materials: bool = False):
+    """
+    Duplicate one project multiple times.
+    Returns list of new project ids.
+    """
+    try:
+        count = int(copies_count)
+    except Exception:
+        count = 0
+
+    if count <= 0:
+        st.warning("Copies count must be at least 1.")
+        return []
+
+    created_ids = []
+    for _ in range(count):
+        new_id = duplicate_project(
+            project_id=project_id,
+            new_name=None,
+            include_materials=include_materials,
+            show_feedback=False,
+        )
+        if not new_id:
+            st.error(
+                f"❌ Bulk duplication stopped after {len(created_ids)} of {count} copies."
+            )
+            return created_ids
+        created_ids.append(str(new_id))
+
+    st.success(f"✅ Created {len(created_ids)} duplicate project(s).")
+    return created_ids
 
 
 def _touch_project(project_id: str):

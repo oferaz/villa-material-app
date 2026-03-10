@@ -70,6 +70,10 @@ delete_project_room = getattr(
     _project_manager, "delete_project_room", _missing_project_manager_fn("delete_project_room")
 )
 delete_project = getattr(_project_manager, "delete_project", _missing_project_manager_fn("delete_project"))
+duplicate_project = getattr(_project_manager, "duplicate_project", _missing_project_manager_fn("duplicate_project"))
+duplicate_project_bulk = getattr(
+    _project_manager, "duplicate_project_bulk", _missing_project_manager_fn("duplicate_project_bulk")
+)
 load_project_rooms = getattr(
     _project_manager, "load_project_rooms", _missing_project_manager_fn("load_project_rooms")
 )
@@ -258,6 +262,26 @@ def _create_project_compat(name: str, rooms=None, template_map: dict | None = No
             # Fail closed to keep older create_project signatures working.
             pass
     return create_project(name, **kwargs)
+
+
+def _suggest_duplicate_project_name(source_name: str, projects: list[dict]):
+    base_name = str(source_name or "Project").strip() or "Project"
+    existing_names = {
+        str((row or {}).get("name") or "").strip().casefold()
+        for row in (projects or [])
+        if str((row or {}).get("name") or "").strip()
+    }
+
+    first = f"{base_name} (Copy)"
+    if first.casefold() not in existing_names:
+        return first
+
+    index = 2
+    while True:
+        candidate = f"{base_name} (Copy {index})"
+        if candidate.casefold() not in existing_names:
+            return candidate
+        index += 1
 
 
 def _cart_payload_from_row(project_row: dict | None):
@@ -1907,6 +1931,65 @@ if page == "Projects Workspace":
                                             st.session_state.current_object_id = None
                                         st.success("Room deleted.")
                                         st.rerun()
+
+                st.markdown("#### Duplicate project")
+                st.caption("Create a copy for another customer, with or without current material selections.")
+                duplicate_name_key = f"duplicate_project_name_{pid}"
+                if duplicate_name_key not in st.session_state:
+                    st.session_state[duplicate_name_key] = _suggest_duplicate_project_name(proj.get("name"), projects)
+                st.text_input("Duplicated project name", key=duplicate_name_key)
+                duplicate_cols = st.columns(2)
+                with duplicate_cols[0]:
+                    if st.button("Duplicate structure only", key=f"duplicate_project_structure_{pid}"):
+                        created_id = duplicate_project(
+                            pid,
+                            st.session_state.get(duplicate_name_key, ""),
+                            include_materials=False,
+                        )
+                        if created_id:
+                            st.session_state.pop(duplicate_name_key, None)
+                            st.rerun()
+                with duplicate_cols[1]:
+                    if st.button("Duplicate with selected materials", key=f"duplicate_project_materials_{pid}", type="primary"):
+                        created_id = duplicate_project(
+                            pid,
+                            st.session_state.get(duplicate_name_key, ""),
+                            include_materials=True,
+                        )
+                        if created_id:
+                            st.session_state.pop(duplicate_name_key, None)
+                            st.rerun()
+
+                st.markdown("##### Bulk duplication")
+                st.caption("Create multiple copies at once for different customers.")
+                bulk_count_key = f"bulk_duplicate_count_{pid}"
+                if bulk_count_key not in st.session_state:
+                    st.session_state[bulk_count_key] = 2
+                bulk_mode_key = f"bulk_duplicate_mode_{pid}"
+                bulk_mode = st.radio(
+                    "Bulk copy mode",
+                    ["Without selected materials", "With selected materials"],
+                    key=bulk_mode_key,
+                    horizontal=True,
+                )
+                st.number_input(
+                    "Number of copies",
+                    min_value=1,
+                    max_value=30,
+                    value=int(st.session_state.get(bulk_count_key, 2)),
+                    step=1,
+                    key=bulk_count_key,
+                )
+                if st.button("Create bulk duplicates", key=f"bulk_duplicate_project_btn_{pid}"):
+                    include_materials_bulk = bulk_mode == "With selected materials"
+                    created_bulk_ids = duplicate_project_bulk(
+                        pid,
+                        int(st.session_state.get(bulk_count_key, 1)),
+                        include_materials=include_materials_bulk,
+                    )
+                    if created_bulk_ids:
+                        st.session_state.pop(duplicate_name_key, None)
+                        st.rerun()
 
                 st.markdown("#### Delete project")
                 st.caption("This will permanently delete this project, all rooms, and all room objects.")

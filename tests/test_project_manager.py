@@ -192,6 +192,155 @@ def test_create_project_normalizes_and_dedupes_room_names(monkeypatch):
     assert [row["name"] for row in fake_sb.db["project_rooms"]] == ["Living Room", "Kitchen"]
 
 
+def test_duplicate_project_without_materials_resets_assignments(monkeypatch):
+    fake_sb = FakeSupabase(
+        projects=[
+            {
+                "id": "project-1",
+                "name": "Master Villa",
+                "owner_id": "user-1",
+                "cart": {
+                    "design_brief": {"keywords": ["warm", "natural"]},
+                    "comments": {"object-1": [{"comment": "legacy"}]},
+                    "share": {"token": "tok-1", "enabled": True},
+                },
+            }
+        ],
+        project_rooms=[{"id": "room-1", "project_id": "project-1", "name": "Living Room"}],
+        room_objects=[
+            {
+                "id": "object-1",
+                "room_id": "room-1",
+                "object_key": "sofa",
+                "object_name": "Sofa",
+                "category": "Furniture",
+                "qty": 1,
+                "status": "client_approved",
+                "material_id": "mat-1",
+            }
+        ],
+    )
+    _install_test_context(monkeypatch, fake_sb)
+
+    new_project_id = pm.duplicate_project("project-1", "Customer Copy", include_materials=False)
+
+    assert new_project_id == "project-2"
+    new_project = next(row for row in fake_sb.db["projects"] if row["id"] == new_project_id)
+    assert new_project["name"] == "Customer Copy"
+    assert new_project["cart"] == {"design_brief": {"keywords": ["warm", "natural"]}}
+
+    new_room = next(row for row in fake_sb.db["project_rooms"] if row["project_id"] == new_project_id)
+    assert new_room["name"] == "Living Room"
+
+    new_object = next(row for row in fake_sb.db["room_objects"] if row["room_id"] == new_room["id"])
+    assert new_object["material_id"] is None
+    assert new_object["status"] == "unassigned"
+
+
+def test_duplicate_project_with_materials_keeps_material_and_resets_status(monkeypatch):
+    fake_sb = FakeSupabase(
+        projects=[{"id": "project-1", "name": "Master Villa", "owner_id": "user-1", "cart": []}],
+        project_rooms=[{"id": "room-1", "project_id": "project-1", "name": "Kitchen"}],
+        room_objects=[
+            {
+                "id": "object-1",
+                "room_id": "room-1",
+                "object_key": "countertop",
+                "object_name": "Countertop",
+                "category": "Surface",
+                "qty": 1,
+                "status": "client_approved",
+                "material_id": "mat-77",
+            }
+        ],
+    )
+    _install_test_context(monkeypatch, fake_sb)
+
+    new_project_id = pm.duplicate_project("project-1", "Master Villa (Client B)", include_materials=True)
+
+    assert new_project_id == "project-2"
+    new_room = next(row for row in fake_sb.db["project_rooms"] if row["project_id"] == new_project_id)
+    new_object = next(row for row in fake_sb.db["room_objects"] if row["room_id"] == new_room["id"])
+    assert new_object["material_id"] == "mat-77"
+    assert new_object["status"] == "selected"
+
+
+def test_duplicate_project_rejects_conflicting_name(monkeypatch):
+    fake_sb = FakeSupabase(
+        projects=[
+            {"id": "project-1", "name": "Master Villa", "owner_id": "user-1", "cart": []},
+            {"id": "project-2", "name": "Customer Copy", "owner_id": "user-1", "cart": []},
+        ]
+    )
+    fake_st = _install_test_context(monkeypatch, fake_sb)
+
+    new_project_id = pm.duplicate_project("project-1", "Customer Copy", include_materials=False)
+
+    assert new_project_id is None
+    assert len(fake_sb.db["projects"]) == 2
+    assert fake_st.warnings
+
+
+def test_duplicate_project_uses_incremented_default_name(monkeypatch):
+    fake_sb = FakeSupabase(
+        projects=[
+            {"id": "project-1", "name": "Master Villa", "owner_id": "user-1", "cart": []},
+            {"id": "project-2", "name": "Master Villa (Copy)", "owner_id": "user-1", "cart": []},
+        ],
+        project_rooms=[{"id": "room-1", "project_id": "project-1", "name": "Living Room"}],
+        room_objects=[],
+    )
+    _install_test_context(monkeypatch, fake_sb)
+
+    new_project_id = pm.duplicate_project("project-1", "", include_materials=False)
+
+    assert new_project_id == "project-3"
+    new_project = next(row for row in fake_sb.db["projects"] if row["id"] == "project-3")
+    assert new_project["name"] == "Master Villa (Copy 2)"
+
+
+def test_duplicate_project_bulk_creates_requested_count(monkeypatch):
+    fake_sb = FakeSupabase(
+        projects=[{"id": "project-1", "name": "Master Villa", "owner_id": "user-1", "cart": []}],
+        project_rooms=[{"id": "room-1", "project_id": "project-1", "name": "Kitchen"}],
+        room_objects=[
+            {
+                "id": "object-1",
+                "room_id": "room-1",
+                "object_key": "countertop",
+                "object_name": "Countertop",
+                "category": "Surface",
+                "qty": 1,
+                "status": "client_approved",
+                "material_id": "mat-77",
+            }
+        ],
+    )
+    _install_test_context(monkeypatch, fake_sb)
+
+    new_ids = pm.duplicate_project_bulk("project-1", copies_count=3, include_materials=True)
+
+    assert new_ids == ["project-2", "project-3", "project-4"]
+    new_names = [row["name"] for row in fake_sb.db["projects"] if row["id"] in set(new_ids)]
+    assert new_names == ["Master Villa (Copy)", "Master Villa (Copy 2)", "Master Villa (Copy 3)"]
+
+    duplicated_room_ids = [row["id"] for row in fake_sb.db["project_rooms"] if row["project_id"] in set(new_ids)]
+    duplicated_objects = [row for row in fake_sb.db["room_objects"] if row["room_id"] in set(duplicated_room_ids)]
+    assert len(duplicated_objects) == 3
+    assert all(row.get("material_id") == "mat-77" for row in duplicated_objects)
+    assert all(row.get("status") == "selected" for row in duplicated_objects)
+
+
+def test_duplicate_project_bulk_rejects_non_positive_count(monkeypatch):
+    fake_sb = FakeSupabase(projects=[{"id": "project-1", "name": "Master Villa", "owner_id": "user-1", "cart": []}])
+    fake_st = _install_test_context(monkeypatch, fake_sb)
+
+    new_ids = pm.duplicate_project_bulk("project-1", copies_count=0, include_materials=False)
+
+    assert new_ids == []
+    assert fake_st.warnings
+
+
 def test_load_project_rooms_backfills_legacy_rooms_when_project_rows_are_empty(monkeypatch):
     fake_sb = FakeSupabase(
         projects=[
