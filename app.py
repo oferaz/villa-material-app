@@ -1933,7 +1933,7 @@ if page == "Projects Workspace":
                                         st.rerun()
 
                 st.markdown("#### Duplicate project")
-                st.caption("Create a copy for another customer, with or without current material selections.")
+                st.caption("Create one or multiple copies for different customers.")
                 duplicate_name_key = f"duplicate_project_name_{pid}"
                 if duplicate_name_key not in st.session_state:
                     st.session_state[duplicate_name_key] = _suggest_duplicate_project_name(proj.get("name"), projects)
@@ -1961,7 +1961,7 @@ if page == "Projects Workspace":
                             st.rerun()
 
                 st.markdown("##### Bulk duplication")
-                st.caption("Create multiple copies at once for different customers.")
+                st.caption("Create multiple copies at once.")
                 bulk_count_key = f"bulk_duplicate_count_{pid}"
                 if bulk_count_key not in st.session_state:
                     st.session_state[bulk_count_key] = 2
