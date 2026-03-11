@@ -1,48 +1,219 @@
-import { ProductOption, RoomObject } from "@/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+"use client";
+
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Search, Link as LinkIcon } from "lucide-react";
+import { RoomObject, getObjectStatus } from "@/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProductOptionCard } from "@/components/products/product-option-card";
+
+interface AddFromLinkPayload {
+  url: string;
+  name?: string;
+  supplier?: string;
+  price?: number;
+}
 
 interface ProductOptionsPanelProps {
   roomObject: RoomObject | undefined;
+  globalSearchQuery: string;
+  onSelectProduct: (productId: string) => void;
+  onSearchCatalog: (objectId: string, query: string) => void;
+  onAddFromLink: (objectId: string, payload: AddFromLinkPayload) => void;
 }
 
-function ProductOptionRow({ option }: { option: ProductOption }) {
-  return (
-    <li className="rounded-md border border-border p-3">
-      <p className="text-sm font-medium">{option.title}</p>
-      <p className="mt-1 text-xs text-gray-500">Supplier: {option.supplier}</p>
-      <div className="mt-2 flex items-center justify-between text-xs">
-        <span>{option.price.toLocaleString()} THB</span>
-        <span>{option.leadTimeDays} days lead time</span>
-      </div>
-    </li>
-  );
-}
+export function ProductOptionsPanel({
+  roomObject,
+  globalSearchQuery,
+  onSelectProduct,
+  onSearchCatalog,
+  onAddFromLink,
+}: ProductOptionsPanelProps) {
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkName, setLinkName] = useState("");
+  const [linkSupplier, setLinkSupplier] = useState("");
+  const [linkPrice, setLinkPrice] = useState("");
+  const [linkError, setLinkError] = useState("");
 
-export function ProductOptionsPanel({ roomObject }: ProductOptionsPanelProps) {
+  useEffect(() => {
+    if (!roomObject) {
+      return;
+    }
+    const defaultQuery = roomObject.name;
+    setCatalogQuery(defaultQuery);
+    onSearchCatalog(roomObject.id, defaultQuery);
+    setLinkUrl("");
+    setLinkName("");
+    setLinkSupplier("");
+    setLinkPrice("");
+    setLinkError("");
+  }, [roomObject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const visibleOptions = useMemo(() => {
+    if (!roomObject) {
+      return [];
+    }
+    const q = (globalSearchQuery ?? "").trim().toLowerCase();
+    if (!q) {
+      return roomObject.productOptions;
+    }
+    return roomObject.productOptions.filter((option) => {
+      return option.name.toLowerCase().includes(q) || option.supplier.toLowerCase().includes(q);
+    });
+  }, [roomObject, globalSearchQuery]);
+
   if (!roomObject) {
     return (
-      <Card className="h-full">
+      <Card className="h-full border-slate-200 shadow-sm">
         <CardHeader>
-          <CardTitle>Product Options</CardTitle>
+          <CardTitle>Product options</CardTitle>
+          <CardDescription>Select an object to view options.</CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-gray-500">
-          Select an object in the middle panel to preview product options.
-        </CardContent>
       </Card>
     );
   }
 
+  const objectStatus = getObjectStatus(roomObject);
+  const showLinkOptionalFields = linkUrl.trim().length > 0;
+
+  function handleSearchSubmit(event?: FormEvent) {
+    event?.preventDefault();
+    if (!roomObject) {
+      return;
+    }
+    const nextQuery = catalogQuery.trim() || roomObject.name;
+    onSearchCatalog(roomObject.id, nextQuery);
+    setCatalogQuery(nextQuery);
+  }
+
+  function handleAddFromLink(event: FormEvent) {
+    event.preventDefault();
+    if (!roomObject) {
+      return;
+    }
+    const trimmedUrl = linkUrl.trim();
+    if (!trimmedUrl) {
+      setLinkError("Link is required.");
+      return;
+    }
+    try {
+      new URL(trimmedUrl);
+    } catch {
+      setLinkError("Please enter a valid URL.");
+      return;
+    }
+
+    const parsedPrice = linkPrice.trim() ? Number(linkPrice.trim()) : undefined;
+    if (parsedPrice !== undefined && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
+      setLinkError("Price must be a valid positive number.");
+      return;
+    }
+
+    onAddFromLink(roomObject.id, {
+      url: trimmedUrl,
+      name: linkName.trim() || undefined,
+      supplier: linkSupplier.trim() || undefined,
+      price: parsedPrice,
+    });
+
+    setLinkUrl("");
+    setLinkName("");
+    setLinkSupplier("");
+    setLinkPrice("");
+    setLinkError("");
+  }
+
   return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle>{roomObject.name} Options</CardTitle>
+    <Card className="flex h-full flex-col border-slate-200 shadow-sm">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle>{roomObject.name}</CardTitle>
+            <CardDescription>{visibleOptions.length} option(s) shown from your private materials</CardDescription>
+          </div>
+          <Badge variant={objectStatus === "selected" ? "success" : "danger"}>{objectStatus}</Badge>
+        </div>
       </CardHeader>
-      <CardContent>
-        <ul className="space-y-3">
-          {roomObject.productOptions.map((option) => (
-            <ProductOptionRow key={option.id} option={option} />
-          ))}
-        </ul>
+      <CardContent className="flex-1 space-y-4 overflow-y-auto pb-5">
+        <form onSubmit={handleSearchSubmit} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Material search query</p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+              <Input
+                value={catalogQuery}
+                onChange={(event) => setCatalogQuery(event.target.value)}
+                placeholder="Refine search (e.g. white oak matte, brushed brass)"
+                className="h-10 border-slate-300 bg-slate-50 pl-8 text-sm text-slate-900 placeholder:text-slate-500 focus-visible:bg-white"
+              />
+            </div>
+            <Button type="submit" size="sm" className="h-10 px-3 text-sm font-medium sm:min-w-[140px]">
+              Search Library
+            </Button>
+          </div>
+        </form>
+
+        <form onSubmit={handleAddFromLink} className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+          <p className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
+            <LinkIcon className="h-3.5 w-3.5" />
+            Add material from link
+          </p>
+          <Input
+            value={linkUrl}
+            onChange={(event) => setLinkUrl(event.target.value)}
+            placeholder="https://supplier-site.com/product"
+          />
+          {showLinkOptionalFields ? (
+            <>
+              <Input
+                value={linkName}
+                onChange={(event) => setLinkName(event.target.value)}
+                placeholder="Product name (optional)"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  value={linkSupplier}
+                  onChange={(event) => setLinkSupplier(event.target.value)}
+                  placeholder="Supplier (optional)"
+                />
+                <Input
+                  value={linkPrice}
+                  onChange={(event) => setLinkPrice(event.target.value)}
+                  placeholder="Price (optional)"
+                  inputMode="decimal"
+                />
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-slate-500">Optional fields will appear after you paste a link.</p>
+          )}
+          {linkError ? <p className="text-xs text-red-600">{linkError}</p> : null}
+          <Button type="submit" variant="outline" className="w-full">
+            Add from link
+          </Button>
+        </form>
+
+        {visibleOptions.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+            {(globalSearchQuery ?? "").trim()
+              ? `No options match "${globalSearchQuery}".`
+              : "No options found for this query yet. Try changing search words or add from link."}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {visibleOptions.map((option) => (
+              <ProductOptionCard
+                key={option.id}
+                option={option}
+                isSelected={roomObject.selectedProductId === option.id}
+                onSelect={() => onSelectProduct(option.id)}
+              />
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

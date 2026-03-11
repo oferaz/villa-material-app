@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Pencil, X } from "lucide-react";
-import { House } from "@/types";
+import { ChevronDown, ChevronRight, Pencil, Plus, Home } from "lucide-react";
+import { House, RoomType } from "@/types";
+import { Sidebar } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { AddRoomDialog } from "@/components/rooms/add-room-dialog";
 
 interface HouseRoomTreeProps {
   houses: House[];
@@ -13,7 +15,7 @@ interface HouseRoomTreeProps {
   selectedRoomId: string;
   onSelectRoom: (houseId: string, roomId: string) => void;
   onRenameRoom: (roomId: string, nextName: string) => void;
-  searchQuery: string;
+  onAddRoom: (houseId: string, roomName: string, roomType: RoomType) => void;
 }
 
 export function HouseRoomTree({
@@ -22,108 +24,176 @@ export function HouseRoomTree({
   selectedRoomId,
   onSelectRoom,
   onRenameRoom,
-  searchQuery,
+  onAddRoom,
 }: HouseRoomTreeProps) {
+  const [collapsedHouses, setCollapsedHouses] = useState<Record<string, boolean>>({});
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
+  const [roomDialogHouseId, setRoomDialogHouseId] = useState<string | null>(null);
 
-  const filteredHouses = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) {
-      return houses;
+  const selectedHouse = useMemo(() => {
+    return houses.find((house) => house.id === selectedHouseId) ?? houses[0];
+  }, [houses, selectedHouseId]);
+
+  function toggleHouse(houseId: string) {
+    setCollapsedHouses((prev) => ({ ...prev, [houseId]: !prev[houseId] }));
+  }
+
+  function startRename(roomId: string, currentName: string) {
+    setEditingRoomId(roomId);
+    setDraftName(currentName);
+  }
+
+  function cancelRename() {
+    setEditingRoomId(null);
+    setDraftName("");
+  }
+
+  function saveRename(roomId: string) {
+    const trimmedName = draftName.trim();
+    if (trimmedName) {
+      onRenameRoom(roomId, trimmedName);
     }
-
-    return houses
-      .map((house) => ({
-        ...house,
-        rooms: house.rooms.filter((room) => room.name.toLowerCase().includes(q)),
-      }))
-      .filter((house) => house.rooms.length > 0 || house.name.toLowerCase().includes(q));
-  }, [houses, searchQuery]);
+    cancelRename();
+  }
 
   return (
-    <div className="space-y-4">
-      {filteredHouses.map((house) => (
-        <section key={house.id}>
-          <h3
-            className={cn(
-              "mb-2 text-sm font-semibold text-gray-700",
-              selectedHouseId === house.id && "text-primary"
-            )}
-          >
-            {house.name}
-          </h3>
-          <ul className="space-y-2">
-            {house.rooms.map((room) => {
-              const isSelected = selectedRoomId === room.id;
-              const isEditing = editingRoomId === room.id;
-              return (
-                <li key={room.id} className="rounded-md border border-transparent px-2 py-1 hover:bg-muted">
-                  {isEditing ? (
-                    <div className="flex items-center gap-1">
-                      <Input
-                        value={draftName}
-                        onChange={(event) => setDraftName(event.target.value)}
-                        className="h-8"
-                        autoFocus
-                      />
-                      <Button
-                        variant="ghost"
-                        className="h-8 w-8 p-0"
-                        onClick={() => {
-                          const trimmed = draftName.trim();
-                          if (trimmed) {
-                            onRenameRoom(room.id, trimmed);
-                          }
-                          setEditingRoomId(null);
-                          setDraftName("");
-                        }}
-                        aria-label="Save room name"
-                      >
-                        <Check className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="h-8 w-8 p-0"
-                        onClick={() => {
-                          setEditingRoomId(null);
-                          setDraftName("");
-                        }}
-                        aria-label="Cancel room name edit"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        className={cn(
-                          "w-full truncate text-left text-sm",
-                          isSelected ? "font-semibold text-primary" : "text-gray-700"
-                        )}
-                        onClick={() => onSelectRoom(house.id, room.id)}
-                      >
-                        {room.name}
-                      </button>
-                      <Button
-                        variant="ghost"
-                        className="h-8 w-8 p-0"
-                        onClick={() => {
-                          setEditingRoomId(room.id);
-                          setDraftName(room.name);
-                        }}
-                        aria-label="Rename room"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
-    </div>
+    <>
+      <Sidebar className="h-full space-y-4 border-slate-200">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project map</p>
+            <h2 className="text-sm font-semibold text-slate-800">Houses and rooms</h2>
+          </div>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{houses.length}</span>
+        </div>
+
+        <div className="space-y-3">
+          {houses.map((house) => {
+            const isCollapsed = collapsedHouses[house.id] ?? false;
+            const isHouseSelected = house.id === selectedHouseId;
+
+            return (
+              <section
+                key={house.id}
+                className={cn(
+                  "rounded-xl border bg-slate-50/70 transition",
+                  isHouseSelected ? "border-blue-200 shadow-sm" : "border-slate-200"
+                )}
+              >
+                <div className="flex items-center justify-between px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleHouse(house.id)}
+                    className="flex items-center gap-2 text-left text-sm font-medium text-slate-800"
+                  >
+                    {isCollapsed ? <ChevronRight className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
+                    <Home className="h-4 w-4 text-slate-500" />
+                    <span>{house.name}</span>
+                  </button>
+                  <span className="text-xs text-slate-500">{house.rooms.length} rooms</span>
+                </div>
+
+                {!isCollapsed ? (
+                  <div className="space-y-2 border-t border-slate-200 px-2 pb-2 pt-2">
+                    <ul className="space-y-1">
+                      {house.rooms.map((room) => {
+                        const isSelected = room.id === selectedRoomId;
+                        const isEditing = room.id === editingRoomId;
+
+                        return (
+                          <li key={room.id}>
+                            <div
+                              className={cn(
+                                "flex items-center gap-2 rounded-md border px-2 py-1.5 transition",
+                                isSelected ? "border-blue-200 bg-blue-50" : "border-transparent bg-white hover:border-slate-200"
+                              )}
+                              onClick={() => onSelectRoom(house.id, room.id)}
+                            >
+                              {isEditing ? (
+                                <Input
+                                  autoFocus
+                                  value={draftName}
+                                  className="h-8"
+                                  onChange={(event) => setDraftName(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault();
+                                      saveRename(room.id);
+                                    }
+                                    if (event.key === "Escape") {
+                                      event.preventDefault();
+                                      cancelRename();
+                                    }
+                                  }}
+                                  onBlur={() => saveRename(room.id)}
+                                />
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="min-w-0 flex-1 truncate text-left text-sm text-slate-700"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onSelectRoom(house.id, room.id);
+                                    }}
+                                  >
+                                    {room.name}
+                                  </button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-slate-500"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onSelectRoom(house.id, room.id);
+                                      startRename(room.id, room.name);
+                                    }}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start text-slate-600 hover:text-slate-900"
+                      onClick={() => setRoomDialogHouseId(house.id)}
+                    >
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      Add room
+                    </Button>
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
+        </div>
+      </Sidebar>
+
+      <AddRoomDialog
+        open={Boolean(roomDialogHouseId)}
+        houseName={houses.find((house) => house.id === roomDialogHouseId)?.name ?? selectedHouse?.name ?? "house"}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRoomDialogHouseId(null);
+          }
+        }}
+        onCreateRoom={(roomName, roomType) => {
+          const targetHouseId = roomDialogHouseId ?? selectedHouse?.id;
+          if (!targetHouseId) {
+            return;
+          }
+          onAddRoom(targetHouseId, roomName, roomType);
+        }}
+      />
+    </>
   );
 }

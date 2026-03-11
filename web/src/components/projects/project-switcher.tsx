@@ -1,29 +1,38 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
 import { Project } from "@/types";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface ProjectSwitcherProps {
   projects: Project[];
-  value: string;
-  onChange: (projectId: string) => void;
+  selectedProjectId: string;
+  onProjectChange: (projectId: string) => void;
 }
 
-export function ProjectSwitcher({ projects, value, onChange }: ProjectSwitcherProps) {
+export function ProjectSwitcher({ projects, selectedProjectId, onProjectChange }: ProjectSwitcherProps) {
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) || projects[0];
+
   return (
-    <div className="relative min-w-56">
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full appearance-none rounded-md border border-input bg-white px-3 pr-9 text-sm"
-      >
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" className="min-w-[220px] justify-start">
+          <span className="truncate">{selectedProject?.name || "Select project"}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
         {projects.map((project) => (
-          <option key={project.id} value={project.id}>
+          <DropdownMenuItem key={project.id} onClick={() => onProjectChange(project.id)}>
             {project.name}
-          </option>
+          </DropdownMenuItem>
         ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-gray-500" />
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
+
