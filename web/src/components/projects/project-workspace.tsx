@@ -1,19 +1,21 @@
 "use client";
 
 import { ComponentType, useEffect, useMemo, useState } from "react";
-import { Boxes, Presentation, Wallet } from "lucide-react";
+import { Boxes, Presentation } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { TopNav } from "@/components/layout/top-nav";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
+import { BudgetOverview } from "@/components/budget/budget-overview";
 import { HouseRoomTree } from "@/components/rooms/house-room-tree";
 import { ProjectRoomsStack } from "@/components/rooms/project-rooms-stack";
 import { AddObjectDialog } from "@/components/rooms/add-object-dialog";
 import { ProductOptionsPanel } from "@/components/products/product-options-panel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { budgetCategoryOrder, calculateProjectBudget, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
 import { createMockRoomObject, mockProjects } from "@/lib/mock/projects";
-import { ProductOption, Project, Room, RoomObject, RoomType } from "@/types";
+import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
 interface ProjectWorkspaceProps {
   initialProjectId: string;
@@ -77,9 +79,17 @@ function isLinkOption(option: ProductOption): boolean {
   return option.sourceType === "link";
 }
 
+function createInitialBudgetMap(): Record<string, ProjectBudget> {
+  return mockProjects.reduce<Record<string, ProjectBudget>>((acc, item) => {
+    acc[item.id] = createMockProjectBudget();
+    return acc;
+  }, {});
+}
+
 export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>(() => structuredClone(mockProjects));
+  const [projectBudgets, setProjectBudgets] = useState<Record<string, ProjectBudget>>(() => createInitialBudgetMap());
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("rooms");
   const [selectedHouseId, setSelectedHouseId] = useState<string>("");
@@ -107,6 +117,17 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const addObjectRoom = useMemo(() => {
     return findRoomInProject(project, addObjectRoomId ?? "")?.room;
   }, [project, addObjectRoomId]);
+
+  const baseProjectBudget = useMemo(() => {
+    if (!project) {
+      return createMockProjectBudget();
+    }
+    return projectBudgets[project.id] ?? createMockProjectBudget();
+  }, [project, projectBudgets]);
+
+  const calculatedProjectBudget = useMemo(() => {
+    return calculateProjectBudget(baseProjectBudget, project);
+  }, [baseProjectBudget, project]);
 
   useEffect(() => {
     if (!project) {
@@ -427,12 +448,44 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       name: payload.name,
       supplier: payload.supplier,
       price: payload.price,
+      budgetCategory: resolveBudgetCategory(targetObject.name, targetObject.category),
     });
 
     updateObjectById(objectId, (objectItem) => ({
       ...objectItem,
       productOptions: [linkOption, ...objectItem.productOptions],
     }));
+  }
+
+  function handleSaveBudget(payload: { totalBudget: number; categoryBudgets: Record<BudgetCategoryName, number> }) {
+    if (!project) {
+      return;
+    }
+
+    setProjectBudgets((prev) => {
+      const current = prev[project.id] ?? createMockProjectBudget();
+      const nextCategories = budgetCategoryOrder.map((categoryName) => {
+        const existing = current.categories.find((item) => item.name === categoryName);
+        const nextBudget = Math.max(0, Math.round(payload.categoryBudgets[categoryName] ?? 0));
+        return {
+          id: existing?.id ?? categoryName.toLowerCase(),
+          name: categoryName,
+          totalBudget: nextBudget,
+          allocatedAmount: existing?.allocatedAmount ?? 0,
+          remainingAmount: nextBudget - (existing?.allocatedAmount ?? 0),
+        };
+      });
+
+      return {
+        ...prev,
+        [project.id]: {
+          totalBudget: Math.max(0, Math.round(payload.totalBudget)),
+          allocatedAmount: current.allocatedAmount,
+          remainingAmount: Math.max(0, Math.round(payload.totalBudget)) - current.allocatedAmount,
+          categories: nextCategories,
+        },
+      };
+    });
   }
 
   if (!project) {
@@ -512,14 +565,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     />
   );
 
-  const budgetContent = (
-    <PlaceholderTab
-      icon={Wallet}
-      title="Budget tracking"
-      description="Budget controls will aggregate selections and compare planned vs committed spend."
-      details="Future state includes cost alerts per house and room, and supplier budget breakdowns."
-    />
-  );
+  const budgetContent = <BudgetOverview budget={calculatedProjectBudget} onSaveBudget={handleSaveBudget} />;
 
   const clientContent = (
     <PlaceholderTab

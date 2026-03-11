@@ -1,3 +1,5 @@
+import { BudgetCategoryName } from "./budget";
+
 export type UUID = string;
 
 export type RoomType =
@@ -17,6 +19,7 @@ export interface ProductOption {
   supplier: string;
   price: number;
   leadTimeDays: number;
+  budgetCategory: BudgetCategoryName;
   sku?: string;
   imageUrl?: string;
   sourceType?: "catalog" | "link";

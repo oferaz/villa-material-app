@@ -1,4 +1,5 @@
-import { ProductOption } from "@/types";
+import { BudgetCategoryName, ProductOption } from "@/types";
+import { resolveBudgetCategory } from "@/lib/mock/budget";
 
 interface LinkProductInput {
   objectName: string;
@@ -79,6 +80,7 @@ export function searchMockCatalogOptions(objectName: string, rawQuery: string): 
       supplier,
       price,
       leadTimeDays,
+      budgetCategory: resolveBudgetCategory(query, objectName),
       sku: `${toSlug(objectName).toUpperCase()}-${(hash + index * 17).toString().slice(-4)}`,
       sourceType: "catalog",
       sourceUrl: `https://catalog.example.com/search?q=${encodeURIComponent(query)}`,
@@ -99,7 +101,14 @@ function deriveSupplierFromUrl(url: string): string {
   }
 }
 
-export function buildProductOptionFromLink({ objectName, url, name, supplier, price }: LinkProductInput): ProductOption {
+export function buildProductOptionFromLink({
+  objectName,
+  url,
+  name,
+  supplier,
+  price,
+  budgetCategory,
+}: LinkProductInput & { budgetCategory?: BudgetCategoryName }): ProductOption {
   const safeName = name?.trim() || `${objectName} from link`;
   const safeSupplier = supplier?.trim() || deriveSupplierFromUrl(url);
   const safePrice = price && Number.isFinite(price) && price > 0 ? Math.round(price) : 0;
@@ -111,6 +120,7 @@ export function buildProductOptionFromLink({ objectName, url, name, supplier, pr
     supplier: safeSupplier,
     price: safePrice,
     leadTimeDays: 0,
+    budgetCategory: budgetCategory ?? resolveBudgetCategory(safeName, objectName),
     sku: `LINK-${hash.toString().slice(-4)}`,
     sourceType: "link",
     sourceUrl: url,

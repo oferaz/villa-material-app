@@ -1,4 +1,5 @@
 import { ProductOption, Project, RoomObject, RoomType } from "@/types";
+import { resolveBudgetCategory } from "@/lib/mock/budget";
 
 export interface SuggestedObjectTemplate {
   name: string;
@@ -230,7 +231,12 @@ function hashSeed(value: string): number {
   return hash;
 }
 
-function buildProductOptions(objectName: string, basePrice: number, seed: string): ProductOption[] {
+function buildProductOptions(
+  objectName: string,
+  basePrice: number,
+  seed: string,
+  budgetCategory = resolveBudgetCategory(objectName)
+): ProductOption[] {
   const hash = hashSeed(seed);
   const optionCount = (hash % 3) + 2; // 2-4 options
 
@@ -246,6 +252,7 @@ function buildProductOptions(objectName: string, basePrice: number, seed: string
       supplier: suppliers[supplierIndex],
       price,
       leadTimeDays: 12 + ((hash + optionIndex * 7) % 28),
+      budgetCategory,
       sku: `${toSlug(objectName).toUpperCase()}-${(hash + optionIndex * 13).toString().slice(-4)}`,
       sourceType: "catalog",
     };
@@ -263,13 +270,14 @@ export function createMockRoomObject(
   basePrice = 8500,
   seed = `${roomId}-${objectName}`
 ): RoomObject {
+  const budgetCategory = resolveBudgetCategory(objectName, category);
   const objectId = `${roomId}-object-${toSlug(objectName)}-${Math.floor(Math.random() * 100000)}`;
   return {
     id: objectId,
     roomId,
     name: objectName,
     category,
-    productOptions: buildProductOptions(objectName, basePrice, seed),
+    productOptions: buildProductOptions(objectName, basePrice, seed, budgetCategory),
   };
 }
 
@@ -303,7 +311,8 @@ function buildProjects(): Project[] {
               objects: objectTemplates.map((template, objectIndex) => {
                 const objectId = `${roomId}-object-${objectIndex + 1}`;
                 const optionSeed = `${projectId}-${houseSeed.name}-${roomSeed.name}-${template.name}`;
-                const productOptions = buildProductOptions(template.name, template.basePrice, optionSeed);
+                const budgetCategory = resolveBudgetCategory(template.name, template.category);
+                const productOptions = buildProductOptions(template.name, template.basePrice, optionSeed, budgetCategory);
                 const shouldStartSelected = objectIndex % 3 === 0;
 
                 return {
