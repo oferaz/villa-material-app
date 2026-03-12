@@ -25,9 +25,9 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
       <div className="mx-auto w-full max-w-[1800px] p-4 lg:p-6">
         {hasSplitLayout ? (
           <>
-            <div className="sticky top-[72px] z-20 mb-4 flex gap-2 lg:hidden">
+            <div className="fixed inset-x-4 bottom-4 z-40 flex gap-2 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur lg:hidden">
               {sidebar ? (
-                <Button type="button" variant="outline" className="flex-1 bg-white/95" onClick={() => setIsLeftPanelOpen(true)}>
+                <Button type="button" variant="outline" className="flex-1 bg-white" onClick={() => setIsLeftPanelOpen(true)}>
                   <Menu className="h-4 w-4" />
                   Project Map
                 </Button>
@@ -36,7 +36,7 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
                 <Button
                   type="button"
                   variant="outline"
-                  className="flex-1 bg-white/95"
+                  className="flex-1 bg-white"
                   onClick={() => setIsRightPanelOpen(true)}
                 >
                   <SlidersHorizontal className="h-4 w-4" />
@@ -67,7 +67,7 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
               </Dialog>
             ) : null}
 
-            <div className="grid min-h-[calc(100vh-120px)] grid-cols-1 gap-5 lg:grid-cols-[320px_minmax(0,1fr)_380px]">
+            <div className="grid min-h-[calc(100vh-120px)] grid-cols-1 gap-5 pb-24 lg:grid-cols-[320px_minmax(0,1fr)_380px] lg:pb-0">
               <div className="hidden space-y-4 lg:sticky lg:top-[88px] lg:block lg:h-[calc(100vh-110px)]">{sidebar}</div>
               <div className="space-y-4">{main}</div>
               <div className="hidden space-y-4 lg:sticky lg:top-[88px] lg:block lg:h-[calc(100vh-110px)] lg:overflow-hidden">
