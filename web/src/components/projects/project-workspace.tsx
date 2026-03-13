@@ -11,11 +11,12 @@ import { HouseRoomTree } from "@/components/rooms/house-room-tree";
 import { ProjectRoomsStack } from "@/components/rooms/project-rooms-stack";
 import { AddObjectDialog } from "@/components/rooms/add-object-dialog";
 import { ProductOptionsPanel } from "@/components/products/product-options-panel";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { budgetCategoryOrder, calculateProjectBudget, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
 import { createMockRoomObject, mockProjects } from "@/lib/mock/projects";
-import { supabase } from "@/lib/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
@@ -90,8 +91,14 @@ function createInitialBudgetMap(projects: Project[] = mockProjects): Record<stri
 
 export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>(() => structuredClone(mockProjects));
-  const [projectBudgets, setProjectBudgets] = useState<Record<string, ProjectBudget>>(() => createInitialBudgetMap());
+  const [projects, setProjects] = useState<Project[]>(() =>
+    isSupabaseConfigured ? [] : structuredClone(mockProjects)
+  );
+  const [projectBudgets, setProjectBudgets] = useState<Record<string, ProjectBudget>>(() =>
+    createInitialBudgetMap(isSupabaseConfigured ? [] : mockProjects)
+  );
+  const [isAuthChecked, setIsAuthChecked] = useState(!isSupabaseConfigured);
+  const [isSignedIn, setIsSignedIn] = useState(!isSupabaseConfigured);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("rooms");
   const [selectedHouseId, setSelectedHouseId] = useState<string>("");
@@ -104,8 +111,28 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     let isCancelled = false;
 
     async function loadProjects() {
+      if (isSupabaseConfigured) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (isCancelled) {
+          return;
+        }
+
+        const signedIn = Boolean(session);
+        setIsSignedIn(signedIn);
+        setIsAuthChecked(true);
+
+        if (!signedIn) {
+          setProjects([]);
+          setProjectBudgets({});
+          return;
+        }
+      }
+
       const loadedProjects = await loadProjectsForWorkspace();
-      if (isCancelled || loadedProjects.length === 0) {
+      if (isCancelled) {
         return;
       }
 
@@ -529,8 +556,67 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     });
   }
 
+  if (isSupabaseConfigured && !isAuthChecked) {
+    return <main className="p-6">Checking session...</main>;
+  }
+
+  if (isSupabaseConfigured && isAuthChecked && !isSignedIn) {
+    return (
+      <AppShell
+        topNav={
+          <TopNav
+            title="Materia Workspace"
+            subtitle="Authentication required"
+            projects={[]}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+          />
+        }
+        main={
+          <Card className="mx-auto mt-6 max-w-xl border-slate-200">
+            <CardHeader>
+              <CardTitle>Sign in required</CardTitle>
+              <CardDescription>Workspace data is now protected by Supabase RLS policies.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button type="button" onClick={() => router.push("/login")}>
+                Go to login
+              </Button>
+            </CardContent>
+          </Card>
+        }
+      />
+    );
+  }
+
   if (!project) {
-    return <main className="p-6">No project found.</main>;
+    return (
+      <AppShell
+        topNav={
+          <TopNav
+            title="Materia Workspace"
+            subtitle="No accessible project"
+            projects={projects}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onSignOut={handleSignOut}
+          />
+        }
+        main={
+          <Card className="mx-auto mt-6 max-w-xl border-slate-200">
+            <CardHeader>
+              <CardTitle>No project access</CardTitle>
+              <CardDescription>You are signed in, but no accessible projects were found.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button type="button" variant="outline" onClick={() => router.push("/dashboard")}>
+                Back to dashboard
+              </Button>
+            </CardContent>
+          </Card>
+        }
+      />
+    );
   }
 
   const totalRooms = project.houses.reduce((acc, house) => acc + house.rooms.length, 0);

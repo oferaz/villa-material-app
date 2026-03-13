@@ -106,6 +106,14 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
   }
 
   try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      return [];
+    }
+
     const { data: projectRows, error: projectError } = await supabase
       .from("projects")
       .select("id,name,client_name,location")
@@ -116,7 +124,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
     }
 
     if (!projectRows || projectRows.length === 0) {
-      return cloneMockProjects();
+      return [];
     }
 
     const projects = projectRows as ProjectRow[];
@@ -133,32 +141,28 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
     }
 
     const houses = (houseRows ?? []) as HouseRow[];
-    if (houses.length === 0) {
-      return cloneMockProjects();
-    }
 
     const houseIds = houses.map((house) => house.id);
-    const { data: roomRows, error: roomError } = await supabase
+    const roomsQuery = supabase
       .from("rooms")
       .select("id,house_id,name,room_type,sort_order")
-      .in("house_id", houseIds)
       .order("sort_order", { ascending: true });
+    const { data: roomRows, error: roomError } =
+      houseIds.length > 0 ? await roomsQuery.in("house_id", houseIds) : await roomsQuery.limit(0);
 
     if (roomError) {
       throw roomError;
     }
 
     const rooms = (roomRows ?? []) as RoomRow[];
-    if (rooms.length === 0) {
-      return cloneMockProjects();
-    }
 
     const roomIds = rooms.map((room) => room.id);
-    const { data: roomObjectRows, error: roomObjectError } = await supabase
+    const roomObjectsQuery = supabase
       .from("room_objects")
       .select("id,room_id,name,category,selected_material_id,sort_order")
-      .in("room_id", roomIds)
       .order("sort_order", { ascending: true });
+    const { data: roomObjectRows, error: roomObjectError } =
+      roomIds.length > 0 ? await roomObjectsQuery.in("room_id", roomIds) : await roomObjectsQuery.limit(0);
 
     if (roomObjectError) {
       throw roomObjectError;
@@ -260,9 +264,9 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
       };
     });
 
-    return mappedProjects.length > 0 ? mappedProjects : cloneMockProjects();
+    return mappedProjects;
   } catch (error) {
-    console.warn("Failed to load projects from Supabase. Falling back to mock projects.", error);
-    return cloneMockProjects();
+    console.warn("Failed to load projects from Supabase.", error);
+    return [];
   }
 }

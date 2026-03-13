@@ -11,20 +11,43 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { mockProjects } from "@/lib/mock/projects";
 import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
-import { supabase } from "@/lib/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { Project } from "@/types";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const [projects, setProjects] = useState<Project[]>(() => structuredClone(mockProjects));
+  const [projects, setProjects] = useState<Project[]>(() =>
+    isSupabaseConfigured ? [] : structuredClone(mockProjects)
+  );
+  const [isAuthChecked, setIsAuthChecked] = useState(!isSupabaseConfigured);
+  const [isSignedIn, setIsSignedIn] = useState(!isSupabaseConfigured);
 
   useEffect(() => {
     let isCancelled = false;
 
     async function loadProjects() {
+      if (isSupabaseConfigured) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (isCancelled) {
+          return;
+        }
+
+        const signedIn = Boolean(session);
+        setIsSignedIn(signedIn);
+        setIsAuthChecked(true);
+
+        if (!signedIn) {
+          setProjects([]);
+          return;
+        }
+      }
+
       const loadedProjects = await loadProjectsForWorkspace();
-      if (!isCancelled && loadedProjects.length > 0) {
+      if (!isCancelled) {
         setProjects(loadedProjects);
       }
     }
@@ -70,6 +93,31 @@ export default function DashboardPage() {
       onSignOut={handleSignOut}
     />
   );
+
+  if (isSupabaseConfigured && !isAuthChecked) {
+    return <main className="p-6">Checking session...</main>;
+  }
+
+  if (isSupabaseConfigured && isAuthChecked && !isSignedIn) {
+    return (
+      <AppShell
+        topNav={topNav}
+        main={
+          <Card className="mx-auto mt-6 max-w-xl border-slate-200">
+            <CardHeader>
+              <CardTitle>Sign in required</CardTitle>
+              <CardDescription>Project data is protected. Please sign in to continue.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button type="button" onClick={() => router.push("/login")}>
+                Go to login
+              </Button>
+            </CardContent>
+          </Card>
+        }
+      />
+    );
+  }
 
   const main = (
     <div className="space-y-5">
