@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { budgetCategoryOrder, calculateProjectBudget, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
 import { createMockRoomObject, mockProjects } from "@/lib/mock/projects";
+import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
 interface ProjectWorkspaceProps {
@@ -79,8 +80,8 @@ function isLinkOption(option: ProductOption): boolean {
   return option.sourceType === "link";
 }
 
-function createInitialBudgetMap(): Record<string, ProjectBudget> {
-  return mockProjects.reduce<Record<string, ProjectBudget>>((acc, item) => {
+function createInitialBudgetMap(projects: Project[] = mockProjects): Record<string, ProjectBudget> {
+  return projects.reduce<Record<string, ProjectBudget>>((acc, item) => {
     acc[item.id] = createMockProjectBudget();
     return acc;
   }, {});
@@ -97,6 +98,34 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [selectedObjectId, setSelectedObjectId] = useState<string>("");
   const [addObjectRoomId, setAddObjectRoomId] = useState<string | null>(null);
   const [pendingScrollRoomId, setPendingScrollRoomId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadProjects() {
+      const loadedProjects = await loadProjectsForWorkspace();
+      if (isCancelled || loadedProjects.length === 0) {
+        return;
+      }
+
+      setProjects(loadedProjects);
+      setProjectBudgets((prev) => {
+        const next = createInitialBudgetMap(loadedProjects);
+        for (const [projectId, budget] of Object.entries(prev)) {
+          if (next[projectId]) {
+            next[projectId] = budget;
+          }
+        }
+        return next;
+      });
+    }
+
+    void loadProjects();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const project = useMemo(() => {
     return projects.find((item) => item.id === initialProjectId) ?? projects[0];
