@@ -296,14 +296,7 @@ using (
 create policy "project_members_member_access"
 on public.project_members
 for select
-using (
-  exists (
-    select 1
-    from public.project_members pm
-    where pm.project_id = project_members.project_id
-      and pm.user_id = auth.uid()
-  )
-);
+using (project_members.user_id = auth.uid());
 
 create policy "houses_member_access"
 on public.houses

@@ -32,6 +32,7 @@ interface TopNavProps {
   onProjectChange?: (projectId: string) => void;
   searchQuery: string;
   onSearchChange: (value: string) => void;
+  onSignOut?: () => void;
 }
 
 export function TopNav({
@@ -42,6 +43,7 @@ export function TopNav({
   onProjectChange,
   searchQuery,
   onSearchChange,
+  onSignOut,
 }: TopNavProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-white/95 backdrop-blur">
@@ -108,7 +110,17 @@ export function TopNav({
             <DropdownMenuItem>Profile</DropdownMenuItem>
             <DropdownMenuItem>Preferences</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Sign out</DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(event) => {
+                if (!onSignOut) {
+                  return;
+                }
+                event.preventDefault();
+                onSignOut();
+              }}
+            >
+              Sign out
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

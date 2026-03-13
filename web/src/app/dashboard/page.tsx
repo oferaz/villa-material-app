@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowUpRight, Building2, Home } from "lucide-react";
@@ -10,30 +10,64 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { mockProjects } from "@/lib/mock/projects";
+import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
+import { supabase } from "@/lib/supabase/client";
+import { Project } from "@/types";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
+  const [projects, setProjects] = useState<Project[]>(() => structuredClone(mockProjects));
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadProjects() {
+      const loadedProjects = await loadProjectsForWorkspace();
+      if (!isCancelled && loadedProjects.length > 0) {
+        setProjects(loadedProjects);
+      }
+    }
+
+    void loadProjects();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void loadProjects();
+    });
+
+    return () => {
+      isCancelled = true;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const filteredProjects = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) {
-      return mockProjects;
+      return projects;
     }
-    return mockProjects.filter((project) => {
+    return projects.filter((project) => {
       return project.name.toLowerCase().includes(q) || project.customer.toLowerCase().includes(q);
     });
-  }, [searchQuery]);
+  }, [projects, searchQuery]);
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
 
   const topNav = (
     <TopNav
       title="Materia"
       subtitle="Design and procurement workspace"
-      projects={mockProjects}
-      selectedProjectId={mockProjects[0]?.id}
+      projects={projects}
+      selectedProjectId={projects[0]?.id}
       onProjectChange={(projectId) => router.push(`/projects/${projectId}`)}
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
+      onSignOut={handleSignOut}
     />
   );
 
@@ -47,9 +81,9 @@ export default function DashboardPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Badge variant="secondary">{mockProjects.length} Projects</Badge>
+          <Badge variant="secondary">{projects.length} Projects</Badge>
           <Badge variant="secondary">
-            {mockProjects.reduce((acc, project) => acc + project.houses.length, 0)} Houses
+            {projects.reduce((acc, project) => acc + project.houses.length, 0)} Houses
           </Badge>
         </CardContent>
       </Card>

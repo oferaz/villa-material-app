@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { budgetCategoryOrder, calculateProjectBudget, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
 import { createMockRoomObject, mockProjects } from "@/lib/mock/projects";
+import { supabase } from "@/lib/supabase/client";
 import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
@@ -121,9 +122,15 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
 
     void loadProjects();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void loadProjects();
+    });
 
     return () => {
       isCancelled = true;
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -277,6 +284,11 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   function handleProjectChange(projectId: string) {
     router.push(`/projects/${projectId}`);
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push("/login");
   }
 
   function handleSelectRoom(houseId: string, roomId: string) {
@@ -536,6 +548,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       onProjectChange={handleProjectChange}
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
+      onSignOut={handleSignOut}
     />
   );
 
