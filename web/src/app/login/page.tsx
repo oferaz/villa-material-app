@@ -16,6 +16,24 @@ function normalizeOtpToken(value: string): string {
   return value.replace(/[^a-zA-Z0-9]/g, "").trim();
 }
 
+function buildLoginRedirectUrl(): string {
+  const currentOrigin = window.location.origin;
+  const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (!configuredAppUrl) {
+    return `${currentOrigin.replace(/\/+$/, "")}/login`;
+  }
+
+  try {
+    const configuredUrl = new URL(configuredAppUrl);
+    const currentUrl = new URL(currentOrigin);
+    const shouldUseConfiguredOrigin = configuredUrl.hostname === currentUrl.hostname;
+    const baseUrl = shouldUseConfiguredOrigin ? configuredUrl.origin : currentOrigin;
+    return `${baseUrl.replace(/\/+$/, "")}/login`;
+  } catch {
+    return `${currentOrigin.replace(/\/+$/, "")}/login`;
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -63,7 +81,7 @@ export default function LoginPage() {
     setSuccessMessage(null);
     setIsGoogleSubmitting(true);
 
-    const redirectTo = `${window.location.origin}/login`;
+    const redirectTo = buildLoginRedirectUrl();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
