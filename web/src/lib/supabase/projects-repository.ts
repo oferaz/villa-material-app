@@ -1,5 +1,3 @@
-import { searchMockCatalogOptions } from "@/lib/mock/material-search";
-import { mockProjects } from "@/lib/mock/projects";
 import { resolveBudgetCategory } from "@/lib/mock/budget";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { BudgetCategoryName, House, ProductOption, Project, Room, RoomObject, RoomType } from "@/types";
@@ -68,10 +66,6 @@ const budgetCategorySet = new Set<BudgetCategoryName>([
   "Decor",
 ]);
 
-function cloneMockProjects(): Project[] {
-  return structuredClone(mockProjects);
-}
-
 function normalizeRoomType(value: string): RoomType {
   if (roomTypeSet.has(value as RoomType)) {
     return value as RoomType;
@@ -102,7 +96,7 @@ function toProductOptionFromMaterial(material: MaterialRow, objectName: string, 
 
 export async function loadProjectsForWorkspace(): Promise<Project[]> {
   if (!isSupabaseConfigured) {
-    return cloneMockProjects();
+    return [];
   }
 
   try {
@@ -216,7 +210,6 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
               const mappedRoomObjects: RoomObject[] = (roomObjectsByRoomId.get(room.id) ?? [])
                 .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
                 .map((roomObject) => {
-                  const catalogOptions = searchMockCatalogOptions(roomObject.name, roomObject.name);
                   const selectedMaterial = roomObject.selected_material_id
                     ? selectedMaterialMap.get(roomObject.selected_material_id)
                     : undefined;
@@ -224,9 +217,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
                     ? toProductOptionFromMaterial(selectedMaterial, roomObject.name, roomObject.category)
                     : undefined;
 
-                  const options = selectedOption
-                    ? [selectedOption, ...catalogOptions.filter((option) => option.id !== selectedOption.id)]
-                    : catalogOptions;
+                  const options = selectedOption ? [selectedOption] : [];
 
                   return {
                     id: roomObject.id,

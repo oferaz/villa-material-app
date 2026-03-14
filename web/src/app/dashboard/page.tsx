@@ -9,7 +9,6 @@ import { TopNav } from "@/components/layout/top-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { mockProjects } from "@/lib/mock/projects";
 import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { Project } from "@/types";
@@ -17,9 +16,7 @@ import { Project } from "@/types";
 export default function DashboardPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const [projects, setProjects] = useState<Project[]>(() =>
-    isSupabaseConfigured ? [] : structuredClone(mockProjects)
-  );
+  const [projects, setProjects] = useState<Project[]>([]);
   const [isAuthChecked, setIsAuthChecked] = useState(!isSupabaseConfigured);
   const [isSignedIn, setIsSignedIn] = useState(!isSupabaseConfigured);
 

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { budgetCategoryOrder, calculateProjectBudget, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
-import { createMockRoomObject, mockProjects } from "@/lib/mock/projects";
+import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
@@ -82,7 +82,7 @@ function isLinkOption(option: ProductOption): boolean {
   return option.sourceType === "link";
 }
 
-function createInitialBudgetMap(projects: Project[] = mockProjects): Record<string, ProjectBudget> {
+function createInitialBudgetMap(projects: Project[] = []): Record<string, ProjectBudget> {
   return projects.reduce<Record<string, ProjectBudget>>((acc, item) => {
     acc[item.id] = createMockProjectBudget();
     return acc;
@@ -91,11 +91,9 @@ function createInitialBudgetMap(projects: Project[] = mockProjects): Record<stri
 
 export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>(() =>
-    isSupabaseConfigured ? [] : structuredClone(mockProjects)
-  );
+  const [projects, setProjects] = useState<Project[]>([]);
   const [projectBudgets, setProjectBudgets] = useState<Record<string, ProjectBudget>>(() =>
-    createInitialBudgetMap(isSupabaseConfigured ? [] : mockProjects)
+    createInitialBudgetMap([])
   );
   const [isAuthChecked, setIsAuthChecked] = useState(!isSupabaseConfigured);
   const [isSignedIn, setIsSignedIn] = useState(!isSupabaseConfigured);
@@ -386,13 +384,21 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       return;
     }
 
-    const newObject = createMockRoomObject(
-      roomId,
-      objectName,
-      category,
-      basePrice,
-      `${roomId}-${objectName}-${target.room.objects.length}`
-    );
+    const newObject = isSupabaseConfigured
+      ? {
+          id: `${roomId}-object-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          roomId,
+          name: objectName,
+          category,
+          productOptions: [],
+        }
+      : createMockRoomObject(
+          roomId,
+          objectName,
+          category,
+          basePrice,
+          `${roomId}-${objectName}-${target.room.objects.length}`
+        );
 
     updateCurrentProject((targetProject) => ({
       ...targetProject,
@@ -475,6 +481,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   }
 
   function handleSearchCatalog(objectId: string, query: string) {
+    if (isSupabaseConfigured) {
+      return;
+    }
+
     const targetObject = project?.houses
       .flatMap((house) => house.rooms.flatMap((room) => room.objects))
       .find((objectItem) => objectItem.id === objectId);

@@ -5,8 +5,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 if (!isSupabaseConfigured) {
-  // Keep migration shell runnable with mock data while env is not configured.
-  console.warn("Supabase env vars are not set. Falling back to mock-only mode.");
+  console.warn("Supabase env vars are not set. Workspace data loading is disabled.");
 }
 
 export const supabase = createClient(
