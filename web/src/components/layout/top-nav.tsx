@@ -218,7 +218,7 @@ export function TopNav({
                 <div className="space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Houses</p>
                   {houseNames.map((houseName, index) => (
-                    <div key={`${index}-${houseName}`} className="flex items-center gap-2">
+                    <div key={`house-${index}`} className="flex items-center gap-2">
                       <Input
                         placeholder={`House ${index + 1}`}
                         value={houseName}
