@@ -68,7 +68,9 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
             ) : null}
 
             <div className="grid min-h-[calc(100vh-120px)] grid-cols-1 gap-5 pb-24 lg:grid-cols-[320px_minmax(0,1fr)_380px] lg:pb-0">
-              <div className="hidden space-y-4 lg:sticky lg:top-[88px] lg:block lg:h-[calc(100vh-110px)]">{sidebar}</div>
+              <div className="hidden space-y-4 lg:sticky lg:top-[88px] lg:block lg:h-[calc(100vh-110px)] lg:overflow-y-auto">
+                {sidebar}
+              </div>
               <div className="space-y-4">{main}</div>
               <div className="hidden space-y-4 lg:sticky lg:top-[88px] lg:block lg:h-[calc(100vh-110px)] lg:overflow-hidden">
                 {rightPanel}

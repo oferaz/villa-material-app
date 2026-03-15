@@ -15,7 +15,7 @@ interface HouseRoomTreeProps {
   selectedRoomId: string;
   onSelectRoom: (houseId: string, roomId: string) => void;
   onRenameRoom: (roomId: string, nextName: string) => void;
-  onAddRoom: (houseId: string, roomName: string, roomType: RoomType) => void;
+  onAddRoom: (houseId: string, roomName: string, roomType: RoomType, roomSizeSqm?: number) => void;
 }
 
 export function HouseRoomTree({
@@ -91,7 +91,9 @@ export function HouseRoomTree({
                     <Home className="h-4 w-4 text-slate-500" />
                     <span>{house.name}</span>
                   </button>
-                  <span className="text-xs text-slate-500">{house.rooms.length} rooms</span>
+                  <span className="text-xs text-slate-500">
+                    {house.sizeSqm ? `${house.sizeSqm} m2` : `${house.rooms.length} rooms`}
+                  </span>
                 </div>
 
                 {!isCollapsed ? (
@@ -140,6 +142,7 @@ export function HouseRoomTree({
                                   >
                                     {room.name}
                                   </button>
+                                  {room.sizeSqm ? <span className="text-[11px] text-slate-500">{room.sizeSqm} m2</span> : null}
                                   <Button
                                     type="button"
                                     variant="ghost"
@@ -186,12 +189,12 @@ export function HouseRoomTree({
             setRoomDialogHouseId(null);
           }
         }}
-        onCreateRoom={(roomName, roomType) => {
+        onCreateRoom={(roomName, roomType, roomSizeSqm) => {
           const targetHouseId = roomDialogHouseId ?? selectedHouse?.id;
           if (!targetHouseId) {
             return;
           }
-          onAddRoom(targetHouseId, roomName, roomType);
+          onAddRoom(targetHouseId, roomName, roomType, roomSizeSqm);
         }}
       />
     </>

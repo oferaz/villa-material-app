@@ -26,7 +26,7 @@ export function ProductOptionCard({ option, isSelected, onSelect }: ProductOptio
         </div>
         <p className="text-xs text-slate-500">{option.supplier}</p>
         <p className="text-xs text-slate-500">
-          {option.price > 0 ? `${option.price.toLocaleString()} THB` : "Price on request"} -{" "}
+          {option.price > 0 ? `${option.price.toLocaleString()} THB per unit` : "Price on request"} -{" "}
           {option.leadTimeDays > 0 ? `${option.leadTimeDays} days lead time` : "Lead time pending"}
         </p>
         {option.sourceUrl ? (

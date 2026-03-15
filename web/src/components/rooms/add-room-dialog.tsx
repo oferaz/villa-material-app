@@ -19,7 +19,7 @@ interface AddRoomDialogProps {
   open: boolean;
   houseName: string;
   onOpenChange: (open: boolean) => void;
-  onCreateRoom: (roomName: string, roomType: RoomType) => void;
+  onCreateRoom: (roomName: string, roomType: RoomType, roomSizeSqm?: number) => void;
 }
 
 const typeOptions = Object.entries(roomTypeLabels) as [RoomType, string][];
@@ -27,14 +27,17 @@ const typeOptions = Object.entries(roomTypeLabels) as [RoomType, string][];
 export function AddRoomDialog({ open, houseName, onOpenChange, onCreateRoom }: AddRoomDialogProps) {
   const [selectedType, setSelectedType] = useState<RoomType>("living_room");
   const [roomName, setRoomName] = useState("");
+  const [roomSizeSqmInput, setRoomSizeSqmInput] = useState("");
 
   useEffect(() => {
     if (open) {
       setSelectedType("living_room");
       setRoomName("Living Room");
+      setRoomSizeSqmInput("");
       return;
     }
     setRoomName("");
+    setRoomSizeSqmInput("");
   }, [open]);
 
   function handleCreate() {
@@ -42,7 +45,9 @@ export function AddRoomDialog({ open, houseName, onOpenChange, onCreateRoom }: A
     if (!trimmedName) {
       return;
     }
-    onCreateRoom(trimmedName, selectedType);
+    const rawSize = Number(roomSizeSqmInput);
+    const normalizedSize = Number.isFinite(rawSize) && rawSize > 0 ? Math.round(rawSize * 100) / 100 : undefined;
+    onCreateRoom(trimmedName, selectedType, normalizedSize);
     onOpenChange(false);
   }
 
@@ -92,6 +97,18 @@ export function AddRoomDialog({ open, houseName, onOpenChange, onCreateRoom }: A
                   handleCreate();
                 }
               }}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-slate-700">Room size (m2)</p>
+            <Input
+              type="number"
+              min={0}
+              step="0.1"
+              placeholder="Optional"
+              value={roomSizeSqmInput}
+              onChange={(event) => setRoomSizeSqmInput(event.target.value)}
             />
           </div>
         </div>

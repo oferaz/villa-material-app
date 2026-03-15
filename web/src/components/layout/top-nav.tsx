@@ -34,6 +34,7 @@ export interface NewProjectWizardPayload {
   clientName: string;
   location: string;
   houseNames: string[];
+  houseSizesSqm: number[];
 }
 
 interface TopNavProps {
@@ -46,6 +47,7 @@ interface TopNavProps {
   onSearchChange: (value: string) => void;
   onSignOut?: () => void;
   onCreateProject?: (payload: NewProjectWizardPayload) => Promise<void> | void;
+  onDeleteProject?: (projectId: string) => Promise<void> | void;
 }
 
 export function TopNav({
@@ -58,6 +60,7 @@ export function TopNav({
   onSearchChange,
   onSignOut,
   onCreateProject,
+  onDeleteProject,
 }: TopNavProps) {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
@@ -65,12 +68,30 @@ export function TopNav({
   const [clientName, setClientName] = useState("");
   const [location, setLocation] = useState("");
   const [houseNames, setHouseNames] = useState<string[]>([INITIAL_HOUSE_NAME]);
+  const [houseSizesSqmInput, setHouseSizesSqmInput] = useState<string[]>([""]);
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
 
-  const normalizedHouseNames = useMemo(
-    () => houseNames.map((houseName) => houseName.trim()).filter((houseName) => houseName.length > 0),
-    [houseNames]
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
+    [projects, selectedProjectId]
+  );
+
+  const normalizedHouseData = useMemo(
+    () =>
+      houseNames
+        .map((houseName, index) => {
+          const normalizedName = houseName.trim();
+          const rawSize = Number(houseSizesSqmInput[index] ?? "");
+          const normalizedSize = Number.isFinite(rawSize) && rawSize > 0 ? Math.round(rawSize * 100) / 100 : 0;
+          return {
+            name: normalizedName,
+            sizeSqm: normalizedSize,
+          };
+        })
+        .filter((house) => house.name.length > 0),
+    [houseNames, houseSizesSqmInput]
   );
 
   function resetWizardState() {
@@ -79,6 +100,7 @@ export function TopNav({
     setClientName("");
     setLocation("");
     setHouseNames([INITIAL_HOUSE_NAME]);
+    setHouseSizesSqmInput([""]);
     setWizardError(null);
     setIsCreatingProject(false);
   }
@@ -92,6 +114,7 @@ export function TopNav({
 
   function handleAddHouse() {
     setHouseNames((prev) => [...prev, ""]);
+    setHouseSizesSqmInput((prev) => [...prev, ""]);
   }
 
   function handleRemoveHouse(index: number) {
@@ -101,10 +124,20 @@ export function TopNav({
       }
       return prev.filter((_, currentIndex) => currentIndex !== index);
     });
+    setHouseSizesSqmInput((prev) => {
+      if (prev.length <= 1) {
+        return prev;
+      }
+      return prev.filter((_, currentIndex) => currentIndex !== index);
+    });
   }
 
   function handleHouseNameChange(index: number, nextValue: string) {
     setHouseNames((prev) => prev.map((value, currentIndex) => (currentIndex === index ? nextValue : value)));
+  }
+
+  function handleHouseSizeChange(index: number, nextValue: string) {
+    setHouseSizesSqmInput((prev) => prev.map((value, currentIndex) => (currentIndex === index ? nextValue : value)));
   }
 
   async function handleSubmitNewProject() {
@@ -118,7 +151,7 @@ export function TopNav({
       return;
     }
 
-    if (normalizedHouseNames.length === 0) {
+    if (normalizedHouseData.length === 0) {
       setWizardError("Add at least one house.");
       return;
     }
@@ -131,7 +164,8 @@ export function TopNav({
         name: normalizedName,
         clientName: clientName.trim(),
         location: location.trim(),
-        houseNames: normalizedHouseNames,
+        houseNames: normalizedHouseData.map((house) => house.name),
+        houseSizesSqm: normalizedHouseData.map((house) => house.sizeSqm),
       });
 
       setIsWizardOpen(false);
@@ -140,6 +174,28 @@ export function TopNav({
       setWizardError(error instanceof Error ? error.message : "Failed to create project.");
     } finally {
       setIsCreatingProject(false);
+    }
+  }
+
+  async function handleDeleteSelectedProject() {
+    if (!onDeleteProject || !selectedProject) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${selectedProject.name}"?\n\nThis will remove all houses, rooms, objects, and budget data in this project.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingProject(true);
+    try {
+      await onDeleteProject(selectedProject.id);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to delete project.");
+    } finally {
+      setIsDeletingProject(false);
     }
   }
 
@@ -227,11 +283,19 @@ export function TopNav({
                     Bathroom.
                   </p>
                   {houseNames.map((houseName, index) => (
-                    <div key={`house-${index}`} className="flex items-center gap-2">
+                    <div key={`house-${index}`} className="grid grid-cols-[1fr_140px_auto] items-center gap-2">
                       <Input
                         placeholder={`House ${index + 1}`}
                         value={houseName}
                         onChange={(event) => handleHouseNameChange(index, event.target.value)}
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        placeholder="Size (m2)"
+                        value={houseSizesSqmInput[index] ?? ""}
+                        onChange={(event) => handleHouseSizeChange(index, event.target.value)}
                       />
                       <Button
                         type="button"
@@ -266,8 +330,16 @@ export function TopNav({
                     {location.trim() || "Not specified"}
                   </p>
                   <p>
-                    <span className="font-semibold text-slate-700">Houses:</span> {normalizedHouseNames.join(", ")}
+                    <span className="font-semibold text-slate-700">Houses:</span>
                   </p>
+                  <ul className="space-y-1 rounded-md border border-slate-200 bg-white p-2">
+                    {normalizedHouseData.map((house, index) => (
+                      <li key={`${house.name}-${index}`} className="flex items-center justify-between text-xs text-slate-700">
+                        <span>{house.name}</span>
+                        <span>{house.sizeSqm > 0 ? `${house.sizeSqm} m2` : "Size not set"}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
 
@@ -289,7 +361,7 @@ export function TopNav({
                       setWizardError("Project name is required.");
                       return;
                     }
-                    if (wizardStep === 2 && normalizedHouseNames.length === 0) {
+                    if (wizardStep === 2 && normalizedHouseData.length === 0) {
                       setWizardError("Add at least one house.");
                       return;
                     }
@@ -307,6 +379,18 @@ export function TopNav({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {selectedProject && onDeleteProject ? (
+          <Button
+            type="button"
+            variant="destructive"
+            className="shrink-0 whitespace-nowrap"
+            onClick={() => void handleDeleteSelectedProject()}
+            disabled={isDeletingProject}
+          >
+            {isDeletingProject ? "Deleting..." : "Delete Project"}
+          </Button>
+        ) : null}
 
         <Separator orientation="vertical" className="hidden h-6 md:block" />
 

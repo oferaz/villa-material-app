@@ -28,6 +28,10 @@ export function RoomHeader({ house, room, selectedCount, missingCount }: RoomHea
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{house.name}</p>
             <CardTitle className="mt-1 text-2xl">{room.name}</CardTitle>
+            <p className="mt-1 text-xs text-slate-500">
+              {room.sizeSqm ? `Room size: ${room.sizeSqm} m2` : "Room size: not set"}
+              {house.sizeSqm ? ` | House size: ${house.sizeSqm} m2` : ""}
+            </p>
           </div>
           <Badge variant="secondary">{roomTypeLabels[room.type]}</Badge>
         </div>

@@ -7,6 +7,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { NewProjectWizardPayload, TopNav } from "@/components/layout/top-nav";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import { BudgetOverview } from "@/components/budget/budget-overview";
+import { MaterialsGallery } from "@/components/materials/materials-gallery";
 import { HouseRoomTree } from "@/components/rooms/house-room-tree";
 import { ProjectRoomsStack } from "@/components/rooms/project-rooms-stack";
 import { AddObjectDialog } from "@/components/rooms/add-object-dialog";
@@ -17,7 +18,8 @@ import { budgetCategoryOrder, calculateProjectBudget, createMockProjectBudget, r
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
 import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
-import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
+import { addLinkMaterialForCurrentUser, searchMaterialsForCurrentUser } from "@/lib/supabase/materials-repository";
+import { deleteProjectById, loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
@@ -150,8 +152,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     void loadProjects();
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void loadProjects();
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        void loadProjects();
+      }
     });
 
     return () => {
@@ -238,7 +242,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   }, [activeTab, pendingScrollRoomId]);
 
   useEffect(() => {
-    if (activeTab !== "rooms" || !project) {
+    if (activeTab !== "rooms" || !project || pendingScrollRoomId) {
       return;
     }
 
@@ -254,12 +258,18 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       }
 
       let activeSection = sections[0];
+      const isNearPageBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 8;
+      if (isNearPageBottom) {
+        activeSection = sections[sections.length - 1];
+      } else {
       for (const section of sections) {
         if (section.getBoundingClientRect().top <= ROOM_SPY_OFFSET) {
           activeSection = section;
         } else {
           break;
         }
+      }
       }
 
       const roomId = activeSection.dataset.roomId;
@@ -291,7 +301,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       }
       window.removeEventListener("scroll", onScroll);
     };
-  }, [activeTab, project, selectedRoomId]);
+  }, [activeTab, pendingScrollRoomId, project, selectedRoomId]);
 
   function updateCurrentProject(updater: (targetProject: Project) => Project) {
     if (!project) {
@@ -323,11 +333,29 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       clientName: payload.clientName,
       location: payload.location,
       houseNames: payload.houseNames,
+      houseSizesSqm: payload.houseSizesSqm,
     });
 
     const loadedProjects = await loadProjectsForWorkspace();
     setProjects(loadedProjects);
     router.push(`/projects/${projectId}`);
+  }
+
+  async function handleDeleteProject(projectId: string) {
+    const isDeletingCurrentProject = project?.id === projectId;
+
+    await deleteProjectById(projectId);
+    const loadedProjects = await loadProjectsForWorkspace();
+    setProjects(loadedProjects);
+
+    if (loadedProjects.length === 0) {
+      router.push("/dashboard");
+      return;
+    }
+
+    if (isDeletingCurrentProject) {
+      router.push(`/projects/${loadedProjects[0].id}`);
+    }
   }
 
   function handleSelectRoom(houseId: string, roomId: string) {
@@ -358,12 +386,13 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }));
   }
 
-  function handleAddRoom(houseId: string, roomName: string, roomType: RoomType) {
+  function handleAddRoom(houseId: string, roomName: string, roomType: RoomType, roomSizeSqm?: number) {
     const newRoomId = `${houseId}-room-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const newRoom: Room = {
       id: newRoomId,
       houseId,
       name: roomName,
+      sizeSqm: roomSizeSqm,
       type: roomType,
       objects: [],
     };
@@ -559,16 +588,34 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }));
   }
 
-  function handleSearchCatalog(objectId: string, query: string) {
-    if (isSupabaseConfigured) {
-      return;
-    }
-
+  async function handleSearchCatalog(objectId: string, query: string) {
     const targetObject = project?.houses
       .flatMap((house) => house.rooms.flatMap((room) => room.objects))
       .find((objectItem) => objectItem.id === objectId);
 
     if (!targetObject) {
+      return;
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        const materialOptions = await searchMaterialsForCurrentUser({
+          objectName: targetObject.name,
+          objectCategory: targetObject.category,
+          query,
+        });
+
+        updateObjectById(objectId, (objectItem) => {
+          const selectedStillVisible = materialOptions.some((option) => option.id === objectItem.selectedProductId);
+          return {
+            ...objectItem,
+            productOptions: materialOptions,
+            selectedProductId: selectedStillVisible ? objectItem.selectedProductId : undefined,
+          };
+        });
+      } catch (error) {
+        console.warn("Failed to search materials from Supabase.", error);
+      }
       return;
     }
 
@@ -596,6 +643,31 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       .find((objectItem) => objectItem.id === objectId);
 
     if (!targetObject) {
+      return;
+    }
+
+    if (isSupabaseConfigured) {
+      void addLinkMaterialForCurrentUser({
+        objectName: targetObject.name,
+        objectCategory: targetObject.category,
+        url: payload.url,
+        name: payload.name,
+        supplier: payload.supplier,
+        price: payload.price,
+      })
+        .then((savedOption) => {
+          updateObjectById(objectId, (objectItem) => {
+            const dedupedOptions = [savedOption, ...objectItem.productOptions.filter((item) => item.id !== savedOption.id)];
+            return {
+              ...objectItem,
+              productOptions: dedupedOptions,
+              selectedProductId: savedOption.id,
+            };
+          });
+        })
+        .catch((error) => {
+          window.alert(error instanceof Error ? error.message : "Failed to save link to your material library.");
+        });
       return;
     }
 
@@ -690,6 +762,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             onSearchChange={setSearchQuery}
             onSignOut={handleSignOut}
             onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
+            onDeleteProject={isSupabaseConfigured && isSignedIn ? handleDeleteProject : undefined}
           />
         }
         main={
@@ -731,6 +804,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       onSearchChange={setSearchQuery}
       onSignOut={handleSignOut}
       onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
+      onDeleteProject={isSupabaseConfigured && isSignedIn ? handleDeleteProject : undefined}
     />
   );
 
@@ -746,7 +820,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   );
 
   const roomsContent = (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-20">
       <div className="sticky top-[122px] z-10 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current house</p>
         <p className="text-sm font-semibold text-slate-800">{selectedHouse?.name ?? "No house selected"}</p>
@@ -780,12 +854,14 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     </div>
   );
 
-  const materialsContent = (
+  const materialsContent = isSupabaseConfigured ? (
+    <MaterialsGallery searchQuery={searchQuery} />
+  ) : (
     <PlaceholderTab
       icon={Boxes}
       title="Materials workspace"
-      description="Tiles, stones, finishes, and sanitary materials will be handled separately from furniture."
-      details="This project-level tab is for finish boards, material palettes, and approvals."
+      description="Connect Supabase to browse and manage your personal materials database."
+      details="Once connected, this tab becomes your searchable gallery where you can review and delete saved materials."
     />
   );
 

@@ -30,6 +30,7 @@ export function ProjectRoomsStack({
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">House</p>
             <h3 className="text-lg font-semibold text-slate-800">{house.name}</h3>
+            {house.sizeSqm ? <p className="text-xs text-slate-500">{house.sizeSqm} m2</p> : null}
           </div>
 
           {house.rooms.map((room) => {

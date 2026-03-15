@@ -44,22 +44,54 @@ function clampMoney(value: number): number {
   return Math.max(0, Math.round(value));
 }
 
+function normalizePositiveNumber(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return value;
+}
+
+function resolveRoomAreaSqm(roomSizeSqm: number | undefined, houseSizeSqm: number | undefined, roomCount: number): number | undefined {
+  const normalizedRoomSize = normalizePositiveNumber(roomSizeSqm);
+  if (normalizedRoomSize) {
+    return normalizedRoomSize;
+  }
+
+  const normalizedHouseSize = normalizePositiveNumber(houseSizeSqm);
+  if (!normalizedHouseSize) {
+    return undefined;
+  }
+
+  return normalizedHouseSize / Math.max(1, roomCount);
+}
+
+function isSizeSensitiveCategory(category: BudgetCategoryName): boolean {
+  return category === "Tiles" || category === "Bathroom" || category === "Kitchen";
+}
+
+function getObjectGroupKey(objectName: string, objectCategory?: string): string {
+  // Treat "Chair 1", "Chair 2", etc. as the same group for quantity rollup.
+  const normalizedName = objectName.trim().toLowerCase().replace(/\s+\d+$/, "");
+  const normalizedCategory = (objectCategory ?? "").trim().toLowerCase();
+  return `${normalizedName}::${normalizedCategory}`;
+}
+
 export function resolveBudgetCategory(objectName: string, objectCategory?: string): BudgetCategoryName {
   const text = `${objectName} ${objectCategory ?? ""}`.toLowerCase();
 
-  if (/(light|lamp|sconce|pendant|lantern)/.test(text)) {
+  if (/\b(light|lighting|lamp|sconce|pendant|lantern|chandelier)\b/.test(text)) {
     return "Lighting";
   }
-  if (/(tile|ceramic|porcelain|mosaic|marble|travertine|stone)/.test(text)) {
+  if (/\b(tile|tiles|ceramic|porcelain|mosaic|marble|travertine|stone)\b/.test(text)) {
     return "Tiles";
   }
-  if (/(vanity|toilet|shower|faucet|sink|mirror|bath)/.test(text)) {
+  if (/\b(vanity|toilet|shower|faucet|sink|mirror|bath|bathroom)\b/.test(text)) {
     return "Bathroom";
   }
-  if (/(cabinet|counter|appliance|stool|backsplash|kitchen)/.test(text)) {
+  if (/\b(cabinet|counter|appliance|stool|backsplash|kitchen)\b/.test(text)) {
     return "Kitchen";
   }
-  if (/(rug|curtain|art|accessor|decor|planter|runner)/.test(text)) {
+  if (/\b(rug|curtain|curtains|art|accessory|accessories|decor|planter|runner|textile|textiles)\b/.test(text)) {
     return "Decor";
   }
   return "Furniture";
@@ -74,6 +106,23 @@ export function calculateProjectBudget(baseBudget: ProjectBudget, project?: Proj
   if (project) {
     for (const house of project.houses) {
       for (const room of house.rooms) {
+        const roomAreaSqm = resolveRoomAreaSqm(room.sizeSqm, house.sizeSqm, house.rooms.length);
+
+        const groupStats = room.objects.reduce<Record<string, { totalUnits: number; selectedUnits: number }>>(
+          (acc, objectItem) => {
+            const groupKey = getObjectGroupKey(objectItem.name, objectItem.category);
+            const normalizedUnits = Math.max(1, Math.round(objectItem.quantity || 1));
+            const current = acc[groupKey] ?? { totalUnits: 0, selectedUnits: 0 };
+            current.totalUnits += normalizedUnits;
+            if (objectItem.selectedProductId) {
+              current.selectedUnits += normalizedUnits;
+            }
+            acc[groupKey] = current;
+            return acc;
+          },
+          {}
+        );
+
         for (const objectItem of room.objects) {
           if (!objectItem.selectedProductId) {
             continue;
@@ -82,7 +131,17 @@ export function calculateProjectBudget(baseBudget: ProjectBudget, project?: Proj
           if (!selectedOption) {
             continue;
           }
-          allocationMap[selectedOption.budgetCategory] += clampMoney(selectedOption.price);
+
+          const normalizedQuantity = Math.max(1, Math.round(objectItem.quantity || 1));
+          const groupKey = getObjectGroupKey(objectItem.name, objectItem.category);
+          const group = groupStats[groupKey];
+          const shouldFanOutToGroup =
+            Boolean(group) && group.selectedUnits === normalizedQuantity && group.totalUnits > normalizedQuantity;
+          const effectiveUnits = shouldFanOutToGroup ? group.totalUnits : normalizedQuantity;
+          const areaMultiplier =
+            isSizeSensitiveCategory(selectedOption.budgetCategory) && roomAreaSqm ? roomAreaSqm : 1;
+          const estimatedCost = selectedOption.price * effectiveUnits * areaMultiplier;
+          allocationMap[selectedOption.budgetCategory] += clampMoney(estimatedCost);
         }
       }
     }

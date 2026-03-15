@@ -42,6 +42,7 @@ export interface Room {
   id: UUID;
   houseId: UUID;
   name: string;
+  sizeSqm?: number;
   type: RoomType;
   objects: RoomObject[];
 }
@@ -50,6 +51,7 @@ export interface House {
   id: UUID;
   projectId: UUID;
   name: string;
+  sizeSqm?: number;
   rooms: Room[];
 }
 

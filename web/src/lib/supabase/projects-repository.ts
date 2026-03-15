@@ -13,6 +13,7 @@ interface HouseRow {
   id: string;
   project_id: string;
   name: string;
+  size_sq_m: number | null;
   sort_order: number | null;
 }
 
@@ -20,6 +21,7 @@ interface RoomRow {
   id: string;
   house_id: string;
   name: string;
+  size_sq_m: number | null;
   room_type: string;
   sort_order: number | null;
 }
@@ -80,6 +82,13 @@ function normalizeBudgetCategory(value: string, objectName: string, objectCatego
   return resolveBudgetCategory(objectName, objectCategory);
 }
 
+function normalizeSizeSqm(value: number | null): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Number(value);
+}
+
 function toProductOptionFromMaterial(material: MaterialRow, objectName: string, objectCategory: string): ProductOption {
   return {
     id: material.id,
@@ -126,7 +135,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
 
     const { data: houseRows, error: houseError } = await supabase
       .from("houses")
-      .select("id,project_id,name,sort_order")
+      .select("id,project_id,name,size_sq_m,sort_order")
       .in("project_id", projectIds)
       .order("sort_order", { ascending: true });
 
@@ -139,7 +148,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
     const houseIds = houses.map((house) => house.id);
     const roomsQuery = supabase
       .from("rooms")
-      .select("id,house_id,name,room_type,sort_order")
+      .select("id,house_id,name,size_sq_m,room_type,sort_order")
       .order("sort_order", { ascending: true });
     const { data: roomRows, error: roomError } =
       houseIds.length > 0 ? await roomsQuery.in("house_id", houseIds) : await roomsQuery.limit(0);
@@ -234,6 +243,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
                 id: room.id,
                 houseId: room.house_id,
                 name: room.name,
+                sizeSqm: normalizeSizeSqm(room.size_sq_m),
                 type: normalizeRoomType(room.room_type),
                 objects: mappedRoomObjects,
               };
@@ -243,6 +253,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
             id: house.id,
             projectId: house.project_id,
             name: house.name,
+            sizeSqm: normalizeSizeSqm(house.size_sq_m),
             rooms: mappedRooms,
           };
         });
@@ -260,5 +271,21 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
   } catch (error) {
     console.warn("Failed to load projects from Supabase.", error);
     return [];
+  }
+}
+
+export async function deleteProjectById(projectId: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    return;
+  }
+
+  const normalizedProjectId = projectId.trim();
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+
+  const { error } = await supabase.from("projects").delete().eq("id", normalizedProjectId);
+  if (error) {
+    throw new Error(error.message);
   }
 }

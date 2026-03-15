@@ -74,7 +74,10 @@ export function BudgetOverview({ budget, onSaveBudget }: BudgetOverviewProps) {
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div>
             <CardTitle>Project Budget Overview</CardTitle>
-            <CardDescription>Track planned vs allocated budget from selected materials and products.</CardDescription>
+            <CardDescription>
+              Track planned vs allocated budget from selected materials and products. Tiles, bathroom, and kitchen
+              selections are size-aware when room or house size is set.
+            </CardDescription>
           </div>
           <Button type="button" variant="outline" onClick={() => setIsOpen(true)}>
             Edit Budget

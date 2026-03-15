@@ -58,6 +58,7 @@ create table if not exists public.houses (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
   name text not null,
+  size_sq_m numeric(10,2),
   sort_order integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -78,6 +79,7 @@ create table if not exists public.rooms (
   id uuid primary key default gen_random_uuid(),
   house_id uuid not null references public.houses(id) on delete cascade,
   name text not null,
+  size_sq_m numeric(10,2),
   room_type text not null check (
     room_type in ('living_room', 'kitchen', 'bathroom', 'bedroom', 'dining_room', 'entry', 'office', 'laundry', 'outdoor')
   ),

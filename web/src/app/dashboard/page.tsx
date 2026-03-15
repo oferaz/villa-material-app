@@ -9,7 +9,7 @@ import { NewProjectWizardPayload, TopNav } from "@/components/layout/top-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
+import { deleteProjectById, loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { Project } from "@/types";
@@ -54,8 +54,10 @@ export default function DashboardPage() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void loadProjects();
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        void loadProjects();
+      }
     });
 
     return () => {
@@ -85,11 +87,18 @@ export default function DashboardPage() {
       clientName: payload.clientName,
       location: payload.location,
       houseNames: payload.houseNames,
+      houseSizesSqm: payload.houseSizesSqm,
     });
 
     const loadedProjects = await loadProjectsForWorkspace();
     setProjects(loadedProjects);
     router.push(`/projects/${projectId}`);
+  }
+
+  async function handleDeleteProject(projectId: string) {
+    await deleteProjectById(projectId);
+    const loadedProjects = await loadProjectsForWorkspace();
+    setProjects(loadedProjects);
   }
 
   const topNav = (
@@ -103,6 +112,7 @@ export default function DashboardPage() {
       onSearchChange={setSearchQuery}
       onSignOut={handleSignOut}
       onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
+      onDeleteProject={isSupabaseConfigured && isSignedIn ? handleDeleteProject : undefined}
     />
   );
 
