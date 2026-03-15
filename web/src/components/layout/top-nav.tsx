@@ -217,6 +217,10 @@ export function TopNav({
               {wizardStep === 2 ? (
                 <div className="space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Houses</p>
+                  <p className="text-xs text-slate-500">
+                    Each house will start with default rooms: Entry, Living Room, Kitchen, Dining Room, Bedroom,
+                    Bathroom.
+                  </p>
                   {houseNames.map((houseName, index) => (
                     <div key={`house-${index}`} className="flex items-center gap-2">
                       <Input

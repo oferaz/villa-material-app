@@ -64,9 +64,7 @@ export function AddRoomDialog({ open, houseName, onOpenChange, onCreateRoom }: A
                   type="button"
                   onClick={() => {
                     setSelectedType(type);
-                    if (!roomName.trim()) {
-                      setRoomName(label);
-                    }
+                    setRoomName(label);
                   }}
                   className={cn(
                     "rounded-md border px-3 py-2 text-left text-sm transition",
