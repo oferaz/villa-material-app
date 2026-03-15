@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
+import Image from "next/image";
 import { useMemo, useState } from "react";
-import { Building2, ChevronDown, Plus, Search, Trash2, UserCircle2 } from "lucide-react";
+import { ChevronDown, Plus, Search, Trash2, UserCircle2 } from "lucide-react";
 import { Project } from "@/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -144,13 +146,16 @@ export function TopNav({
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-white/95 backdrop-blur">
       <div className="mx-auto flex w-full max-w-[1800px] items-center gap-4 px-4 py-3 lg:px-6">
-        <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 md:flex">
-          <Building2 className="h-4 w-4 text-primary" />
+        <Link
+          href="/dashboard"
+          className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 transition hover:bg-slate-200 md:flex"
+        >
+          <Image src="/materia-logo.png" alt="Materia" width={16} height={16} className="rounded-sm object-contain" />
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">{title}</p>
             {subtitle ? <p className="text-[11px] text-slate-500">{subtitle}</p> : null}
           </div>
-        </div>
+        </Link>
 
         {projects.length > 0 && selectedProjectId && onProjectChange ? (
           <ProjectSwitcher
