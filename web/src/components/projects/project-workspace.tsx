@@ -4,7 +4,7 @@ import { ComponentType, useEffect, useMemo, useState } from "react";
 import { Boxes, Presentation } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
-import { TopNav } from "@/components/layout/top-nav";
+import { NewProjectWizardPayload, TopNav } from "@/components/layout/top-nav";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import { BudgetOverview } from "@/components/budget/budget-overview";
 import { HouseRoomTree } from "@/components/rooms/house-room-tree";
@@ -18,6 +18,7 @@ import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock
 import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
+import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
 interface ProjectWorkspaceProps {
@@ -316,6 +317,19 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     router.push("/login");
   }
 
+  async function handleCreateProject(payload: NewProjectWizardPayload) {
+    const projectId = await createProjectWithWizard({
+      name: payload.name,
+      clientName: payload.clientName,
+      location: payload.location,
+      houseNames: payload.houseNames,
+    });
+
+    const loadedProjects = await loadProjectsForWorkspace();
+    setProjects(loadedProjects);
+    router.push(`/projects/${projectId}`);
+  }
+
   function handleSelectRoom(houseId: string, roomId: string) {
     setActiveTab("rooms");
     setSelectedHouseId(houseId);
@@ -610,6 +624,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             onSignOut={handleSignOut}
+            onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
           />
         }
         main={
@@ -645,6 +660,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
       onSignOut={handleSignOut}
+      onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
     />
   );
 

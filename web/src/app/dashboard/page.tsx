@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowUpRight, Building2, Home } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { TopNav } from "@/components/layout/top-nav";
+import { NewProjectWizardPayload, TopNav } from "@/components/layout/top-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
+import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { Project } from "@/types";
 
@@ -78,6 +79,19 @@ export default function DashboardPage() {
     router.push("/login");
   }
 
+  async function handleCreateProject(payload: NewProjectWizardPayload) {
+    const projectId = await createProjectWithWizard({
+      name: payload.name,
+      clientName: payload.clientName,
+      location: payload.location,
+      houseNames: payload.houseNames,
+    });
+
+    const loadedProjects = await loadProjectsForWorkspace();
+    setProjects(loadedProjects);
+    router.push(`/projects/${projectId}`);
+  }
+
   const topNav = (
     <TopNav
       title="Materia"
@@ -88,6 +102,7 @@ export default function DashboardPage() {
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
       onSignOut={handleSignOut}
+      onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
     />
   );
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { Building2, ChevronDown, Search, UserCircle2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Building2, ChevronDown, Plus, Search, Trash2, UserCircle2 } from "lucide-react";
 import { Project } from "@/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,15 @@ import {
 } from "@/components/ui/dialog";
 import { ProjectSwitcher } from "@/components/projects/project-switcher";
 
+const INITIAL_HOUSE_NAME = "Main House";
+
+export interface NewProjectWizardPayload {
+  name: string;
+  clientName: string;
+  location: string;
+  houseNames: string[];
+}
+
 interface TopNavProps {
   title: string;
   subtitle?: string;
@@ -33,6 +43,7 @@ interface TopNavProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
   onSignOut?: () => void;
+  onCreateProject?: (payload: NewProjectWizardPayload) => Promise<void> | void;
 }
 
 export function TopNav({
@@ -44,7 +55,92 @@ export function TopNav({
   searchQuery,
   onSearchChange,
   onSignOut,
+  onCreateProject,
 }: TopNavProps) {
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [projectName, setProjectName] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [location, setLocation] = useState("");
+  const [houseNames, setHouseNames] = useState<string[]>([INITIAL_HOUSE_NAME]);
+  const [wizardError, setWizardError] = useState<string | null>(null);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+
+  const normalizedHouseNames = useMemo(
+    () => houseNames.map((houseName) => houseName.trim()).filter((houseName) => houseName.length > 0),
+    [houseNames]
+  );
+
+  function resetWizardState() {
+    setWizardStep(1);
+    setProjectName("");
+    setClientName("");
+    setLocation("");
+    setHouseNames([INITIAL_HOUSE_NAME]);
+    setWizardError(null);
+    setIsCreatingProject(false);
+  }
+
+  function handleWizardOpenChange(nextOpen: boolean) {
+    setIsWizardOpen(nextOpen);
+    if (!nextOpen) {
+      resetWizardState();
+    }
+  }
+
+  function handleAddHouse() {
+    setHouseNames((prev) => [...prev, ""]);
+  }
+
+  function handleRemoveHouse(index: number) {
+    setHouseNames((prev) => {
+      if (prev.length <= 1) {
+        return prev;
+      }
+      return prev.filter((_, currentIndex) => currentIndex !== index);
+    });
+  }
+
+  function handleHouseNameChange(index: number, nextValue: string) {
+    setHouseNames((prev) => prev.map((value, currentIndex) => (currentIndex === index ? nextValue : value)));
+  }
+
+  async function handleSubmitNewProject() {
+    if (!onCreateProject) {
+      return;
+    }
+
+    const normalizedName = projectName.trim();
+    if (!normalizedName) {
+      setWizardError("Project name is required.");
+      return;
+    }
+
+    if (normalizedHouseNames.length === 0) {
+      setWizardError("Add at least one house.");
+      return;
+    }
+
+    setWizardError(null);
+    setIsCreatingProject(true);
+
+    try {
+      await onCreateProject({
+        name: normalizedName,
+        clientName: clientName.trim(),
+        location: location.trim(),
+        houseNames: normalizedHouseNames,
+      });
+
+      setIsWizardOpen(false);
+      resetWizardState();
+    } catch (error) {
+      setWizardError(error instanceof Error ? error.message : "Failed to create project.");
+    } finally {
+      setIsCreatingProject(false);
+    }
+  }
+
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-white/95 backdrop-blur">
       <div className="mx-auto flex w-full max-w-[1800px] items-center gap-4 px-4 py-3 lg:px-6">
@@ -76,21 +172,129 @@ export function TopNav({
           />
         </div>
 
-        <Dialog>
+        <Dialog open={isWizardOpen} onOpenChange={handleWizardOpenChange}>
           <DialogTrigger asChild>
-            <Button variant="outline" className="hidden md:inline-flex">
+            <Button variant="outline" className="shrink-0 whitespace-nowrap" disabled={!onCreateProject}>
               New Project
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>New project flow</DialogTitle>
-              <DialogDescription>
-                Project creation wizard is part of the next migration stage. This dialog is a structural placeholder.
-              </DialogDescription>
+              <DialogTitle>Create new project</DialogTitle>
+              <DialogDescription>Step {wizardStep} of 3</DialogDescription>
             </DialogHeader>
+
+            <div className="space-y-4">
+              {wizardStep === 1 ? (
+                <div className="space-y-3">
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project name</span>
+                    <Input
+                      placeholder="Palm Heights"
+                      value={projectName}
+                      onChange={(event) => setProjectName(event.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client name</span>
+                    <Input
+                      placeholder="Haddad Family"
+                      value={clientName}
+                      onChange={(event) => setClientName(event.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</span>
+                    <Input
+                      placeholder="Abu Dhabi"
+                      value={location}
+                      onChange={(event) => setLocation(event.target.value)}
+                    />
+                  </label>
+                </div>
+              ) : null}
+
+              {wizardStep === 2 ? (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Houses</p>
+                  {houseNames.map((houseName, index) => (
+                    <div key={`${index}-${houseName}`} className="flex items-center gap-2">
+                      <Input
+                        placeholder={`House ${index + 1}`}
+                        value={houseName}
+                        onChange={(event) => handleHouseNameChange(index, event.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove house ${index + 1}`}
+                        onClick={() => handleRemoveHouse(index)}
+                        disabled={houseNames.length <= 1}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" onClick={handleAddHouse}>
+                    <Plus className="h-4 w-4" />
+                    Add house
+                  </Button>
+                </div>
+              ) : null}
+
+              {wizardStep === 3 ? (
+                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <p>
+                    <span className="font-semibold text-slate-700">Project:</span> {projectName.trim()}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-700">Client:</span>{" "}
+                    {clientName.trim() || "Not specified"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-700">Location:</span>{" "}
+                    {location.trim() || "Not specified"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-700">Houses:</span> {normalizedHouseNames.join(", ")}
+                  </p>
+                </div>
+              ) : null}
+
+              {wizardError ? <p className="text-sm text-red-600">{wizardError}</p> : null}
+            </div>
+
             <DialogFooter>
-              <Button type="button">Understood</Button>
+              {wizardStep > 1 ? (
+                <Button type="button" variant="outline" onClick={() => setWizardStep((prev) => (prev - 1) as 1 | 2 | 3)}>
+                  Back
+                </Button>
+              ) : null}
+
+              {wizardStep < 3 ? (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (wizardStep === 1 && !projectName.trim()) {
+                      setWizardError("Project name is required.");
+                      return;
+                    }
+                    if (wizardStep === 2 && normalizedHouseNames.length === 0) {
+                      setWizardError("Add at least one house.");
+                      return;
+                    }
+                    setWizardError(null);
+                    setWizardStep((prev) => (prev + 1) as 1 | 2 | 3);
+                  }}
+                >
+                  Next
+                </Button>
+              ) : (
+                <Button type="button" onClick={handleSubmitNewProject} disabled={!onCreateProject || isCreatingProject}>
+                  {isCreatingProject ? "Creating..." : "Create project"}
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>

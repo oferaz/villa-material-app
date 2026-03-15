@@ -1,0 +1,45 @@
+import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
+
+export interface CreateProjectWizardInput {
+  name: string;
+  clientName?: string;
+  location?: string;
+  houseNames: string[];
+}
+
+export async function createProjectWithWizard(input: CreateProjectWizardInput): Promise<string> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const projectName = input.name.trim();
+  if (!projectName) {
+    throw new Error("Project name is required.");
+  }
+
+  const houseNames = input.houseNames.map((house) => house.trim()).filter((house) => house.length > 0);
+  if (houseNames.length === 0) {
+    throw new Error("Add at least one house.");
+  }
+
+  const { data, error } = await supabase.rpc("create_project_with_owner_membership", {
+    p_name: projectName,
+    p_client_name: input.clientName?.trim() || null,
+    p_location: input.location?.trim() || null,
+    p_currency: "USD",
+    p_house_names: houseNames,
+  });
+
+  if (error) {
+    if (error.code === "42883") {
+      throw new Error("Database wizard function is missing. Apply the latest migrations and retry.");
+    }
+    throw new Error(error.message);
+  }
+
+  if (!data || typeof data !== "string") {
+    throw new Error("Project creation failed: invalid response.");
+  }
+
+  return data;
+}
