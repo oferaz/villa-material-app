@@ -33,8 +33,11 @@ export function ProjectRoomsStack({
           </div>
 
           {house.rooms.map((room) => {
-            const selectedCount = room.objects.filter((obj) => getObjectStatus(obj) === "selected").length;
-            const missingCount = room.objects.length - selectedCount;
+            const selectedCount = room.objects
+              .filter((obj) => getObjectStatus(obj) === "selected")
+              .reduce((acc, obj) => acc + Math.max(1, obj.quantity), 0);
+            const totalCount = room.objects.reduce((acc, obj) => acc + Math.max(1, obj.quantity), 0);
+            const missingCount = totalCount - selectedCount;
             const isRoomSelected = room.id === selectedRoomId;
 
             return (

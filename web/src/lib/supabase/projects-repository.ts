@@ -224,6 +224,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
                     roomId: roomObject.room_id,
                     name: roomObject.name,
                     category: roomObject.category,
+                    quantity: 1,
                     selectedProductId: selectedOption?.id,
                     productOptions: options,
                   };

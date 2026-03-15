@@ -277,6 +277,7 @@ export function createMockRoomObject(
     roomId,
     name: objectName,
     category,
+    quantity: 1,
     productOptions: buildProductOptions(objectName, basePrice, seed, budgetCategory),
   };
 }
@@ -320,6 +321,7 @@ function buildProjects(): Project[] {
                   roomId,
                   name: template.name,
                   category: template.category,
+                  quantity: 1,
                   productOptions,
                   selectedProductId: shouldStartSelected ? productOptions[0]?.id : undefined,
                 };

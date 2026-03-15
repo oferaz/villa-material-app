@@ -34,7 +34,9 @@ export function RoomObjectsList({
       <CardHeader className="pb-3">
         <div>
           <CardTitle className="text-base">Room objects</CardTitle>
-          <CardDescription>{room.objects.length} objects in scope</CardDescription>
+          <CardDescription>
+            {room.objects.reduce((acc, objectItem) => acc + Math.max(1, objectItem.quantity), 0)} total items
+          </CardDescription>
         </div>
       </CardHeader>
       <CardContent>
@@ -51,7 +53,10 @@ export function RoomObjectsList({
                   )}
                 >
                   <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelectObject(objectItem.id)}>
-                    <p className="truncate text-sm font-medium text-slate-800">{objectItem.name}</p>
+                    <p className="truncate text-sm font-medium text-slate-800">
+                      {objectItem.name}
+                      {objectItem.quantity > 1 ? ` x${objectItem.quantity}` : ""}
+                    </p>
                     <p className="text-xs text-slate-500">{objectItem.category}</p>
                   </button>
                   <Badge variant={status === "selected" ? "success" : "danger"}>{status}</Badge>

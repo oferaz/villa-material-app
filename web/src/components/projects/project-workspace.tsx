@@ -387,52 +387,106 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setPendingScrollRoomId(newRoomId);
   }
 
-  function handleAddObject(roomId: string, objectName: string, category: string, basePrice = 8500) {
+  function buildObjectInstance(
+    roomId: string,
+    objectName: string,
+    category: string,
+    basePrice: number,
+    seedSuffix: string
+  ): RoomObject {
+    if (isSupabaseConfigured) {
+      return {
+        id: `${roomId}-object-${Date.now()}-${Math.floor(Math.random() * 1000)}-${seedSuffix}`,
+        roomId,
+        name: objectName,
+        category,
+        quantity: 1,
+        productOptions: [],
+      };
+    }
+
+    return createMockRoomObject(roomId, objectName, category, basePrice, `${roomId}-${objectName}-${seedSuffix}`);
+  }
+
+  function handleAddObject(
+    roomId: string,
+    objectName: string,
+    category: string,
+    basePrice = 8500,
+    quantity = 1,
+    mode: "stack" | "separate" = "stack"
+  ) {
     const target = findRoomInProject(project, roomId);
     if (!target) {
       return;
     }
 
-    const existingNames = new Set(target.room.objects.map((item) => item.name.trim().toLowerCase()));
-    if (existingNames.has(objectName.trim().toLowerCase())) {
+    const normalizedName = objectName.trim();
+    if (!normalizedName) {
       return;
     }
 
-    const newObject = isSupabaseConfigured
-      ? {
-          id: `${roomId}-object-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          roomId,
-          name: objectName,
-          category,
-          productOptions: [],
-        }
-      : createMockRoomObject(
-          roomId,
-          objectName,
-          category,
-          basePrice,
-          `${roomId}-${objectName}-${target.room.objects.length}`
-        );
+    const safeQuantity = Math.max(1, Math.min(50, Math.round(quantity)));
+    const normalizedCategory = category.trim() || "Custom";
 
-    updateCurrentProject((targetProject) => ({
-      ...targetProject,
-      houses: targetProject.houses.map((house) => ({
-        ...house,
-        rooms: house.rooms.map((room) =>
-          room.id === roomId
-            ? {
-                ...room,
-                objects: [...room.objects, newObject],
-              }
-            : room
-        ),
-      })),
-    }));
+    const existingMatch = target.room.objects.find(
+      (item) =>
+        item.name.trim().toLowerCase() === normalizedName.toLowerCase() &&
+        item.category.trim().toLowerCase() === normalizedCategory.toLowerCase()
+    );
+
+    if (mode === "stack" && existingMatch) {
+      updateObjectById(existingMatch.id, (objectItem) => ({
+        ...objectItem,
+        quantity: Math.max(1, objectItem.quantity + safeQuantity),
+      }));
+      setActiveTab("rooms");
+      setSelectedHouseId(target.house.id);
+      setSelectedRoomId(roomId);
+      setSelectedObjectId(existingMatch.id);
+      setPendingScrollRoomId(roomId);
+      return;
+    }
+
+    const existingSameNameCount = target.room.objects.filter(
+      (item) => item.name.trim().toLowerCase() === normalizedName.toLowerCase()
+    ).length;
+
+    const newObjects: RoomObject[] = Array.from({ length: safeQuantity }, (_, index) => {
+      const finalName =
+        mode === "separate" && safeQuantity > 1
+          ? `${normalizedName} ${existingSameNameCount + index + 1}`
+          : normalizedName;
+      return buildObjectInstance(
+        roomId,
+        finalName,
+        normalizedCategory,
+        basePrice,
+        `${target.room.objects.length}-${existingSameNameCount}-${index}`
+      );
+    });
+
+    updateCurrentProject((targetProject) => {
+      return {
+        ...targetProject,
+        houses: targetProject.houses.map((house) => ({
+          ...house,
+          rooms: house.rooms.map((room) =>
+            room.id === roomId
+              ? {
+                  ...room,
+                  objects: [...room.objects, ...newObjects],
+                }
+              : room
+          ),
+        })),
+      };
+    });
 
     setActiveTab("rooms");
     setSelectedHouseId(target.house.id);
     setSelectedRoomId(roomId);
-    setSelectedObjectId(newObject.id);
+    setSelectedObjectId(newObjects[0]?.id ?? "");
     setPendingScrollRoomId(roomId);
   }
 
@@ -442,11 +496,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       return;
     }
 
-    const remainingObjects = target.room.objects.filter((obj) => obj.id !== objectId);
-    if (selectedRoomId === roomId && selectedObjectId === objectId) {
-      setSelectedObjectId(remainingObjects[0]?.id ?? "");
-    }
-
     updateCurrentProject((targetProject) => ({
       ...targetProject,
       houses: targetProject.houses.map((house) => ({
@@ -455,12 +504,28 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
           room.id === roomId
             ? {
                 ...room,
-                objects: room.objects.filter((obj) => obj.id !== objectId),
+                objects: room.objects
+                  .map((obj) =>
+                    obj.id === objectId && obj.quantity > 1 ? { ...obj, quantity: obj.quantity - 1 } : obj
+                  )
+                  .filter((obj) => !(obj.id === objectId && obj.quantity <= 1)),
               }
             : room
         ),
       })),
     }));
+
+    const removedObject = target.room.objects.find((obj) => obj.id === objectId);
+    const willFullyRemove = removedObject ? removedObject.quantity <= 1 : true;
+    const remainingObjects = willFullyRemove
+      ? target.room.objects.filter((obj) => obj.id !== objectId)
+      : target.room.objects.map((obj) =>
+          obj.id === objectId ? { ...obj, quantity: Math.max(1, obj.quantity - 1) } : obj
+        );
+
+    if (selectedRoomId === roomId && selectedObjectId === objectId && willFullyRemove) {
+      setSelectedObjectId(remainingObjects[0]?.id ?? "");
+    }
   }
 
   function handleSelectObject(houseId: string, roomId: string, objectId: string) {
@@ -646,7 +711,12 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   const totalRooms = project.houses.reduce((acc, house) => acc + house.rooms.length, 0);
   const totalObjects = project.houses.reduce(
-    (acc, house) => acc + house.rooms.reduce((roomAcc, room) => roomAcc + room.objects.length, 0),
+    (acc, house) =>
+      acc +
+      house.rooms.reduce(
+        (roomAcc, room) => roomAcc + room.objects.reduce((objAcc, objectItem) => objAcc + Math.max(1, objectItem.quantity), 0),
+        0
+      ),
     0
   );
 
@@ -699,11 +769,11 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             setAddObjectRoomId(null);
           }
         }}
-        onCreateObject={(objectName, category) => {
+        onCreateObject={(objectName, category, quantity, mode) => {
           if (!addObjectRoomId) {
             return;
           }
-          handleAddObject(addObjectRoomId, objectName, category);
+          handleAddObject(addObjectRoomId, objectName, category, 8500, quantity, mode);
           setAddObjectRoomId(null);
         }}
       />

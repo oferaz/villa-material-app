@@ -33,6 +33,7 @@ export interface RoomObject {
   roomId: UUID;
   name: string;
   category: string;
+  quantity: number;
   selectedProductId?: UUID;
   productOptions: ProductOption[];
 }

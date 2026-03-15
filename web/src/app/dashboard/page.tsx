@@ -166,7 +166,13 @@ export default function DashboardPage() {
               <p>
                 {project.houses.reduce((acc, house) => acc + house.rooms.length, 0)} rooms •{" "}
                 {project.houses.reduce(
-                  (acc, house) => acc + house.rooms.reduce((roomAcc, room) => roomAcc + room.objects.length, 0),
+                  (acc, house) =>
+                    acc +
+                    house.rooms.reduce(
+                      (roomAcc, room) =>
+                        roomAcc + room.objects.reduce((objAcc, objectItem) => objAcc + Math.max(1, objectItem.quantity), 0),
+                      0
+                    ),
                   0
                 )} objects
               </p>
