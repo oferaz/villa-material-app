@@ -13,6 +13,14 @@ interface ProfileRow {
   company_name: string | null;
 }
 
+function isPermissionError(code?: string, message?: string): boolean {
+  if (code === "42501") {
+    return true;
+  }
+  const normalized = (message ?? "").toLowerCase();
+  return normalized.includes("row-level security") || normalized.includes("permission denied");
+}
+
 export async function loadCurrentUserProfile(): Promise<UserProfileRecord | null> {
   if (!isSupabaseConfigured) {
     return null;
@@ -73,27 +81,53 @@ export async function saveCurrentUserProfile(payload: {
   const fullName = payload.fullName.trim();
   const companyName = payload.companyName.trim();
 
-  const { data, error } = await supabase
+  const { data: updatedRows, error: updateError } = await supabase
     .from("profiles")
-    .upsert(
-      {
-        id: user.id,
-        full_name: fullName || null,
-        company_name: companyName || null,
-      },
-      { onConflict: "id" }
-    )
+    .update({
+      full_name: fullName || null,
+      company_name: companyName || null,
+    })
+    .eq("id", user.id)
+    .select("id,full_name,company_name")
+    .limit(1);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  const updated = (updatedRows?.[0] as ProfileRow | undefined) ?? null;
+  if (updated) {
+    return {
+      id: updated.id,
+      email: user.email ?? "",
+      fullName: updated.full_name ?? "",
+      companyName: updated.company_name ?? "",
+    };
+  }
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("profiles")
+    .insert({
+      id: user.id,
+      full_name: fullName || null,
+      company_name: companyName || null,
+    })
     .select("id,full_name,company_name")
     .single();
 
-  if (error) {
-    throw new Error(error.message);
+  if (insertError) {
+    if (isPermissionError(insertError.code, insertError.message)) {
+      throw new Error(
+        "Profile insert is blocked by RLS. Apply migration 20260316_add_profiles_self_insert_policy.sql in Supabase."
+      );
+    }
+    throw new Error(insertError.message);
   }
 
   return {
-    id: (data as ProfileRow).id,
+    id: (inserted as ProfileRow).id,
     email: user.email ?? "",
-    fullName: (data as ProfileRow).full_name ?? "",
-    companyName: (data as ProfileRow).company_name ?? "",
+    fullName: (inserted as ProfileRow).full_name ?? "",
+    companyName: (inserted as ProfileRow).company_name ?? "",
   };
 }
