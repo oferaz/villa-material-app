@@ -804,15 +804,17 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     objectName: string,
     category: string,
     basePrice: number,
-    seedSuffix: string
+    seedSuffix: string,
+    quantity = 1
   ): RoomObject {
+    const safeQuantity = Math.max(1, Math.min(50, Math.round(quantity)));
     if (isSupabaseConfigured) {
       return {
         id: `${roomId}-object-${Date.now()}-${Math.floor(Math.random() * 1000)}-${seedSuffix}`,
         roomId,
         name: objectName,
         category,
-        quantity: 1,
+        quantity: safeQuantity,
         poApproved: false,
         ordered: false,
         installed: false,
@@ -820,7 +822,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       };
     }
 
-    return createMockRoomObject(roomId, objectName, category, basePrice, `${roomId}-${objectName}-${seedSuffix}`);
+    return {
+      ...createMockRoomObject(roomId, objectName, category, basePrice, `${roomId}-${objectName}-${seedSuffix}`),
+      quantity: safeQuantity,
+    };
   }
 
   function handleAddObject(
@@ -828,8 +833,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     objectName: string,
     category: string,
     basePrice = 8500,
-    quantity = 1,
-    mode: "stack" | "separate" = "stack"
+    quantity = 1
   ) {
     const target = findRoomInProject(project, roomId);
     if (!target) {
@@ -850,7 +854,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         item.category.trim().toLowerCase() === normalizedCategory.toLowerCase()
     );
 
-    if (mode === "stack" && existingMatch) {
+    if (existingMatch) {
       updateObjectById(existingMatch.id, (objectItem) => ({
         ...objectItem,
         quantity: Math.max(1, objectItem.quantity + safeQuantity),
@@ -863,23 +867,14 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       return;
     }
 
-    const existingSameNameCount = target.room.objects.filter(
-      (item) => item.name.trim().toLowerCase() === normalizedName.toLowerCase()
-    ).length;
-
-    const newObjects: RoomObject[] = Array.from({ length: safeQuantity }, (_, index) => {
-      const finalName =
-        mode === "separate" && safeQuantity > 1
-          ? `${normalizedName} ${existingSameNameCount + index + 1}`
-          : normalizedName;
-      return buildObjectInstance(
-        roomId,
-        finalName,
-        normalizedCategory,
-        basePrice,
-        `${target.room.objects.length}-${existingSameNameCount}-${index}`
-      );
-    });
+    const newObject = buildObjectInstance(
+      roomId,
+      normalizedName,
+      normalizedCategory,
+      basePrice,
+      `${target.room.objects.length}-${Date.now()}`,
+      safeQuantity
+    );
 
     updateCurrentProject((targetProject) => {
       return {
@@ -890,7 +885,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             room.id === roomId
               ? {
                   ...room,
-                  objects: [...room.objects, ...newObjects],
+                  objects: [...room.objects, newObject],
                 }
               : room
           ),
@@ -901,7 +896,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setActiveTab("rooms");
     setSelectedHouseId(target.house.id);
     setSelectedRoomId(roomId);
-    setSelectedObjectId(newObjects[0]?.id ?? "");
+    setSelectedObjectId(newObject.id);
     setPendingScrollRoomId(roomId);
   }
 
@@ -1311,11 +1306,11 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             setAddObjectRoomId(null);
           }
         }}
-        onCreateObject={(objectName, category, quantity, mode) => {
+        onCreateObject={(objectName, category, quantity) => {
           if (!addObjectRoomId) {
             return;
           }
-          handleAddObject(addObjectRoomId, objectName, category, 8500, quantity, mode);
+          handleAddObject(addObjectRoomId, objectName, category, 8500, quantity);
           setAddObjectRoomId(null);
         }}
       />
