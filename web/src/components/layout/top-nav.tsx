@@ -40,6 +40,18 @@ export interface NewProjectWizardPayload {
   houseSizesSqm: number[];
 }
 
+export interface TopNavSearchResultItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+}
+
+export interface TopNavSearchResultGroup {
+  key: string;
+  label: string;
+  items: TopNavSearchResultItem[];
+}
+
 interface TopNavProps {
   title: string;
   subtitle?: string;
@@ -48,6 +60,8 @@ interface TopNavProps {
   onProjectChange?: (projectId: string) => void;
   searchQuery: string;
   onSearchChange: (value: string) => void;
+  searchResultGroups?: TopNavSearchResultGroup[];
+  onSelectSearchResult?: (item: TopNavSearchResultItem) => void;
   onSignOut?: () => void;
   onCreateProject?: (payload: NewProjectWizardPayload) => Promise<void> | void;
 }
@@ -60,6 +74,8 @@ export function TopNav({
   onProjectChange,
   searchQuery,
   onSearchChange,
+  searchResultGroups = [],
+  onSelectSearchResult,
   onSignOut,
   onCreateProject,
 }: TopNavProps) {
@@ -84,7 +100,11 @@ export function TopNav({
   const [preferences, setPreferences] = useState<UserPreferences>(defaultUserPreferences);
   const [isPreferencesHydrated, setIsPreferencesHydrated] = useState(false);
   const [preferencesStatus, setPreferencesStatus] = useState<string | null>(null);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const feedbackUrl = process.env.NEXT_PUBLIC_FEEDBACK_URL?.trim() || "";
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const hasSearchResults = searchResultGroups.some((group) => group.items.length > 0);
+  const shouldShowSearchResults = hasSearchQuery && isSearchFocused;
 
   const normalizedHouseData = useMemo(
     () =>
@@ -276,14 +296,61 @@ export function TopNav({
           <div className="order-1 hidden text-sm font-semibold text-slate-700 md:block">Materia</div>
         )}
 
-        <div className="order-3 relative w-full md:order-none md:ml-auto md:max-w-xl">
+        <div
+          className="order-3 relative w-full md:order-none md:ml-auto md:max-w-xl"
+          onFocus={() => setIsSearchFocused(true)}
+          onBlur={(event) => {
+            const nextTarget = event.relatedTarget as Node | null;
+            if (!event.currentTarget.contains(nextTarget)) {
+              setIsSearchFocused(false);
+            }
+          }}
+        >
           <Search className="pointer-events-none absolute left-4 top-3 h-4 w-4 text-slate-400" />
           <Input
             value={searchQuery}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search product options..."
+            placeholder="Search project, rooms, objects, materials..."
             className="h-10 rounded-full border-slate-300 bg-slate-50 pl-10 text-sm shadow-inner focus-visible:bg-white"
+            aria-expanded={shouldShowSearchResults}
           />
+          {shouldShowSearchResults ? (
+            <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 max-h-[55vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+              {hasSearchResults ? (
+                <div className="space-y-2">
+                  {searchResultGroups.map((group) => {
+                    if (group.items.length === 0) {
+                      return null;
+                    }
+                    return (
+                      <section key={group.key} className="space-y-1">
+                        <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{group.label}</p>
+                        {group.items.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-slate-100"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                            }}
+                            onClick={() => {
+                              onSelectSearchResult?.(item);
+                              setIsSearchFocused(false);
+                            }}
+                          >
+                            <p className="truncate text-sm font-medium text-slate-800">{item.title}</p>
+                            {item.subtitle ? <p className="truncate text-xs text-slate-500">{item.subtitle}</p> : null}
+                          </button>
+                        ))}
+                      </section>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="px-2 py-3 text-sm text-slate-500">No results found.</p>
+              )}
+            </div>
+          ) : null}
         </div>
 
         <Dialog open={isWizardOpen} onOpenChange={handleWizardOpenChange}>

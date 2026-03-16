@@ -4,7 +4,12 @@ import { ComponentType, useEffect, useMemo, useState } from "react";
 import { Boxes, Info, Presentation, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
-import { NewProjectWizardPayload, TopNav } from "@/components/layout/top-nav";
+import {
+  NewProjectWizardPayload,
+  TopNav,
+  TopNavSearchResultGroup,
+  TopNavSearchResultItem,
+} from "@/components/layout/top-nav";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import { BudgetOverview } from "@/components/budget/budget-overview";
 import { MaterialsGallery } from "@/components/materials/materials-gallery";
@@ -62,6 +67,45 @@ interface ProjectWorkspaceProps {
 
 type WorkspaceTab = "rooms" | "materials" | "budget" | "client";
 const ROOM_SPY_OFFSET = 190;
+const GLOBAL_SEARCH_RESULT_LIMIT = 8;
+
+type WorkspaceSearchResultKind = "project" | "house" | "room" | "object" | "material";
+
+interface WorkspaceSearchResultAction {
+  kind: WorkspaceSearchResultKind;
+  houseId?: string;
+  roomId?: string;
+  objectId?: string;
+}
+
+interface WorkspaceSearchResultItem extends TopNavSearchResultItem {
+  action: WorkspaceSearchResultAction;
+}
+
+interface WorkspaceSearchResultGroup {
+  key: string;
+  label: string;
+  items: WorkspaceSearchResultItem[];
+}
+
+function matchesSearchTerm(query: string, values: Array<string | number | null | undefined>): boolean {
+  const tokens = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    return false;
+  }
+  const haystack = values
+    .map((value) => String(value ?? "").toLowerCase().trim())
+    .filter(Boolean)
+    .join(" ");
+  if (!haystack) {
+    return false;
+  }
+  return tokens.every((token) => haystack.includes(token));
+}
 
 function PlaceholderTab({
   title,
@@ -207,6 +251,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [preferences, setPreferences] = useState(defaultUserPreferences);
   const [workflowStageFilters, setWorkflowStageFilters] = useState<WorkflowStage[]>([]);
   const [projectSnapshots, setProjectSnapshots] = useState<ProjectSnapshotSummary[]>([]);
+  const [materialSearchResults, setMaterialSearchResults] = useState<ProductOption[]>([]);
 
   useEffect(() => {
     if (searchParams.get("onboarding") === "default-rooms") {
@@ -318,6 +363,44 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     };
   }, [isSignedIn, project?.id]);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured || !isSignedIn) {
+      setMaterialSearchResults([]);
+      return;
+    }
+
+    const trimmedQuery = searchQuery.trim();
+    if (trimmedQuery.length < 1) {
+      setMaterialSearchResults([]);
+      return;
+    }
+
+    let isCancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      void searchMaterialsForCurrentUser({
+        objectName: "Material",
+        query: trimmedQuery,
+        limit: 24,
+      })
+        .then((options) => {
+          if (!isCancelled) {
+            setMaterialSearchResults(options);
+          }
+        })
+        .catch((error) => {
+          if (!isCancelled) {
+            console.warn("Failed to run global material search.", error);
+            setMaterialSearchResults([]);
+          }
+        });
+    }, 220);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [isSignedIn, searchQuery]);
+
   const selectedHouse = useMemo(() => {
     return project?.houses.find((house) => house.id === selectedHouseId) ?? project?.houses[0];
   }, [project, selectedHouseId]);
@@ -357,6 +440,145 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
     return summarizeWorkflowForProject(project);
   }, [project]);
+
+  const workspaceSearchGroups = useMemo<WorkspaceSearchResultGroup[]>(() => {
+    const trimmedQuery = searchQuery.trim();
+    if (!project || !trimmedQuery) {
+      return [];
+    }
+
+    const projectMatches = matchesSearchTerm(trimmedQuery, [
+      project.name,
+      project.customer,
+      project.location,
+      "project",
+    ]);
+    const projectItems: WorkspaceSearchResultItem[] = projectMatches
+      ? [
+          {
+            id: `project-${project.id}`,
+            title: project.name,
+            subtitle: [project.customer || "No client", project.location || "No location"].join(" - "),
+            action: { kind: "project" },
+          },
+        ]
+      : [];
+
+    const houseItems = project.houses
+      .filter((house) => matchesSearchTerm(trimmedQuery, [house.name, house.sizeSqm, "house"]))
+      .slice(0, GLOBAL_SEARCH_RESULT_LIMIT)
+      .map<WorkspaceSearchResultItem>((house) => ({
+        id: `house-${house.id}`,
+        title: house.name,
+        subtitle: `${house.rooms.length} room${house.rooms.length === 1 ? "" : "s"}`,
+        action: { kind: "house", houseId: house.id },
+      }));
+
+    const roomItems = project.houses
+      .flatMap((house) =>
+        house.rooms.map((room) => ({
+          houseId: house.id,
+          houseName: house.name,
+          room,
+        }))
+      )
+      .filter((entry) => matchesSearchTerm(trimmedQuery, [entry.room.name, entry.room.type, entry.houseName, "room"]))
+      .slice(0, GLOBAL_SEARCH_RESULT_LIMIT)
+      .map<WorkspaceSearchResultItem>((entry) => ({
+        id: `room-${entry.room.id}`,
+        title: entry.room.name,
+        subtitle: `${entry.houseName} - ${entry.room.objects.length} object${entry.room.objects.length === 1 ? "" : "s"}`,
+        action: { kind: "room", houseId: entry.houseId, roomId: entry.room.id },
+      }));
+
+    const objectItems = project.houses
+      .flatMap((house) =>
+        house.rooms.flatMap((room) =>
+          room.objects.map((objectItem) => {
+            const selectedMaterialName =
+              objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId)?.name ?? "";
+            return {
+              houseId: house.id,
+              houseName: house.name,
+              roomId: room.id,
+              roomName: room.name,
+              objectItem,
+              selectedMaterialName,
+            };
+          })
+        )
+      )
+      .filter((entry) =>
+        matchesSearchTerm(trimmedQuery, [
+          entry.objectItem.name,
+          entry.objectItem.category,
+          entry.houseName,
+          entry.roomName,
+          entry.selectedMaterialName,
+          "object",
+        ])
+      )
+      .slice(0, GLOBAL_SEARCH_RESULT_LIMIT)
+      .map<WorkspaceSearchResultItem>((entry) => ({
+        id: `object-${entry.objectItem.id}`,
+        title: entry.objectItem.name,
+        subtitle: `${entry.houseName} / ${entry.roomName} - ${entry.objectItem.category}${
+          entry.objectItem.quantity > 1 ? ` - Qty ${entry.objectItem.quantity}` : ""
+        }`,
+        action: {
+          kind: "object",
+          houseId: entry.houseId,
+          roomId: entry.roomId,
+          objectId: entry.objectItem.id,
+        },
+      }));
+
+    const materialItems = materialSearchResults
+      .filter((item) =>
+        matchesSearchTerm(trimmedQuery, [item.name, item.supplier, item.budgetCategory, item.sku, item.sourceUrl, "material"])
+      )
+      .slice(0, GLOBAL_SEARCH_RESULT_LIMIT)
+      .map<WorkspaceSearchResultItem>((item) => ({
+        id: `material-${item.id}`,
+        title: item.name,
+        subtitle: [item.supplier, item.budgetCategory, item.price > 0 ? item.price.toLocaleString() : ""]
+          .filter(Boolean)
+          .join(" - "),
+        action: { kind: "material" },
+      }));
+
+    return [
+      { key: "project", label: "Project", items: projectItems },
+      { key: "houses", label: "Houses", items: houseItems },
+      { key: "rooms", label: "Rooms", items: roomItems },
+      { key: "objects", label: "Objects", items: objectItems },
+      { key: "materials", label: "Materials DB", items: materialItems },
+    ].filter((group) => group.items.length > 0);
+  }, [materialSearchResults, project, searchQuery]);
+
+  const topNavSearchResultGroups = useMemo<TopNavSearchResultGroup[]>(
+    () =>
+      workspaceSearchGroups.map((group) => ({
+        key: group.key,
+        label: group.label,
+        items: group.items.map((item) => ({
+          id: item.id,
+          title: item.title,
+          subtitle: item.subtitle,
+        })),
+      })),
+    [workspaceSearchGroups]
+  );
+
+  const topNavSearchActionById = useMemo(() => {
+    const actionMap = new Map<string, WorkspaceSearchResultAction>();
+    workspaceSearchGroups.forEach((group) => {
+      group.items.forEach((item) => {
+        actionMap.set(item.id, item.action);
+      });
+    });
+    return actionMap;
+  }, [workspaceSearchGroups]);
 
   const filteredHousesForRooms = useMemo(() => {
     if (!project) {
@@ -1160,6 +1382,46 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setSelectedObjectId(objectId);
   }
 
+  function handleSelectGlobalSearchResult(item: TopNavSearchResultItem) {
+    const action = topNavSearchActionById.get(item.id);
+    if (!action) {
+      return;
+    }
+
+    if (action.kind === "project") {
+      setActiveTab("rooms");
+      return;
+    }
+
+    if (action.kind === "house" && action.houseId) {
+      setActiveTab("rooms");
+      setSelectedHouseId(action.houseId);
+      const house = project?.houses.find((candidate) => candidate.id === action.houseId);
+      const firstRoom = house?.rooms[0];
+      setSelectedRoomId(firstRoom?.id ?? "");
+      setSelectedObjectId(firstRoom?.objects[0]?.id ?? "");
+      if (firstRoom?.id) {
+        setPendingScrollRoomId(firstRoom.id);
+      }
+      return;
+    }
+
+    if (action.kind === "room" && action.houseId && action.roomId) {
+      handleSelectRoom(action.houseId, action.roomId);
+      return;
+    }
+
+    if (action.kind === "object" && action.houseId && action.roomId && action.objectId) {
+      handleSelectObject(action.houseId, action.roomId, action.objectId);
+      setPendingScrollRoomId(action.roomId);
+      return;
+    }
+
+    if (action.kind === "material") {
+      setActiveTab("materials");
+    }
+  }
+
   function updateObjectById(objectId: string, updater: (objectItem: RoomObject) => RoomObject) {
     updateCurrentProject((targetProject) => ({
       ...targetProject,
@@ -1447,6 +1709,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       onProjectChange={handleProjectChange}
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
+      searchResultGroups={topNavSearchResultGroups}
+      onSelectSearchResult={handleSelectGlobalSearchResult}
       onSignOut={handleSignOut}
       onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
     />
