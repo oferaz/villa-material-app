@@ -52,6 +52,12 @@ interface DuplicateHouseInput {
   name?: string;
 }
 
+interface InviteProjectCollaboratorInput {
+  projectId: string;
+  email: string;
+  role?: "viewer" | "editor";
+}
+
 interface RoomObjectRow {
   id: string;
   room_id: string;
@@ -148,6 +154,20 @@ function hasMissingQuantityColumnError(code?: string, message?: string): boolean
   return normalizedMessage.includes("quantity");
 }
 
+function hasMissingRpcFunctionError(code?: string, message?: string, functionName?: string): boolean {
+  if (code === "PGRST202" || code === "42883") {
+    return true;
+  }
+  const normalizedMessage = (message ?? "").toLowerCase();
+  if (!normalizedMessage.includes("function")) {
+    return false;
+  }
+  if (!functionName) {
+    return normalizedMessage.includes("does not exist");
+  }
+  return normalizedMessage.includes(functionName.toLowerCase());
+}
+
 function toProductOptionFromMaterial(material: MaterialRow, objectName: string, objectCategory: string): ProductOption {
   return {
     id: material.id,
@@ -174,6 +194,18 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
 
     if (!session) {
       return [];
+    }
+
+    const { error: acceptInvitesError } = await supabase.rpc("accept_pending_project_invites");
+    if (
+      acceptInvitesError &&
+      !hasMissingRpcFunctionError(
+        acceptInvitesError.code,
+        acceptInvitesError.message,
+        "accept_pending_project_invites"
+      )
+    ) {
+      throw acceptInvitesError;
     }
 
     const { data: projectRows, error: projectError } = await supabase
@@ -518,6 +550,37 @@ export async function renameProjectById(projectId: string, nextName: string): Pr
       name: normalizedName,
     })
     .eq("id", normalizedProjectId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function inviteProjectCollaboratorByEmail({
+  projectId,
+  email,
+  role = "viewer",
+}: InviteProjectCollaboratorInput): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedProjectId = projectId.trim();
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedRole = role === "editor" ? "editor" : "viewer";
+
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+  if (!normalizedEmail) {
+    throw new Error("Collaborator email is required.");
+  }
+
+  const { error } = await supabase.rpc("invite_project_collaborator", {
+    p_project_id: normalizedProjectId,
+    p_email: normalizedEmail,
+    p_role: normalizedRole,
+  });
 
   if (error) {
     throw new Error(error.message);
