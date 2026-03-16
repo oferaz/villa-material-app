@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, MessageSquare, Plus, Search, Trash2, UserCircle2 } from "lucide-react";
 import { Project } from "@/types";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ProjectSwitcher } from "@/components/projects/project-switcher";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { loadCurrentUserProfile, saveCurrentUserProfile } from "@/lib/supabase/profile-repository";
+import { defaultUserPreferences, loadUserPreferences, saveUserPreferences, UserPreferences } from "@/lib/user-preferences";
 
 const INITIAL_HOUSE_NAME = "Main House";
 
@@ -47,7 +50,6 @@ interface TopNavProps {
   onSearchChange: (value: string) => void;
   onSignOut?: () => void;
   onCreateProject?: (payload: NewProjectWizardPayload) => Promise<void> | void;
-  onDeleteProject?: (projectId: string) => Promise<void> | void;
 }
 
 export function TopNav({
@@ -60,7 +62,6 @@ export function TopNav({
   onSearchChange,
   onSignOut,
   onCreateProject,
-  onDeleteProject,
 }: TopNavProps) {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
@@ -71,13 +72,19 @@ export function TopNav({
   const [houseSizesSqmInput, setHouseSizesSqmInput] = useState<string[]>([""]);
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
-  const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profileEmail, setProfileEmail] = useState("");
+  const [profileFullName, setProfileFullName] = useState("");
+  const [profileCompanyName, setProfileCompanyName] = useState("");
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileStatus, setProfileStatus] = useState<string | null>(null);
+  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
+  const [preferences, setPreferences] = useState<UserPreferences>(defaultUserPreferences);
+  const [isPreferencesHydrated, setIsPreferencesHydrated] = useState(false);
+  const [preferencesStatus, setPreferencesStatus] = useState<string | null>(null);
   const feedbackUrl = process.env.NEXT_PUBLIC_FEEDBACK_URL?.trim() || "";
-
-  const selectedProject = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
-    [projects, selectedProjectId]
-  );
 
   const normalizedHouseData = useMemo(
     () =>
@@ -94,6 +101,41 @@ export function TopNav({
         .filter((house) => house.name.length > 0),
     [houseNames, houseSizesSqmInput]
   );
+
+  useEffect(() => {
+    setPreferences(loadUserPreferences());
+    setIsPreferencesHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isProfileOpen) {
+      return;
+    }
+
+    setProfileError(null);
+    setProfileStatus(null);
+
+    if (!isSupabaseConfigured) {
+      setProfileEmail("");
+      setProfileFullName("");
+      setProfileCompanyName("");
+      return;
+    }
+
+    setIsProfileLoading(true);
+    void loadCurrentUserProfile()
+      .then((profile) => {
+        setProfileEmail(profile?.email ?? "");
+        setProfileFullName(profile?.fullName ?? "");
+        setProfileCompanyName(profile?.companyName ?? "");
+      })
+      .catch((error) => {
+        setProfileError(error instanceof Error ? error.message : "Failed to load profile.");
+      })
+      .finally(() => {
+        setIsProfileLoading(false);
+      });
+  }, [isProfileOpen]);
 
   function resetWizardState() {
     setWizardStep(1);
@@ -178,26 +220,34 @@ export function TopNav({
     }
   }
 
-  async function handleDeleteSelectedProject() {
-    if (!onDeleteProject || !selectedProject) {
+  async function handleSaveProfile() {
+    if (!isSupabaseConfigured) {
+      setProfileError("Supabase is not configured for this environment.");
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete "${selectedProject.name}"?\n\nThis will remove all houses, rooms, objects, and budget data in this project.`
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    setIsDeletingProject(true);
+    setProfileError(null);
+    setProfileStatus(null);
+    setIsProfileSaving(true);
     try {
-      await onDeleteProject(selectedProject.id);
+      const saved = await saveCurrentUserProfile({
+        fullName: profileFullName,
+        companyName: profileCompanyName,
+      });
+      setProfileEmail(saved.email);
+      setProfileFullName(saved.fullName);
+      setProfileCompanyName(saved.companyName);
+      setProfileStatus("Profile saved.");
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to delete project.");
+      setProfileError(error instanceof Error ? error.message : "Failed to save profile.");
     } finally {
-      setIsDeletingProject(false);
+      setIsProfileSaving(false);
     }
+  }
+
+  function handleSavePreferences() {
+    saveUserPreferences(preferences);
+    setPreferencesStatus("Preferences saved on this device.");
   }
 
   return (
@@ -385,17 +435,152 @@ export function TopNav({
           </DialogContent>
         </Dialog>
 
-        {selectedProject && onDeleteProject ? (
-          <Button
-            type="button"
-            variant="destructive"
-            className="shrink-0 whitespace-nowrap"
-            onClick={() => void handleDeleteSelectedProject()}
-            disabled={isDeletingProject}
-          >
-            {isDeletingProject ? "Deleting..." : "Delete Project"}
-          </Button>
-        ) : null}
+        <Dialog
+          open={isProfileOpen}
+          onOpenChange={(nextOpen) => {
+            setIsProfileOpen(nextOpen);
+            if (!nextOpen) {
+              setProfileError(null);
+              setProfileStatus(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Profile</DialogTitle>
+              <DialogDescription>Set your designer details used across workspace collaboration.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</span>
+                <Input value={profileEmail || "Signed in user"} readOnly disabled />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Full name</span>
+                <Input
+                  placeholder="Your full name"
+                  value={profileFullName}
+                  onChange={(event) => setProfileFullName(event.target.value)}
+                  disabled={isProfileLoading || isProfileSaving || !isSupabaseConfigured}
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Company name</span>
+                <Input
+                  placeholder="Your studio or company"
+                  value={profileCompanyName}
+                  onChange={(event) => setProfileCompanyName(event.target.value)}
+                  disabled={isProfileLoading || isProfileSaving || !isSupabaseConfigured}
+                />
+              </label>
+              {profileError ? <p className="text-sm text-red-600">{profileError}</p> : null}
+              {profileStatus ? <p className="text-sm text-green-700">{profileStatus}</p> : null}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsProfileOpen(false)}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSaveProfile()}
+                disabled={isProfileLoading || isProfileSaving || !isSupabaseConfigured}
+              >
+                {isProfileSaving ? "Saving..." : "Save profile"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={isPreferencesOpen}
+          onOpenChange={(nextOpen) => {
+            setIsPreferencesOpen(nextOpen);
+            if (!nextOpen) {
+              setPreferencesStatus(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Preferences</DialogTitle>
+              <DialogDescription>Personalize how your workspace behaves on this device.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Default currency</span>
+                <select
+                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                  value={preferences.defaultCurrency}
+                  onChange={(event) =>
+                    setPreferences((prev) => ({
+                      ...prev,
+                      defaultCurrency: event.target.value as UserPreferences["defaultCurrency"],
+                    }))
+                  }
+                  disabled={!isPreferencesHydrated}
+                >
+                  <option value="USD">USD</option>
+                  <option value="AED">AED</option>
+                  <option value="EUR">EUR</option>
+                </select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Area unit</span>
+                <select
+                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                  value={preferences.areaUnit}
+                  onChange={(event) =>
+                    setPreferences((prev) => ({
+                      ...prev,
+                      areaUnit: event.target.value as UserPreferences["areaUnit"],
+                    }))
+                  }
+                  disabled={!isPreferencesHydrated}
+                >
+                  <option value="sqm">Square meter (m2)</option>
+                  <option value="sqft">Square feet (ft2)</option>
+                </select>
+              </label>
+              <label className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2">
+                <span className="text-sm text-slate-700">Compact list density</span>
+                <input
+                  type="checkbox"
+                  checked={preferences.compactDensity}
+                  onChange={(event) =>
+                    setPreferences((prev) => ({
+                      ...prev,
+                      compactDensity: event.target.checked,
+                    }))
+                  }
+                  disabled={!isPreferencesHydrated}
+                />
+              </label>
+              <label className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2">
+                <span className="text-sm text-slate-700">Show workflow hints</span>
+                <input
+                  type="checkbox"
+                  checked={preferences.showWorkflowHints}
+                  onChange={(event) =>
+                    setPreferences((prev) => ({
+                      ...prev,
+                      showWorkflowHints: event.target.checked,
+                    }))
+                  }
+                  disabled={!isPreferencesHydrated}
+                />
+              </label>
+              {preferencesStatus ? <p className="text-sm text-green-700">{preferencesStatus}</p> : null}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsPreferencesOpen(false)}>
+                Close
+              </Button>
+              <Button type="button" onClick={handleSavePreferences} disabled={!isPreferencesHydrated}>
+                Save preferences
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Separator orientation="vertical" className="hidden h-6 md:block" />
 
@@ -409,8 +594,22 @@ export function TopNav({
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuLabel>Designer account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Profile</DropdownMenuItem>
-            <DropdownMenuItem>Preferences</DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                setIsProfileOpen(true);
+              }}
+            >
+              Profile
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                setIsPreferencesOpen(true);
+              }}
+            >
+              Preferences
+            </DropdownMenuItem>
             {feedbackUrl ? (
               <DropdownMenuItem
                 onSelect={(event) => {

@@ -9,7 +9,7 @@ import { NewProjectWizardPayload, TopNav } from "@/components/layout/top-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { deleteProjectById, loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
+import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { Project } from "@/types";
@@ -97,12 +97,6 @@ export default function DashboardPage() {
     router.push(`/projects/${projectId}?onboarding=default-rooms`);
   }
 
-  async function handleDeleteProject(projectId: string) {
-    await deleteProjectById(projectId);
-    const loadedProjects = await loadProjectsForWorkspace();
-    setProjects(loadedProjects);
-  }
-
   async function handleCreateDemoProject() {
     if (!isSupabaseConfigured || !isSignedIn || isCreatingDemoProject) {
       return;
@@ -137,7 +131,6 @@ export default function DashboardPage() {
       onSearchChange={setSearchQuery}
       onSignOut={handleSignOut}
       onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
-      onDeleteProject={isSupabaseConfigured && isSignedIn ? handleDeleteProject : undefined}
     />
   );
 

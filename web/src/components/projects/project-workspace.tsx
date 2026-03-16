@@ -1276,7 +1276,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             onSearchChange={setSearchQuery}
             onSignOut={handleSignOut}
             onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
-            onDeleteProject={isSupabaseConfigured && isSignedIn ? handleDeleteProject : undefined}
           />
         }
         main={
@@ -1318,7 +1317,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       onSearchChange={setSearchQuery}
       onSignOut={handleSignOut}
       onCreateProject={isSupabaseConfigured && isSignedIn ? handleCreateProject : undefined}
-      onDeleteProject={isSupabaseConfigured && isSignedIn ? handleDeleteProject : undefined}
     />
   );
 
@@ -1452,6 +1450,13 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       activeTab={activeTab}
       onTabChange={setActiveTab}
       onRenameProject={handleRenameProject}
+      onDeleteProject={
+        isSupabaseConfigured && isSignedIn
+          ? async () => {
+              await handleDeleteProject(project.id);
+            }
+          : undefined
+      }
       roomsContent={roomsContent}
       materialsContent={materialsContent}
       budgetContent={budgetContent}

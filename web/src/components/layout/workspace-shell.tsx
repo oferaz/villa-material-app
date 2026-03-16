@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
-import { Check, Pencil, X } from "lucide-react";
+import { Check, Pencil, Trash2, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -18,6 +18,7 @@ interface WorkspaceShellProps {
   activeTab: "rooms" | "materials" | "budget" | "client";
   onTabChange: (value: "rooms" | "materials" | "budget" | "client") => void;
   onRenameProject?: (nextName: string) => Promise<void> | void;
+  onDeleteProject?: () => Promise<void> | void;
   roomsContent: ReactNode;
   materialsContent: ReactNode;
   budgetContent: ReactNode;
@@ -34,6 +35,7 @@ export function WorkspaceShell({
   activeTab,
   onTabChange,
   onRenameProject,
+  onDeleteProject,
   roomsContent,
   materialsContent,
   budgetContent,
@@ -42,6 +44,7 @@ export function WorkspaceShell({
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(projectName);
   const [isSavingProjectName, setIsSavingProjectName] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
 
   useEffect(() => {
     if (!isEditingProjectName) {
@@ -81,6 +84,28 @@ export function WorkspaceShell({
   function handleCancelProjectRename() {
     setProjectNameDraft(projectName);
     setIsEditingProjectName(false);
+  }
+
+  async function handleDeleteProject() {
+    if (!onDeleteProject) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${projectName}"?\n\nThis will remove all houses, rooms, objects, and budget data in this project.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingProject(true);
+    try {
+      await onDeleteProject();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to delete project.");
+    } finally {
+      setIsDeletingProject(false);
+    }
   }
 
   return (
@@ -128,17 +153,31 @@ export function WorkspaceShell({
                 </Button>
               </div>
             ) : (
-              <div className="flex min-w-0 items-center gap-2">
-                <CardTitle className="truncate text-2xl">{projectName}</CardTitle>
-                {onRenameProject ? (
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <CardTitle className="truncate text-2xl">{projectName}</CardTitle>
+                  {onRenameProject ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-slate-600"
+                      onClick={() => setIsEditingProjectName(true)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                </div>
+                {onDeleteProject ? (
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-slate-600"
-                    onClick={() => setIsEditingProjectName(true)}
+                    variant="outline"
+                    className="h-8 border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800"
+                    onClick={() => void handleDeleteProject()}
+                    disabled={isDeletingProject}
                   >
-                    <Pencil className="h-4 w-4" />
+                    <Trash2 className="h-4 w-4" />
+                    {isDeletingProject ? "Deleting..." : "Delete project"}
                   </Button>
                 ) : null}
               </div>
