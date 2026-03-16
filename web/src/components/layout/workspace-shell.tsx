@@ -1,12 +1,20 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
-import { Check, Download, Pencil, Trash2, X } from "lucide-react";
+import { Check, Download, Pencil, Trash2, UserPlus, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface WorkspaceShellProps {
   projectName: string;
@@ -20,6 +28,7 @@ interface WorkspaceShellProps {
   onRenameProject?: (nextName: string) => Promise<void> | void;
   onExportProject?: () => Promise<void> | void;
   onDeleteProject?: () => Promise<void> | void;
+  onInviteCollaborator?: (email: string, role: "viewer" | "editor") => Promise<void> | void;
   roomsContent: ReactNode;
   materialsContent: ReactNode;
   budgetContent: ReactNode;
@@ -38,6 +47,7 @@ export function WorkspaceShell({
   onRenameProject,
   onExportProject,
   onDeleteProject,
+  onInviteCollaborator,
   roomsContent,
   materialsContent,
   budgetContent,
@@ -48,6 +58,10 @@ export function WorkspaceShell({
   const [isSavingProjectName, setIsSavingProjectName] = useState(false);
   const [isExportingProject, setIsExportingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"viewer" | "editor">("viewer");
+  const [isInvitingCollaborator, setIsInvitingCollaborator] = useState(false);
 
   useEffect(() => {
     if (!isEditingProjectName) {
@@ -126,6 +140,45 @@ export function WorkspaceShell({
     }
   }
 
+  function resetInviteForm() {
+    setInviteEmail("");
+    setInviteRole("viewer");
+  }
+
+  function handleInviteDialogOpenChange(nextOpen: boolean) {
+    if (isInvitingCollaborator) {
+      return;
+    }
+    setIsInviteDialogOpen(nextOpen);
+    if (!nextOpen) {
+      resetInviteForm();
+    }
+  }
+
+  async function handleInviteCollaborator() {
+    if (!onInviteCollaborator) {
+      return;
+    }
+
+    const normalizedEmail = inviteEmail.trim().toLowerCase();
+    if (!normalizedEmail) {
+      window.alert("Collaborator email is required.");
+      return;
+    }
+
+    setIsInvitingCollaborator(true);
+    try {
+      await onInviteCollaborator(normalizedEmail, inviteRole);
+      window.alert("Collaborator invited successfully.");
+      setIsInviteDialogOpen(false);
+      resetInviteForm();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to invite collaborator.");
+    } finally {
+      setIsInvitingCollaborator(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card className="border-slate-200 bg-gradient-to-r from-white to-slate-50 shadow-sm">
@@ -187,6 +240,17 @@ export function WorkspaceShell({
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {onInviteCollaborator ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 border-slate-300 text-slate-700 hover:bg-slate-100"
+                      onClick={() => setIsInviteDialogOpen(true)}
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      Invite collaborator
+                    </Button>
+                  ) : null}
                   {onExportProject ? (
                     <Button
                       type="button"
@@ -245,6 +309,66 @@ export function WorkspaceShell({
           </Tabs>
         </CardContent>
       </Card>
+
+      <Dialog open={isInviteDialogOpen} onOpenChange={handleInviteDialogOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite collaborator</DialogTitle>
+            <DialogDescription>
+              Add a team member by email so they can access this project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="invite-email" className="text-sm font-medium text-slate-700">
+                Email
+              </label>
+              <Input
+                id="invite-email"
+                type="email"
+                placeholder="friend@example.com"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                disabled={isInvitingCollaborator}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleInviteCollaborator();
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="invite-role" className="text-sm font-medium text-slate-700">
+                Role
+              </label>
+              <select
+                id="invite-role"
+                className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                value={inviteRole}
+                onChange={(event) => setInviteRole(event.target.value === "editor" ? "editor" : "viewer")}
+                disabled={isInvitingCollaborator}
+              >
+                <option value="viewer">Viewer</option>
+                <option value="editor">Editor</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleInviteDialogOpenChange(false)}
+              disabled={isInvitingCollaborator}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleInviteCollaborator()} disabled={isInvitingCollaborator}>
+              {isInvitingCollaborator ? "Inviting..." : "Send invite"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

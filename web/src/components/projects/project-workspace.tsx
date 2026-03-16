@@ -27,6 +27,7 @@ import {
   deleteRoomObjectById,
   deleteProjectById,
   duplicateHouseWithContents,
+  inviteProjectCollaboratorByEmail,
   loadProjectsForWorkspace,
   renameHouseById,
   renameProjectById,
@@ -1476,6 +1477,17 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         isSupabaseConfigured && isSignedIn
           ? async () => {
               await handleDeleteProject(project.id);
+            }
+          : undefined
+      }
+      onInviteCollaborator={
+        isSupabaseConfigured && isSignedIn
+          ? async (email, role) => {
+              await inviteProjectCollaboratorByEmail({
+                projectId: project.id,
+                email,
+                role,
+              });
             }
           : undefined
       }
