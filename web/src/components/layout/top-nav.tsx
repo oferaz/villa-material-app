@@ -252,7 +252,7 @@ export function TopNav({
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-white/95 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-[1800px] items-center gap-4 px-4 py-3 lg:px-6">
+      <div className="mx-auto flex w-full max-w-[1800px] flex-wrap items-center gap-2 px-4 py-3 md:gap-4 lg:px-6">
         <Link
           href="/dashboard"
           className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 transition hover:bg-slate-200 md:flex"
@@ -265,16 +265,18 @@ export function TopNav({
         </Link>
 
         {projects.length > 0 && selectedProjectId && onProjectChange ? (
-          <ProjectSwitcher
-            projects={projects}
-            selectedProjectId={selectedProjectId}
-            onProjectChange={onProjectChange}
-          />
+          <div className="order-1 min-w-0 flex-1 md:flex-none">
+            <ProjectSwitcher
+              projects={projects}
+              selectedProjectId={selectedProjectId}
+              onProjectChange={onProjectChange}
+            />
+          </div>
         ) : (
-          <div className="hidden text-sm font-semibold text-slate-700 md:block">Materia</div>
+          <div className="order-1 hidden text-sm font-semibold text-slate-700 md:block">Materia</div>
         )}
 
-        <div className="relative ml-auto w-full max-w-xl">
+        <div className="order-3 relative w-full md:order-none md:ml-auto md:max-w-xl">
           <Search className="pointer-events-none absolute left-4 top-3 h-4 w-4 text-slate-400" />
           <Input
             value={searchQuery}
@@ -287,7 +289,7 @@ export function TopNav({
         <Dialog open={isWizardOpen} onOpenChange={handleWizardOpenChange}>
           <DialogTrigger asChild>
             <Button
-              className="shrink-0 whitespace-nowrap border-blue-600 bg-blue-600 text-white hover:border-blue-700 hover:bg-blue-700"
+              className="order-2 shrink-0 whitespace-nowrap border-blue-600 bg-blue-600 text-white hover:border-blue-700 hover:bg-blue-700 md:order-none"
               disabled={!onCreateProject}
             >
               <Plus className="h-4 w-4" />
@@ -582,11 +584,11 @@ export function TopNav({
           </DialogContent>
         </Dialog>
 
-        <Separator orientation="vertical" className="hidden h-6 md:block" />
+        <Separator orientation="vertical" className="order-2 hidden h-6 md:block" />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Open profile menu">
+            <Button variant="ghost" size="icon" aria-label="Open profile menu" className="order-2 ml-auto md:order-none md:ml-0">
               <UserCircle2 className="h-5 w-5" />
               <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </Button>

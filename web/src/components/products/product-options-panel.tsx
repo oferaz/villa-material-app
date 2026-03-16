@@ -284,7 +284,7 @@ export function ProductOptionsPanel({
                 onChange={(event) => setLinkName(event.target.value)}
                 placeholder="Product name (optional)"
               />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <Input
                   value={linkSupplier}
                   onChange={(event) => setLinkSupplier(event.target.value)}

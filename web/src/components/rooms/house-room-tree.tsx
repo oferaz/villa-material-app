@@ -89,7 +89,7 @@ export function HouseRoomTree({
   return (
     <>
       <Sidebar className="min-h-full space-y-4 border-slate-200">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project map</p>
             <h2 className="text-sm font-semibold text-slate-800">Houses and rooms</h2>
@@ -99,11 +99,12 @@ export function HouseRoomTree({
             <Button
               type="button"
               size="sm"
-              className="border-blue-600 bg-blue-600 text-white hover:border-blue-700 hover:bg-blue-700"
+              className="border-blue-600 bg-blue-600 px-2 text-xs text-white hover:border-blue-700 hover:bg-blue-700 sm:px-3 sm:text-sm"
               onClick={() => setIsAddHouseOpen(true)}
             >
               <Plus className="h-4 w-4" />
-              Add house
+              <span className="sm:hidden">Add</span>
+              <span className="hidden sm:inline">Add house</span>
             </Button>
           </div>
         </div>

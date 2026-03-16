@@ -25,44 +25,50 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
       <div className="mx-auto w-full max-w-[1800px] p-4 lg:p-6">
         {hasSplitLayout ? (
           <>
-            <div className="fixed inset-x-4 bottom-4 z-40 flex gap-2 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur lg:hidden">
+            <div className="fixed inset-x-2 bottom-3 z-40 flex gap-1.5 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-lg backdrop-blur sm:inset-x-4 sm:bottom-4 sm:gap-2 sm:p-2 lg:hidden">
               {sidebar ? (
-                <Button type="button" variant="outline" className="flex-1 bg-white" onClick={() => setIsLeftPanelOpen(true)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 min-w-0 bg-white px-2 text-xs sm:px-3 sm:text-sm"
+                  onClick={() => setIsLeftPanelOpen(true)}
+                >
                   <Menu className="h-4 w-4" />
-                  Project Map
+                  <span className="truncate sm:hidden">Map</span>
+                  <span className="hidden truncate sm:inline">Project Map</span>
                 </Button>
               ) : null}
               {rightPanel ? (
                 <Button
                   type="button"
                   variant="outline"
-                  className="flex-1 bg-white"
+                  className="flex-1 min-w-0 bg-white px-2 text-xs sm:px-3 sm:text-sm"
                   onClick={() => setIsRightPanelOpen(true)}
                 >
                   <SlidersHorizontal className="h-4 w-4" />
-                  Options
+                  <span className="truncate">Options</span>
                 </Button>
               ) : null}
             </div>
 
             {sidebar ? (
               <Dialog open={isLeftPanelOpen} onOpenChange={setIsLeftPanelOpen}>
-                <DialogContent className="left-0 top-0 h-dvh w-[88vw] max-w-[420px] translate-x-0 translate-y-0 rounded-none border-r p-0">
+                <DialogContent className="left-0 top-0 h-dvh w-[calc(100vw-0.75rem)] max-w-[340px] translate-x-0 translate-y-0 rounded-none border-r p-0 sm:w-[88vw] sm:max-w-[420px]">
                   <DialogHeader className="border-b border-slate-200 px-4 py-3">
                     <DialogTitle className="text-base">Project Map</DialogTitle>
                   </DialogHeader>
-                  <div className="h-[calc(100dvh-58px)] overflow-y-auto p-4">{sidebar}</div>
+                  <div className="h-[calc(100dvh-58px)] overflow-x-hidden overflow-y-auto p-3 sm:p-4">{sidebar}</div>
                 </DialogContent>
               </Dialog>
             ) : null}
 
             {rightPanel ? (
               <Dialog open={isRightPanelOpen} onOpenChange={setIsRightPanelOpen}>
-                <DialogContent className="left-auto right-0 top-0 h-dvh w-[88vw] max-w-[420px] translate-x-0 translate-y-0 rounded-none border-l p-0">
+                <DialogContent className="left-auto right-0 top-0 h-dvh w-[calc(100vw-0.75rem)] max-w-[340px] translate-x-0 translate-y-0 rounded-none border-l p-0 sm:w-[88vw] sm:max-w-[420px]">
                   <DialogHeader className="border-b border-slate-200 px-4 py-3">
                     <DialogTitle className="text-base">Product Options</DialogTitle>
                   </DialogHeader>
-                  <div className="h-[calc(100dvh-58px)] overflow-y-auto p-4">{rightPanel}</div>
+                  <div className="h-[calc(100dvh-58px)] overflow-x-hidden overflow-y-auto p-3 sm:p-4">{rightPanel}</div>
                 </DialogContent>
               </Dialog>
             ) : null}

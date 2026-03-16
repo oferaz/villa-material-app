@@ -21,7 +21,7 @@ export function ProjectSwitcher({ projects, selectedProjectId, onProjectChange }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="min-w-[220px] justify-start">
+        <Button variant="outline" className="w-full min-w-0 justify-start sm:w-auto sm:min-w-[220px]">
           <span className="truncate">{selectedProject?.name || "Select project"}</span>
         </Button>
       </DropdownMenuTrigger>
