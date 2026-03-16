@@ -17,6 +17,17 @@ interface AddFromLinkPayload {
   imageUrl?: string;
 }
 
+interface LinkPreviewResult {
+  ok: boolean;
+  name?: string;
+  supplier?: string;
+  imageUrl?: string;
+  price?: number;
+  priceFound: boolean;
+  imageFound: boolean;
+  warning?: string;
+}
+
 interface ProductOptionsPanelProps {
   roomObject: RoomObject | undefined;
   globalSearchQuery: string;
@@ -39,6 +50,8 @@ export function ProductOptionsPanel({
   const [linkPrice, setLinkPrice] = useState("");
   const [linkImageUrl, setLinkImageUrl] = useState("");
   const [linkError, setLinkError] = useState("");
+  const [isFetchingLinkPreview, setIsFetchingLinkPreview] = useState(false);
+  const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
 
   useEffect(() => {
     if (!roomObject) {
@@ -53,6 +66,8 @@ export function ProductOptionsPanel({
     setLinkPrice("");
     setLinkImageUrl("");
     setLinkError("");
+    setIsFetchingLinkPreview(false);
+    setLinkPreviewMessage("");
   }, [roomObject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const visibleOptions = useMemo(() => {
@@ -92,11 +107,73 @@ export function ProductOptionsPanel({
     setCatalogQuery(nextQuery);
   }
 
-  function handleAddFromLink(event: FormEvent) {
+  async function fetchLinkDetails() {
+    const trimmedUrl = linkUrl.trim();
+    if (!trimmedUrl) {
+      setLinkError("Link is required.");
+      return false;
+    }
+    try {
+      new URL(trimmedUrl);
+    } catch {
+      setLinkError("Please enter a valid URL.");
+      return false;
+    }
+
+    setLinkError("");
+    setLinkPreviewMessage("");
+    setIsFetchingLinkPreview(true);
+    try {
+      const response = await fetch("/api/link-preview", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: trimmedUrl }),
+      });
+      const payload = (await response.json()) as LinkPreviewResult & { error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Failed to fetch link details.");
+      }
+
+      if (!linkName.trim() && payload.name) {
+        setLinkName(payload.name);
+      }
+      if (!linkSupplier.trim() && payload.supplier) {
+        setLinkSupplier(payload.supplier);
+      }
+      if (!linkPrice.trim() && typeof payload.price === "number" && payload.price > 0) {
+        setLinkPrice(String(payload.price));
+      }
+      if (!linkImageUrl.trim() && payload.imageUrl) {
+        setLinkImageUrl(payload.imageUrl);
+      }
+
+      if (payload.priceFound && payload.imageFound) {
+        setLinkPreviewMessage("Fetched price and image from link.");
+      } else if (payload.priceFound) {
+        setLinkPreviewMessage("Fetched price from link. Add image optionally.");
+      } else if (payload.imageFound) {
+        setLinkPreviewMessage("Fetched image from link. Add price manually.");
+      } else {
+        setLinkPreviewMessage(payload.warning ?? "Could not auto-fetch details. Enter manually.");
+      }
+
+      return true;
+    } catch (error) {
+      setLinkError(error instanceof Error ? error.message : "Failed to fetch link details.");
+      return false;
+    } finally {
+      setIsFetchingLinkPreview(false);
+    }
+  }
+
+  async function handleAddFromLink(event: FormEvent) {
     event.preventDefault();
     if (!roomObject) {
       return;
     }
+
     const trimmedUrl = linkUrl.trim();
     if (!trimmedUrl) {
       setLinkError("Link is required.");
@@ -111,19 +188,18 @@ export function ProductOptionsPanel({
 
     const parsedPrice = linkPrice.trim() ? Number(linkPrice.trim()) : undefined;
     if (parsedPrice === undefined || !Number.isFinite(parsedPrice) || parsedPrice <= 0) {
-      setLinkError("Price is required and must be greater than 0.");
+      setLinkError("Price is required. Click Fetch details or enter it manually.");
       return;
     }
+
     const trimmedImageUrl = linkImageUrl.trim();
-    if (!trimmedImageUrl) {
-      setLinkError("Image URL is required.");
-      return;
-    }
-    try {
-      new URL(trimmedImageUrl);
-    } catch {
-      setLinkError("Please enter a valid image URL.");
-      return;
+    if (trimmedImageUrl) {
+      try {
+        new URL(trimmedImageUrl);
+      } catch {
+        setLinkError("Please enter a valid image URL.");
+        return;
+      }
     }
 
     onAddFromLink(roomObject.id, {
@@ -131,7 +207,7 @@ export function ProductOptionsPanel({
       name: linkName.trim() || undefined,
       supplier: linkSupplier.trim() || undefined,
       price: parsedPrice,
-      imageUrl: trimmedImageUrl,
+      imageUrl: trimmedImageUrl || undefined,
     });
 
     setLinkUrl("");
@@ -140,6 +216,7 @@ export function ProductOptionsPanel({
     setLinkPrice("");
     setLinkImageUrl("");
     setLinkError("");
+    setLinkPreviewMessage("");
   }
 
   return (
@@ -179,11 +256,29 @@ export function ProductOptionsPanel({
           </p>
           <Input
             value={linkUrl}
-            onChange={(event) => setLinkUrl(event.target.value)}
+            onChange={(event) => {
+              setLinkUrl(event.target.value);
+              setLinkError("");
+              setLinkPreviewMessage("");
+            }}
             placeholder="https://supplier-site.com/product"
+            onBlur={() => {
+              if (linkUrl.trim()) {
+                void fetchLinkDetails();
+              }
+            }}
           />
           {showLinkOptionalFields ? (
             <>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                onClick={() => void fetchLinkDetails()}
+                disabled={isFetchingLinkPreview}
+              >
+                {isFetchingLinkPreview ? "Fetching details..." : "Fetch details from link"}
+              </Button>
               <Input
                 value={linkName}
                 onChange={(event) => setLinkName(event.target.value)}
@@ -198,19 +293,20 @@ export function ProductOptionsPanel({
                 <Input
                   value={linkPrice}
                   onChange={(event) => setLinkPrice(event.target.value)}
-                  placeholder="Price (required)"
+                  placeholder="Price (required if not found)"
                   inputMode="decimal"
                 />
               </div>
               <Input
                 value={linkImageUrl}
                 onChange={(event) => setLinkImageUrl(event.target.value)}
-                placeholder="Image URL (required)"
+                placeholder="Image URL (auto-filled, optional override)"
               />
             </>
           ) : (
             <p className="text-xs text-slate-500">Optional fields will appear after you paste a link.</p>
           )}
+          {linkPreviewMessage ? <p className="text-xs text-emerald-700">{linkPreviewMessage}</p> : null}
           {linkError ? <p className="text-xs text-red-600">{linkError}</p> : null}
           <Button type="submit" variant="outline" className="w-full">
             Add from link
