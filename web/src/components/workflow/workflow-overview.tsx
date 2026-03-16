@@ -1,4 +1,3 @@
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { WorkflowSummary } from "@/lib/workflow/summary";
@@ -30,19 +29,19 @@ const workflowStageConfig: Array<{
   {
     stage: "material_assigned",
     label: "assigned",
-    toneClass: "border-slate-200 bg-slate-50 text-slate-700",
+    toneClass: "border-blue-200 bg-blue-50 text-blue-700",
     countKey: "materialAssigned",
   },
   {
     stage: "po_approved",
     label: "PO approved",
-    toneClass: "border-slate-200 bg-slate-50 text-slate-700",
+    toneClass: "border-amber-200 bg-amber-50 text-amber-700",
     countKey: "poApproved",
   },
   {
     stage: "ordered",
     label: "ordered",
-    toneClass: "border-slate-200 bg-slate-50 text-slate-700",
+    toneClass: "border-violet-200 bg-violet-50 text-violet-700",
     countKey: "ordered",
   },
   {
@@ -81,11 +80,14 @@ export function WorkflowOverview({
         </div>
         <Progress value={summary.completionPercent} />
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="danger">{summary.stages.materialMissing} unassigned</Badge>
-          <Badge variant="secondary">{summary.stages.materialAssigned} assigned</Badge>
-          <Badge variant="secondary">{summary.stages.poApproved} PO</Badge>
-          <Badge variant="secondary">{summary.stages.ordered} ordered</Badge>
-          <Badge variant="success">{summary.stages.installed} installed</Badge>
+          {workflowStageConfig.map((item) => (
+            <span
+              key={item.stage}
+              className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", item.toneClass)}
+            >
+              {summary.stages[item.countKey]} {item.label}
+            </span>
+          ))}
         </div>
       </div>
     );
@@ -132,7 +134,7 @@ export function WorkflowOverview({
                   className={cn(
                     "rounded-md border px-2 py-1 text-left transition hover:shadow-sm",
                     item.toneClass,
-                    isSelected ? "border-slate-900 bg-white text-slate-900 shadow-sm" : ""
+                    isSelected ? "ring-2 ring-slate-900 ring-offset-1" : ""
                   )}
                   aria-pressed={isSelected}
                 >
