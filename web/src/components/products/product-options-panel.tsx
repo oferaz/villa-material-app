@@ -14,6 +14,7 @@ interface AddFromLinkPayload {
   name?: string;
   supplier?: string;
   price?: number;
+  imageUrl?: string;
 }
 
 interface ProductOptionsPanelProps {
@@ -38,6 +39,7 @@ export function ProductOptionsPanel({
   const [linkName, setLinkName] = useState("");
   const [linkSupplier, setLinkSupplier] = useState("");
   const [linkPrice, setLinkPrice] = useState("");
+  const [linkImageUrl, setLinkImageUrl] = useState("");
   const [linkError, setLinkError] = useState("");
 
   useEffect(() => {
@@ -51,6 +53,7 @@ export function ProductOptionsPanel({
     setLinkName("");
     setLinkSupplier("");
     setLinkPrice("");
+    setLinkImageUrl("");
     setLinkError("");
   }, [roomObject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -110,8 +113,19 @@ export function ProductOptionsPanel({
     }
 
     const parsedPrice = linkPrice.trim() ? Number(linkPrice.trim()) : undefined;
-    if (parsedPrice !== undefined && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
-      setLinkError("Price must be a valid positive number.");
+    if (parsedPrice === undefined || !Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      setLinkError("Price is required and must be greater than 0.");
+      return;
+    }
+    const trimmedImageUrl = linkImageUrl.trim();
+    if (!trimmedImageUrl) {
+      setLinkError("Image URL is required.");
+      return;
+    }
+    try {
+      new URL(trimmedImageUrl);
+    } catch {
+      setLinkError("Please enter a valid image URL.");
       return;
     }
 
@@ -120,12 +134,14 @@ export function ProductOptionsPanel({
       name: linkName.trim() || undefined,
       supplier: linkSupplier.trim() || undefined,
       price: parsedPrice,
+      imageUrl: trimmedImageUrl,
     });
 
     setLinkUrl("");
     setLinkName("");
     setLinkSupplier("");
     setLinkPrice("");
+    setLinkImageUrl("");
     setLinkError("");
   }
 
@@ -228,10 +244,15 @@ export function ProductOptionsPanel({
                 <Input
                   value={linkPrice}
                   onChange={(event) => setLinkPrice(event.target.value)}
-                  placeholder="Price (optional)"
+                  placeholder="Price (required)"
                   inputMode="decimal"
                 />
               </div>
+              <Input
+                value={linkImageUrl}
+                onChange={(event) => setLinkImageUrl(event.target.value)}
+                placeholder="Image URL (required)"
+              />
             </>
           ) : (
             <p className="text-xs text-slate-500">Optional fields will appear after you paste a link.</p>

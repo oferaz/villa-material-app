@@ -15,6 +15,13 @@ interface MaterialRow {
   updated_at?: string | null;
 }
 
+interface MaterialImageRow {
+  material_id: string;
+  image_url: string;
+  sort_order: number | null;
+  created_at: string | null;
+}
+
 interface SearchMaterialsInput {
   objectName: string;
   objectCategory?: string;
@@ -29,6 +36,7 @@ interface AddLinkMaterialInput {
   name?: string;
   supplier?: string;
   price?: number;
+  imageUrl?: string;
 }
 
 export interface UserMaterial extends ProductOption {
@@ -55,7 +63,12 @@ function normalizeBudgetCategory(
   return resolveBudgetCategory(objectName, objectCategory ?? objectName);
 }
 
-function toProductOption(row: MaterialRow, objectName: string, objectCategory?: string): ProductOption {
+function toProductOption(
+  row: MaterialRow,
+  objectName: string,
+  objectCategory?: string,
+  imageUrl?: string
+): ProductOption {
   return {
     id: row.id,
     name: row.name,
@@ -66,12 +79,13 @@ function toProductOption(row: MaterialRow, objectName: string, objectCategory?: 
     sku: row.sku ?? undefined,
     sourceType: row.source_type === "link" ? "link" : "catalog",
     sourceUrl: row.source_url ?? undefined,
+    imageUrl,
   };
 }
 
-function toUserMaterial(row: MaterialRow): UserMaterial {
+function toUserMaterial(row: MaterialRow, imageUrl?: string): UserMaterial {
   return {
-    ...toProductOption(row, row.name, row.name),
+    ...toProductOption(row, row.name, row.name, imageUrl),
     updatedAt: row.updated_at ?? undefined,
   };
 }
@@ -92,6 +106,80 @@ function deriveSupplierFromUrl(url: string): string {
 function getSafeQueryPattern(query: string): string {
   const sanitized = query.trim().replace(/[,%]/g, " ").replace(/\s+/g, " ");
   return `%${sanitized}%`;
+}
+
+async function loadPrimaryImageMap(materialIds: string[]): Promise<Record<string, string>> {
+  if (materialIds.length === 0) {
+    return {};
+  }
+
+  const { data, error } = await supabase
+    .from("material_images")
+    .select("material_id,image_url,sort_order,created_at")
+    .in("material_id", materialIds)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const imageRows = (data ?? []) as MaterialImageRow[];
+  const imageMap: Record<string, string> = {};
+  for (const imageRow of imageRows) {
+    if (!imageMap[imageRow.material_id]) {
+      imageMap[imageRow.material_id] = imageRow.image_url;
+    }
+  }
+  return imageMap;
+}
+
+async function ensureMaterialImage(materialId: string, imageUrl: string): Promise<void> {
+  const trimmedImageUrl = imageUrl.trim();
+  if (!trimmedImageUrl) {
+    return;
+  }
+
+  let parsedImageUrl: URL;
+  try {
+    parsedImageUrl = new URL(trimmedImageUrl);
+  } catch {
+    throw new Error("Please enter a valid image URL.");
+  }
+
+  const normalizedImageUrl = parsedImageUrl.toString();
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from("material_images")
+    .select("material_id,image_url,sort_order,created_at")
+    .eq("material_id", materialId)
+    .eq("image_url", normalizedImageUrl)
+    .limit(1);
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+  if ((existingRows ?? []).length > 0) {
+    return;
+  }
+
+  const { data: latestRows, error: latestError } = await supabase
+    .from("material_images")
+    .select("material_id,image_url,sort_order,created_at")
+    .eq("material_id", materialId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  if (latestError) {
+    throw new Error(latestError.message);
+  }
+  const nextSortOrder = ((latestRows?.[0]?.sort_order as number | null | undefined) ?? -1) + 1;
+
+  const { error: insertError } = await supabase.from("material_images").insert({
+    material_id: materialId,
+    image_url: normalizedImageUrl,
+    sort_order: nextSortOrder,
+  });
+  if (insertError) {
+    throw new Error(insertError.message);
+  }
 }
 
 export async function searchMaterialsForCurrentUser({
@@ -124,7 +212,8 @@ export async function searchMaterialsForCurrentUser({
   }
 
   const rows = (data ?? []) as MaterialRow[];
-  return rows.map((row) => toProductOption(row, objectName, objectCategory));
+  const imageMap = await loadPrimaryImageMap(rows.map((row) => row.id));
+  return rows.map((row) => toProductOption(row, objectName, objectCategory, imageMap[row.id]));
 }
 
 export async function listMaterialsForCurrentUser(limit = 200): Promise<UserMaterial[]> {
@@ -143,7 +232,8 @@ export async function listMaterialsForCurrentUser(limit = 200): Promise<UserMate
   }
 
   const rows = (data ?? []) as MaterialRow[];
-  return rows.map(toUserMaterial);
+  const imageMap = await loadPrimaryImageMap(rows.map((row) => row.id));
+  return rows.map((row) => toUserMaterial(row, imageMap[row.id]));
 }
 
 export async function deleteMaterialForCurrentUser(materialId: string): Promise<void> {
@@ -169,6 +259,7 @@ export async function addLinkMaterialForCurrentUser({
   name,
   supplier,
   price,
+  imageUrl,
 }: AddLinkMaterialInput): Promise<ProductOption> {
   if (!isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
@@ -201,6 +292,7 @@ export async function addLinkMaterialForCurrentUser({
   const normalizedSupplier = supplier?.trim() || deriveSupplierFromUrl(parsedUrl.toString());
   const normalizedPrice =
     typeof price === "number" && Number.isFinite(price) && price > 0 ? Math.round(price) : null;
+  const normalizedImageUrl = imageUrl?.trim() || "";
 
   const { data: existingRows, error: existingError } = await supabase
     .from("materials")
@@ -215,7 +307,11 @@ export async function addLinkMaterialForCurrentUser({
 
   const existingRow = (existingRows ?? [])[0] as MaterialRow | undefined;
   if (existingRow) {
-    return toProductOption(existingRow, objectName, objectCategory);
+    if (normalizedImageUrl) {
+      await ensureMaterialImage(existingRow.id, normalizedImageUrl);
+    }
+    const imageMap = await loadPrimaryImageMap([existingRow.id]);
+    return toProductOption(existingRow, objectName, objectCategory, imageMap[existingRow.id]);
   }
 
   const payload = {
@@ -243,5 +339,10 @@ export async function addLinkMaterialForCurrentUser({
     throw new Error(error.message);
   }
 
-  return toProductOption(data as MaterialRow, objectName, objectCategory);
+  const insertedRow = data as MaterialRow;
+  if (normalizedImageUrl) {
+    await ensureMaterialImage(insertedRow.id, normalizedImageUrl);
+  }
+  const imageMap = await loadPrimaryImageMap([insertedRow.id]);
+  return toProductOption(insertedRow, objectName, objectCategory, imageMap[insertedRow.id]);
 }

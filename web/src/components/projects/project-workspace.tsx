@@ -1065,7 +1065,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   function handleAddFromLink(
     objectId: string,
-    payload: { url: string; name?: string; supplier?: string; price?: number }
+    payload: { url: string; name?: string; supplier?: string; price?: number; imageUrl?: string }
   ) {
     const targetObject = project?.houses
       .flatMap((house) => house.rooms.flatMap((room) => room.objects))
@@ -1083,6 +1083,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         name: payload.name,
         supplier: payload.supplier,
         price: payload.price,
+        imageUrl: payload.imageUrl,
       })
         .then((savedOption) => {
           updateObjectById(objectId, (objectItem) => {
@@ -1106,6 +1107,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       name: payload.name,
       supplier: payload.supplier,
       price: payload.price,
+      imageUrl: payload.imageUrl,
       budgetCategory: resolveBudgetCategory(targetObject.name, targetObject.category),
     });
 

@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import { ProductOption } from "@/types";
 import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +19,17 @@ export function ProductOptionCard({ option, isSelected, onSelect }: ProductOptio
         isSelected ? "border-emerald-200 bg-emerald-50/70 shadow-sm" : "border-slate-200 bg-white hover:border-slate-300"
       )}
     >
-      <div className="mb-3 h-28 rounded-lg border border-slate-200 bg-gradient-to-br from-slate-100 to-slate-200" />
+      <div className="mb-3 h-28 overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-br from-slate-100 to-slate-200">
+        {option.imageUrl ? (
+          <img
+            src={option.imageUrl}
+            alt={option.name}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+        ) : null}
+      </div>
       <div className="space-y-1">
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm font-semibold text-slate-800">{option.name}</p>

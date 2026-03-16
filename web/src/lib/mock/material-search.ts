@@ -7,6 +7,7 @@ interface LinkProductInput {
   name?: string;
   supplier?: string;
   price?: number;
+  imageUrl?: string;
 }
 
 function toSlug(input: string): string {
@@ -107,6 +108,7 @@ export function buildProductOptionFromLink({
   name,
   supplier,
   price,
+  imageUrl,
   budgetCategory,
 }: LinkProductInput & { budgetCategory?: BudgetCategoryName }): ProductOption {
   const safeName = name?.trim() || `${objectName} from link`;
@@ -124,5 +126,6 @@ export function buildProductOptionFromLink({
     sku: `LINK-${hash.toString().slice(-4)}`,
     sourceType: "link",
     sourceUrl: url,
+    imageUrl: imageUrl?.trim() || undefined,
   };
 }

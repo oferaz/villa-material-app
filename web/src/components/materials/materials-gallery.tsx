@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useState } from "react";
 import { Database, ExternalLink, RefreshCcw, Trash2 } from "lucide-react";
@@ -170,6 +171,17 @@ export function MaterialsGallery({ searchQuery }: MaterialsGalleryProps) {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3 text-xs text-slate-600">
+                <div className="h-28 overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-br from-slate-100 to-slate-200">
+                  {material.imageUrl ? (
+                    <img
+                      src={material.imageUrl}
+                      alt={material.name}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : null}
+                </div>
                 <p>{material.price > 0 ? `${material.price.toLocaleString()} per unit` : "Price on request"}</p>
                 <p>Updated: {formatLastUpdated(material.updatedAt)}</p>
                 <div className="flex items-center gap-2">
