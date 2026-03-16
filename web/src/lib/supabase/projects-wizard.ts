@@ -8,6 +8,22 @@ export interface CreateProjectWizardInput {
   houseSizesSqm?: number[];
 }
 
+function isMissingSizeAwareWizardFunctionError(code?: string, message?: string): boolean {
+  if (code === "42883" || code === "PGRST202") {
+    return true;
+  }
+
+  if (!message) {
+    return false;
+  }
+
+  const normalizedMessage = message.toLowerCase();
+  return (
+    normalizedMessage.includes("create_project_with_owner_membership") &&
+    normalizedMessage.includes("schema cache")
+  );
+}
+
 export async function createProjectWithWizard(input: CreateProjectWizardInput): Promise<string> {
   if (!isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
@@ -40,7 +56,7 @@ export async function createProjectWithWizard(input: CreateProjectWizardInput): 
     p_house_sizes: houseSizesSqm,
   });
 
-  if (error?.code === "42883") {
+  if (isMissingSizeAwareWizardFunctionError(error?.code, error?.message)) {
     // Fallback for environments where the size-aware wizard migration is not applied yet.
     const fallback = await supabase.rpc("create_project_with_owner_membership", {
       p_name: projectName,
@@ -54,7 +70,7 @@ export async function createProjectWithWizard(input: CreateProjectWizardInput): 
   }
 
   if (error) {
-    if (error.code === "42883") {
+    if (isMissingSizeAwareWizardFunctionError(error.code, error.message)) {
       throw new Error("Database wizard function is missing. Apply the latest migrations and retry.");
     }
     throw new Error(error.message);

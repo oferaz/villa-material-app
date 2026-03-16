@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useMemo, useState } from "react";
-import { ChevronDown, Plus, Search, Trash2, UserCircle2 } from "lucide-react";
+import { ChevronDown, MessageSquare, Plus, Search, Trash2, UserCircle2 } from "lucide-react";
 import { Project } from "@/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,7 @@ export function TopNav({
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const feedbackUrl = process.env.NEXT_PUBLIC_FEEDBACK_URL?.trim() || "";
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
@@ -406,6 +407,17 @@ export function TopNav({
             <DropdownMenuSeparator />
             <DropdownMenuItem>Profile</DropdownMenuItem>
             <DropdownMenuItem>Preferences</DropdownMenuItem>
+            {feedbackUrl ? (
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  window.open(feedbackUrl, "_blank", "noopener,noreferrer");
+                }}
+              >
+                <MessageSquare className="h-4 w-4" />
+                Send feedback
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={(event) => {
