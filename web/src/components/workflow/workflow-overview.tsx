@@ -98,7 +98,7 @@ export function WorkflowOverview({
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
           <span className="text-[10px] font-semibold text-slate-700">{summary.completionPercent}%</span>
         </div>
-        <Progress value={summary.completionPercent} />
+        <Progress value={summary.completionPercent} className="h-1" />
         <div className="grid grid-cols-2 gap-x-2 gap-y-1 sm:grid-cols-5">
           {workflowStageConfig.map((item) => {
             const count = summary.stages[item.countKey];
@@ -109,7 +109,7 @@ export function WorkflowOverview({
                   <span className="font-medium text-slate-700">{item.label}</span>
                   <span className="font-semibold text-slate-600">{getStageRatio(summary, count)}</span>
                 </div>
-                <div className={cn("h-1 overflow-hidden rounded-full border border-slate-200/80 bg-slate-100", item.toneClass)}>
+                <div className={cn("h-0.5 overflow-hidden rounded-full bg-slate-100", item.toneClass)}>
                   <div className={cn("h-full", item.fillClass)} style={{ width: `${fillPercent}%` }} />
                 </div>
               </div>
