@@ -96,7 +96,12 @@ export function HouseRoomTree({
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{houses.length}</span>
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddHouseOpen(true)}>
+            <Button
+              type="button"
+              size="sm"
+              className="border-blue-600 bg-blue-600 text-white hover:border-blue-700 hover:bg-blue-700"
+              onClick={() => setIsAddHouseOpen(true)}
+            >
               <Plus className="h-4 w-4" />
               Add house
             </Button>
@@ -114,8 +119,9 @@ export function HouseRoomTree({
               <section
                 key={house.id}
                 className={cn(
-                  "rounded-xl border bg-slate-50/70 transition",
-                  isHouseSelected ? `${houseColor.softBorder} ${houseColor.softBg} shadow-sm` : "border-slate-200"
+                  "rounded-xl border transition",
+                  `${houseColor.softBorder} ${houseColor.softBg}`,
+                  isHouseSelected ? "shadow-sm ring-1 ring-slate-200" : ""
                 )}
               >
                 <div className="flex items-center justify-between px-3 py-2">
@@ -209,10 +215,11 @@ export function HouseRoomTree({
                           <li key={room.id}>
                             <div
                               className={cn(
-                                "flex items-center gap-2 rounded-md border px-2 py-1.5 transition",
+                                "flex items-center gap-2 rounded-md border-y border-r border-l-4 px-2 py-1.5 transition",
                                 isSelected
                                   ? `${houseColor.softBorder} ${houseColor.softBg}`
-                                  : "border-transparent bg-white hover:border-slate-200"
+                                  : "border-r-slate-200 border-y-slate-200 bg-white hover:bg-slate-50",
+                                houseColor.roomRail
                               )}
                               onClick={() => onSelectRoom(house.id, room.id)}
                             >
@@ -245,12 +252,13 @@ export function HouseRoomTree({
                                 <>
                                   <button
                                     type="button"
-                                    className="min-w-0 flex-1 truncate text-left text-sm text-slate-700"
+                                    className="inline-flex min-w-0 flex-1 items-center gap-2 truncate text-left text-sm text-slate-700"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       onSelectRoom(house.id, room.id);
                                     }}
                                   >
+                                    <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", houseColor.dot)} />
                                     {room.name}
                                   </button>
                                   {room.sizeSqm ? <span className="text-[11px] text-slate-500">{room.sizeSqm} m2</span> : null}

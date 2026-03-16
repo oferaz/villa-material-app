@@ -236,7 +236,11 @@ export function TopNav({
 
         <Dialog open={isWizardOpen} onOpenChange={handleWizardOpenChange}>
           <DialogTrigger asChild>
-            <Button variant="outline" className="shrink-0 whitespace-nowrap" disabled={!onCreateProject}>
+            <Button
+              className="shrink-0 whitespace-nowrap border-blue-600 bg-blue-600 text-white hover:border-blue-700 hover:bg-blue-700"
+              disabled={!onCreateProject}
+            >
+              <Plus className="h-4 w-4" />
               New Project
             </Button>
           </DialogTrigger>

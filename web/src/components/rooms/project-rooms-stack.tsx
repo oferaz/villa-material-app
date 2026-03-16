@@ -60,8 +60,9 @@ export function ProjectRoomsStack({
                 data-house-id={house.id}
                 data-room-id={room.id}
                 className={cn(
-                  "scroll-mt-28 space-y-3 rounded-2xl border p-3 transition sm:p-4",
-                  isRoomSelected ? `${houseColor.softBorder} ${houseColor.softBg} shadow-sm` : "border-slate-200 bg-white"
+                  "scroll-mt-28 space-y-3 rounded-2xl border-y border-r border-l-4 p-3 transition sm:p-4",
+                  isRoomSelected ? `${houseColor.softBorder} ${houseColor.softBg} shadow-sm` : "border-slate-200 bg-white",
+                  houseColor.roomRail
                 )}
               >
                 <RoomHeader house={house} room={room} selectedCount={selectedCount} missingCount={missingCount} />
