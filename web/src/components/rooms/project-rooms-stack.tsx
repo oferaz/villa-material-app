@@ -5,7 +5,7 @@ import { RoomObjectsList } from "@/components/rooms/room-objects-list";
 import { WorkflowOverview } from "@/components/workflow/workflow-overview";
 import { cn } from "@/lib/utils";
 import { getHouseColor } from "@/lib/ui/house-colors";
-import { summarizeWorkflowForRoom } from "@/lib/workflow/summary";
+import { summarizeWorkflowForHouse, summarizeWorkflowForRoom } from "@/lib/workflow/summary";
 
 interface ProjectRoomsStackProps {
   houses: House[];
@@ -37,6 +37,7 @@ export function ProjectRoomsStack({
     <div className="space-y-6">
       {houses.map((house, houseIndex) => {
         const houseColor = getHouseColor(house.id, houseIndex);
+        const houseWorkflowSummary = summarizeWorkflowForHouse(house);
         return (
         <section key={house.id} className="space-y-4">
           <div className={cn("rounded-xl border px-4 py-3", houseColor.softBorder, houseColor.softBg)}>
@@ -47,6 +48,7 @@ export function ProjectRoomsStack({
             </h3>
             {house.sizeSqm ? <p className="text-xs text-slate-500">{house.sizeSqm} m2</p> : null}
           </div>
+          <WorkflowOverview title={`${house.name} progress`} summary={houseWorkflowSummary} compact />
 
           {house.rooms.map((room) => {
             const roomWorkflowSummary = summarizeWorkflowForRoom(room);

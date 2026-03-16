@@ -52,6 +52,55 @@ const workflowStageConfig: Array<{
   },
 ];
 
+function getStageCompleted(summary: WorkflowSummary, stage: WorkflowStage): boolean {
+  if (summary.totalItems <= 0) {
+    return false;
+  }
+
+  const { materialMissing, materialAssigned, poApproved, installed } = summary.stages;
+
+  switch (stage) {
+    case "material_missing":
+      return materialMissing === 0;
+    case "material_assigned":
+      return materialMissing + materialAssigned === 0;
+    case "po_approved":
+      return materialMissing + materialAssigned + poApproved === 0;
+    case "ordered":
+      return materialMissing + materialAssigned + poApproved === 0;
+    case "installed":
+      return installed === summary.totalItems;
+    default:
+      return false;
+  }
+}
+
+function getWorkflowFeedback(summary: WorkflowSummary): string {
+  if (summary.totalItems <= 0) {
+    return "Start by adding objects to this scope.";
+  }
+
+  const { materialMissing, materialAssigned, poApproved, ordered, installed } = summary.stages;
+
+  if (installed === summary.totalItems) {
+    return "V Great work. All objects are installed.";
+  }
+  if (ordered > 0) {
+    return `V Ordering stage done. ${ordered} item(s) are waiting for installation.`;
+  }
+  if (poApproved > 0) {
+    return `V PO approval stage done. ${poApproved} item(s) are ready to order.`;
+  }
+  if (materialAssigned > 0) {
+    return `V Material assignment done. ${materialAssigned} item(s) are waiting for PO approval.`;
+  }
+  if (materialMissing > 0) {
+    return `${materialMissing} item(s) still need material assignment.`;
+  }
+
+  return "Progress is moving forward.";
+}
+
 function getWorkflowFilterSummary(selectedStages: WorkflowStage[]): string {
   if (selectedStages.length === 0) {
     return "Showing all statuses";
@@ -80,15 +129,20 @@ export function WorkflowOverview({
         </div>
         <Progress value={summary.completionPercent} />
         <div className="flex flex-wrap items-center gap-1.5">
-          {workflowStageConfig.map((item) => (
-            <span
-              key={item.stage}
-              className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", item.toneClass)}
-            >
-              {summary.stages[item.countKey]} {item.label}
-            </span>
-          ))}
+          {workflowStageConfig.map((item) => {
+            const stageCompleted = getStageCompleted(summary, item.stage);
+            return (
+              <span
+                key={item.stage}
+                className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", item.toneClass)}
+              >
+                {stageCompleted ? "V " : ""}
+                {summary.stages[item.countKey]} {item.label}
+              </span>
+            );
+          })}
         </div>
+        <p className="text-[11px] text-slate-500">{getWorkflowFeedback(summary)}</p>
       </div>
     );
   }
@@ -124,6 +178,7 @@ export function WorkflowOverview({
             const count = summary.stages[item.countKey];
             const isSelected = selectedStages.includes(item.stage);
             const isInteractive = Boolean(onToggleStage);
+            const stageCompleted = getStageCompleted(summary, item.stage);
 
             if (isInteractive) {
               return (
@@ -138,6 +193,7 @@ export function WorkflowOverview({
                   )}
                   aria-pressed={isSelected}
                 >
+                  {stageCompleted ? "V " : ""}
                   {count} {item.label}
                 </button>
               );
@@ -145,14 +201,13 @@ export function WorkflowOverview({
 
             return (
               <div key={item.stage} className={cn("rounded-md border px-2 py-1", item.toneClass)}>
+                {stageCompleted ? "V " : ""}
                 {count} {item.label}
               </div>
             );
           })}
         </div>
-        <p className="text-xs text-slate-500">
-          Remaining work: {summary.actionsRemaining} actions (assign, approve, order, install).
-        </p>
+        <p className="text-xs text-slate-500">{getWorkflowFeedback(summary)}</p>
       </CardContent>
     </Card>
   );
