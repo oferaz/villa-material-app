@@ -38,6 +38,7 @@ import {
 import { summarizeWorkflowForProject } from "@/lib/workflow/summary";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { exportProjectToExcel } from "@/lib/export/project-excel";
+import { defaultUserPreferences, loadUserPreferences, USER_PREFERENCES_EVENT } from "@/lib/user-preferences";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
 interface ProjectWorkspaceProps {
@@ -188,12 +189,28 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [addObjectRoomId, setAddObjectRoomId] = useState<string | null>(null);
   const [pendingScrollRoomId, setPendingScrollRoomId] = useState<string | null>(null);
   const [showDefaultStructureNotice, setShowDefaultStructureNotice] = useState(false);
+  const [preferences, setPreferences] = useState(defaultUserPreferences);
 
   useEffect(() => {
     if (searchParams.get("onboarding") === "default-rooms") {
       setShowDefaultStructureNotice(true);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const syncPreferences = () => {
+      setPreferences(loadUserPreferences());
+    };
+
+    syncPreferences();
+    window.addEventListener(USER_PREFERENCES_EVENT, syncPreferences);
+    window.addEventListener("storage", syncPreferences);
+
+    return () => {
+      window.removeEventListener(USER_PREFERENCES_EVENT, syncPreferences);
+      window.removeEventListener("storage", syncPreferences);
+    };
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1377,6 +1394,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         houses={project.houses}
         selectedRoomId={selectedRoom?.id ?? ""}
         selectedObjectId={selectedObject?.id ?? ""}
+        showWorkflowHints={preferences.showWorkflowHints}
         onAddSuggestion={(roomId, objectName, category, basePrice) => handleAddObject(roomId, objectName, category, basePrice)}
         onSelectObject={handleSelectObject}
         onDeleteObject={handleDeleteObject}

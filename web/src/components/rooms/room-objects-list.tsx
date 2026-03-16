@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react";
-import { Room, getObjectStatus, getObjectWorkflowStage, getWorkflowStageLabel } from "@/types";
+import { Room, getObjectWorkflowStage, getWorkflowStageLabel } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 interface RoomObjectsListProps {
   room?: Room;
   selectedObjectId: string;
+  showWorkflowHints: boolean;
   onSelectObject: (objectId: string) => void;
   onDeleteObject: (objectId: string) => void;
   onUpdateWorkflow: (
@@ -19,6 +20,7 @@ interface RoomObjectsListProps {
 export function RoomObjectsList({
   room,
   selectedObjectId,
+  showWorkflowHints,
   onSelectObject,
   onDeleteObject,
   onUpdateWorkflow,
@@ -47,15 +49,15 @@ export function RoomObjectsList({
       <CardContent>
         <ul className="space-y-2">
           {room.objects.map((objectItem) => {
-            const status = getObjectStatus(objectItem);
             const workflowStage = getObjectWorkflowStage(objectItem);
             const isSelected = selectedObjectId === objectItem.id;
             const hasMaterial = Boolean(objectItem.selectedProductId);
+            const showWorkflowActions = showWorkflowHints || isSelected;
             return (
               <li key={objectItem.id}>
                 <div
                   className={cn(
-                    "flex items-center gap-2 rounded-lg border px-3 py-2 transition",
+                    "flex items-start gap-2 rounded-lg border px-3 py-2 transition",
                     isSelected ? "border-primary bg-blue-50 shadow-sm" : "border-slate-200 bg-white"
                   )}
                 >
@@ -68,52 +70,56 @@ export function RoomObjectsList({
                       <p className="text-xs text-slate-500">{objectItem.category}</p>
                     </button>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <Badge variant={status === "selected" ? "success" : "danger"}>{status}</Badge>
                       <Badge variant="outline">{getWorkflowStageLabel(workflowStage)}</Badge>
+                      {!hasMaterial ? <Badge variant="danger">Needs material</Badge> : null}
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={objectItem.poApproved ? "default" : "outline"}
-                        className="h-7 px-2 text-xs"
-                        disabled={!hasMaterial || Boolean(objectItem.poApproved)}
-                        onClick={() => onUpdateWorkflow(objectItem.id, { poApproved: true })}
-                      >
-                        Approve PO
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={objectItem.ordered ? "default" : "outline"}
-                        className="h-7 px-2 text-xs"
-                        disabled={!hasMaterial || !Boolean(objectItem.poApproved) || Boolean(objectItem.ordered)}
-                        onClick={() => onUpdateWorkflow(objectItem.id, { ordered: true })}
-                      >
-                        Ordered
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={objectItem.installed ? "default" : "outline"}
-                        className="h-7 px-2 text-xs"
-                        disabled={!hasMaterial || !Boolean(objectItem.ordered) || Boolean(objectItem.installed)}
-                        onClick={() => onUpdateWorkflow(objectItem.id, { installed: true })}
-                      >
-                        Installed
-                      </Button>
-                      {(objectItem.poApproved || objectItem.ordered || objectItem.installed) ? (
+                    {showWorkflowActions ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
                         <Button
                           type="button"
                           size="sm"
-                          variant="ghost"
+                          variant={objectItem.poApproved ? "default" : "outline"}
                           className="h-7 px-2 text-xs"
-                          onClick={() => onUpdateWorkflow(objectItem.id, { poApproved: false })}
+                          disabled={!hasMaterial || Boolean(objectItem.poApproved)}
+                          onClick={() => onUpdateWorkflow(objectItem.id, { poApproved: true })}
                         >
-                          Reset
+                          Approve PO
                         </Button>
-                      ) : null}
-                    </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={objectItem.ordered ? "default" : "outline"}
+                          className="h-7 px-2 text-xs"
+                          disabled={!hasMaterial || !Boolean(objectItem.poApproved) || Boolean(objectItem.ordered)}
+                          onClick={() => onUpdateWorkflow(objectItem.id, { ordered: true })}
+                        >
+                          Ordered
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={objectItem.installed ? "default" : "outline"}
+                          className="h-7 px-2 text-xs"
+                          disabled={!hasMaterial || !Boolean(objectItem.ordered) || Boolean(objectItem.installed)}
+                          onClick={() => onUpdateWorkflow(objectItem.id, { installed: true })}
+                        >
+                          Installed
+                        </Button>
+                        {(objectItem.poApproved || objectItem.ordered || objectItem.installed) ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => onUpdateWorkflow(objectItem.id, { poApproved: false })}
+                          >
+                            Reset
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-400">Select this object to update workflow</p>
+                    )}
                   </div>
                   <Button
                     type="button"

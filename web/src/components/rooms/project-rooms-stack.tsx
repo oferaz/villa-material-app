@@ -5,12 +5,13 @@ import { RoomObjectsList } from "@/components/rooms/room-objects-list";
 import { WorkflowOverview } from "@/components/workflow/workflow-overview";
 import { cn } from "@/lib/utils";
 import { getHouseColor } from "@/lib/ui/house-colors";
-import { summarizeWorkflowForHouse, summarizeWorkflowForRoom } from "@/lib/workflow/summary";
+import { summarizeWorkflowForRoom } from "@/lib/workflow/summary";
 
 interface ProjectRoomsStackProps {
   houses: House[];
   selectedRoomId: string;
   selectedObjectId: string;
+  showWorkflowHints: boolean;
   onAddSuggestion: (roomId: string, objectName: string, category: string, basePrice: number) => void;
   onSelectObject: (houseId: string, roomId: string, objectId: string) => void;
   onDeleteObject: (roomId: string, objectId: string) => void;
@@ -25,6 +26,7 @@ export function ProjectRoomsStack({
   houses,
   selectedRoomId,
   selectedObjectId,
+  showWorkflowHints,
   onAddSuggestion,
   onSelectObject,
   onDeleteObject,
@@ -35,7 +37,6 @@ export function ProjectRoomsStack({
     <div className="space-y-6">
       {houses.map((house, houseIndex) => {
         const houseColor = getHouseColor(house.id, houseIndex);
-        const houseWorkflowSummary = summarizeWorkflowForHouse(house);
         return (
         <section key={house.id} className="space-y-4">
           <div className={cn("rounded-xl border px-4 py-3", houseColor.softBorder, houseColor.softBg)}>
@@ -46,7 +47,6 @@ export function ProjectRoomsStack({
             </h3>
             {house.sizeSqm ? <p className="text-xs text-slate-500">{house.sizeSqm} m2</p> : null}
           </div>
-          <WorkflowOverview title={`${house.name} progress`} summary={houseWorkflowSummary} compact />
 
           {house.rooms.map((room) => {
             const roomWorkflowSummary = summarizeWorkflowForRoom(room);
@@ -71,7 +71,9 @@ export function ProjectRoomsStack({
                 )}
               >
                 <RoomHeader house={house} room={room} selectedCount={selectedCount} missingCount={missingCount} />
-                <WorkflowOverview title={`${room.name} progress`} summary={roomWorkflowSummary} compact />
+                {(showWorkflowHints || isRoomSelected) ? (
+                  <WorkflowOverview title={`${room.name} progress`} summary={roomWorkflowSummary} compact />
+                ) : null}
                 <SuggestedObjects
                   room={room}
                   onAddSuggestion={(objectName, category, basePrice) =>
@@ -82,6 +84,7 @@ export function ProjectRoomsStack({
                 <RoomObjectsList
                   room={room}
                   selectedObjectId={selectedObjectId}
+                  showWorkflowHints={showWorkflowHints}
                   onSelectObject={(objectId) => onSelectObject(house.id, room.id, objectId)}
                   onDeleteObject={(objectId) => onDeleteObject(room.id, objectId)}
                   onUpdateWorkflow={onUpdateWorkflow}

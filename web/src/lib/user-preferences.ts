@@ -6,6 +6,7 @@ export interface UserPreferences {
 }
 
 const STORAGE_KEY = "materia:user-preferences:v1";
+export const USER_PREFERENCES_EVENT = "materia:user-preferences-changed";
 
 export const defaultUserPreferences: UserPreferences = {
   defaultCurrency: "USD",
@@ -57,4 +58,5 @@ export function saveUserPreferences(preferences: UserPreferences): void {
   }
 
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+  window.dispatchEvent(new Event(USER_PREFERENCES_EVENT));
 }
