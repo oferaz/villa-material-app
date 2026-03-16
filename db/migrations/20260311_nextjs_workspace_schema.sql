@@ -104,6 +104,7 @@ create table if not exists public.room_objects (
   room_id uuid not null references public.rooms(id) on delete cascade,
   name text not null,
   category text not null,
+  quantity integer not null default 1 check (quantity > 0),
   material_search_query text,
   selected_material_id uuid,
   po_approved boolean not null default false,

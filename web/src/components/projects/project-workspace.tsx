@@ -21,14 +21,17 @@ import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { addLinkMaterialForCurrentUser, searchMaterialsForCurrentUser } from "@/lib/supabase/materials-repository";
 import {
+  createRoomObjectForRoom,
   createHouseForProject,
   createRoomForHouse,
+  deleteRoomObjectById,
   deleteProjectById,
   duplicateHouseWithContents,
   loadProjectsForWorkspace,
   renameHouseById,
   renameProjectById,
   renameRoomById,
+  updateRoomObjectQuantityById,
   updateRoomObjectSelectedMaterialById,
   updateRoomObjectWorkflowById,
 } from "@/lib/supabase/projects-repository";
@@ -855,15 +858,27 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     );
 
     if (existingMatch) {
+      const nextQuantity = Math.max(1, existingMatch.quantity + safeQuantity);
+      const previousQuantity = existingMatch.quantity;
       updateObjectById(existingMatch.id, (objectItem) => ({
         ...objectItem,
-        quantity: Math.max(1, objectItem.quantity + safeQuantity),
+        quantity: nextQuantity,
       }));
       setActiveTab("rooms");
       setSelectedHouseId(target.house.id);
       setSelectedRoomId(roomId);
       setSelectedObjectId(existingMatch.id);
       setPendingScrollRoomId(roomId);
+
+      if (isSupabaseConfigured) {
+        void updateRoomObjectQuantityById(existingMatch.id, nextQuantity).catch((error) => {
+          updateObjectById(existingMatch.id, (objectItem) => ({
+            ...objectItem,
+            quantity: previousQuantity,
+          }));
+          window.alert(error instanceof Error ? error.message : "Failed to save object quantity.");
+        });
+      }
       return;
     }
 
@@ -898,11 +913,52 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setSelectedRoomId(roomId);
     setSelectedObjectId(newObject.id);
     setPendingScrollRoomId(roomId);
+
+    if (isSupabaseConfigured) {
+      void createRoomObjectForRoom({
+        roomId,
+        name: normalizedName,
+        category: normalizedCategory,
+        quantity: safeQuantity,
+      })
+        .then((savedObject) => {
+          updateObjectById(newObject.id, () => ({
+            ...savedObject,
+            productOptions: [],
+          }));
+
+          setSelectedObjectId((currentSelectedId) => (currentSelectedId === newObject.id ? savedObject.id : currentSelectedId));
+        })
+        .catch((error) => {
+          updateCurrentProject((targetProject) => ({
+            ...targetProject,
+            houses: targetProject.houses.map((house) => ({
+              ...house,
+              rooms: house.rooms.map((room) =>
+                room.id === roomId
+                  ? {
+                      ...room,
+                      objects: room.objects.filter((item) => item.id !== newObject.id),
+                    }
+                  : room
+              ),
+            })),
+          }));
+          setSelectedObjectId("");
+          window.alert(error instanceof Error ? error.message : "Failed to create room object.");
+        });
+    }
   }
 
   function handleDeleteObject(roomId: string, objectId: string) {
     const target = findRoomInProject(project, roomId);
     if (!target) {
+      return;
+    }
+
+    const previousObjects = target.room.objects;
+    const removedObject = previousObjects.find((obj) => obj.id === objectId);
+    if (!removedObject) {
       return;
     }
 
@@ -925,16 +981,43 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       })),
     }));
 
-    const removedObject = target.room.objects.find((obj) => obj.id === objectId);
     const willFullyRemove = removedObject ? removedObject.quantity <= 1 : true;
     const remainingObjects = willFullyRemove
-      ? target.room.objects.filter((obj) => obj.id !== objectId)
-      : target.room.objects.map((obj) =>
+      ? previousObjects.filter((obj) => obj.id !== objectId)
+      : previousObjects.map((obj) =>
           obj.id === objectId ? { ...obj, quantity: Math.max(1, obj.quantity - 1) } : obj
         );
 
     if (selectedRoomId === roomId && selectedObjectId === objectId && willFullyRemove) {
       setSelectedObjectId(remainingObjects[0]?.id ?? "");
+    }
+
+    if (isSupabaseConfigured) {
+      const persistPromise = willFullyRemove
+        ? deleteRoomObjectById(objectId)
+        : updateRoomObjectQuantityById(objectId, Math.max(1, removedObject.quantity - 1));
+
+      void persistPromise.catch((error) => {
+        updateCurrentProject((targetProject) => ({
+          ...targetProject,
+          houses: targetProject.houses.map((house) => ({
+            ...house,
+            rooms: house.rooms.map((room) =>
+              room.id === roomId
+                ? {
+                    ...room,
+                    objects: previousObjects,
+                  }
+                : room
+            ),
+          })),
+        }));
+
+        if (selectedRoomId === roomId && !selectedObjectId) {
+          setSelectedObjectId(previousObjects[0]?.id ?? "");
+        }
+        window.alert(error instanceof Error ? error.message : "Failed to delete room object.");
+      });
     }
   }
 
