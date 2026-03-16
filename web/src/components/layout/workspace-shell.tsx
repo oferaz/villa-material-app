@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { Check, Download, Pencil, Trash2, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -18,6 +18,7 @@ interface WorkspaceShellProps {
   activeTab: "rooms" | "materials" | "budget" | "client";
   onTabChange: (value: "rooms" | "materials" | "budget" | "client") => void;
   onRenameProject?: (nextName: string) => Promise<void> | void;
+  onExportProject?: () => Promise<void> | void;
   onDeleteProject?: () => Promise<void> | void;
   roomsContent: ReactNode;
   materialsContent: ReactNode;
@@ -35,6 +36,7 @@ export function WorkspaceShell({
   activeTab,
   onTabChange,
   onRenameProject,
+  onExportProject,
   onDeleteProject,
   roomsContent,
   materialsContent,
@@ -44,6 +46,7 @@ export function WorkspaceShell({
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(projectName);
   const [isSavingProjectName, setIsSavingProjectName] = useState(false);
+  const [isExportingProject, setIsExportingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
 
   useEffect(() => {
@@ -108,6 +111,21 @@ export function WorkspaceShell({
     }
   }
 
+  async function handleExportProject() {
+    if (!onExportProject) {
+      return;
+    }
+
+    setIsExportingProject(true);
+    try {
+      await onExportProject();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to export project.");
+    } finally {
+      setIsExportingProject(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card className="border-slate-200 bg-gradient-to-r from-white to-slate-50 shadow-sm">
@@ -153,7 +171,7 @@ export function WorkspaceShell({
                 </Button>
               </div>
             ) : (
-              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 items-center gap-2">
                   <CardTitle className="truncate text-2xl">{projectName}</CardTitle>
                   {onRenameProject ? (
@@ -168,18 +186,32 @@ export function WorkspaceShell({
                     </Button>
                   ) : null}
                 </div>
-                {onDeleteProject ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-8 border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800"
-                    onClick={() => void handleDeleteProject()}
-                    disabled={isDeletingProject}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    {isDeletingProject ? "Deleting..." : "Delete project"}
-                  </Button>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {onExportProject ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 border-slate-300 text-slate-700 hover:bg-slate-100"
+                      onClick={() => void handleExportProject()}
+                      disabled={isExportingProject}
+                    >
+                      <Download className="h-4 w-4" />
+                      {isExportingProject ? "Exporting..." : "Export Excel"}
+                    </Button>
+                  ) : null}
+                  {onDeleteProject ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800"
+                      onClick={() => void handleDeleteProject()}
+                      disabled={isDeletingProject}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {isDeletingProject ? "Deleting..." : "Delete project"}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             )}
           </div>
