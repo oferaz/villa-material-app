@@ -18,87 +18,58 @@ const workflowStageConfig: Array<{
   stage: WorkflowStage;
   label: string;
   toneClass: string;
+  fillClass: string;
   countKey: keyof WorkflowSummary["stages"];
 }> = [
   {
     stage: "material_missing",
     label: "unassigned",
-    toneClass: "border-red-200 bg-red-50 text-red-700",
+    toneClass: "border-red-200 bg-red-50/70 text-red-800",
+    fillClass: "bg-red-500",
     countKey: "materialMissing",
   },
   {
     stage: "material_assigned",
     label: "assigned",
-    toneClass: "border-blue-200 bg-blue-50 text-blue-700",
+    toneClass: "border-blue-200 bg-blue-50/70 text-blue-800",
+    fillClass: "bg-blue-500",
     countKey: "materialAssigned",
   },
   {
     stage: "po_approved",
     label: "PO approved",
-    toneClass: "border-amber-200 bg-amber-50 text-amber-700",
+    toneClass: "border-amber-200 bg-amber-50/70 text-amber-800",
+    fillClass: "bg-amber-500",
     countKey: "poApproved",
   },
   {
     stage: "ordered",
     label: "ordered",
-    toneClass: "border-violet-200 bg-violet-50 text-violet-700",
+    toneClass: "border-violet-200 bg-violet-50/70 text-violet-800",
+    fillClass: "bg-violet-500",
     countKey: "ordered",
   },
   {
     stage: "installed",
     label: "installed",
-    toneClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    toneClass: "border-emerald-200 bg-emerald-50/70 text-emerald-800",
+    fillClass: "bg-emerald-500",
     countKey: "installed",
   },
 ];
 
-function getStageCompleted(summary: WorkflowSummary, stage: WorkflowStage): boolean {
+function getStageRatio(summary: WorkflowSummary, count: number): string {
   if (summary.totalItems <= 0) {
-    return false;
+    return "0/0";
   }
-
-  const { materialMissing, materialAssigned, poApproved, installed } = summary.stages;
-
-  switch (stage) {
-    case "material_missing":
-      return materialMissing === 0;
-    case "material_assigned":
-      return materialMissing + materialAssigned === 0;
-    case "po_approved":
-      return materialMissing + materialAssigned + poApproved === 0;
-    case "ordered":
-      return materialMissing + materialAssigned + poApproved === 0;
-    case "installed":
-      return installed === summary.totalItems;
-    default:
-      return false;
-  }
+  return `${count}/${summary.totalItems}`;
 }
 
-function getWorkflowFeedback(summary: WorkflowSummary): string {
+function getStageFillPercent(summary: WorkflowSummary, count: number): number {
   if (summary.totalItems <= 0) {
-    return "Start by adding objects to this scope.";
+    return 0;
   }
-
-  const { materialMissing, materialAssigned, poApproved, ordered, installed } = summary.stages;
-
-  if (installed === summary.totalItems) {
-    return "V Great work. All objects are installed.";
-  }
-  if (ordered > 0) {
-    return `V Ordering stage done. ${ordered} item(s) are waiting for installation.`;
-  }
-  if (poApproved > 0) {
-    return `V PO approval stage done. ${poApproved} item(s) are ready to order.`;
-  }
-  if (materialAssigned > 0) {
-    return `V Material assignment done. ${materialAssigned} item(s) are waiting for PO approval.`;
-  }
-  if (materialMissing > 0) {
-    return `${materialMissing} item(s) still need material assignment.`;
-  }
-
-  return "Progress is moving forward.";
+  return Math.round((count / summary.totalItems) * 100);
 }
 
 function getWorkflowFilterSummary(selectedStages: WorkflowStage[]): string {
@@ -128,21 +99,23 @@ export function WorkflowOverview({
           <span className="text-xs font-semibold text-slate-700">{summary.completionPercent}% complete</span>
         </div>
         <Progress value={summary.completionPercent} />
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="space-y-1.5">
           {workflowStageConfig.map((item) => {
-            const stageCompleted = getStageCompleted(summary, item.stage);
+            const count = summary.stages[item.countKey];
+            const fillPercent = getStageFillPercent(summary, count);
             return (
-              <span
-                key={item.stage}
-                className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", item.toneClass)}
-              >
-                {stageCompleted ? "V " : ""}
-                {summary.stages[item.countKey]} {item.label}
-              </span>
+              <div key={item.stage} className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-medium text-slate-700">{item.label}</span>
+                  <span className="font-semibold text-slate-600">{getStageRatio(summary, count)}</span>
+                </div>
+                <div className={cn("h-1.5 overflow-hidden rounded-full border border-slate-200/80 bg-slate-100", item.toneClass)}>
+                  <div className={cn("h-full", item.fillClass)} style={{ width: `${fillPercent}%` }} />
+                </div>
+              </div>
             );
           })}
         </div>
-        <p className="text-[11px] text-slate-500">{getWorkflowFeedback(summary)}</p>
       </div>
     );
   }
@@ -176,9 +149,9 @@ export function WorkflowOverview({
         <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
           {workflowStageConfig.map((item) => {
             const count = summary.stages[item.countKey];
+            const fillPercent = getStageFillPercent(summary, count);
             const isSelected = selectedStages.includes(item.stage);
             const isInteractive = Boolean(onToggleStage);
-            const stageCompleted = getStageCompleted(summary, item.stage);
 
             if (isInteractive) {
               return (
@@ -193,21 +166,33 @@ export function WorkflowOverview({
                   )}
                   aria-pressed={isSelected}
                 >
-                  {stageCompleted ? "V " : ""}
-                  {count} {item.label}
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="font-semibold">{item.label}</span>
+                    <span className="font-semibold">{getStageRatio(summary, count)}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full border border-slate-200/80 bg-slate-100">
+                    <div className={cn("h-full", item.fillClass)} style={{ width: `${fillPercent}%` }} />
+                  </div>
                 </button>
               );
             }
 
             return (
               <div key={item.stage} className={cn("rounded-md border px-2 py-1", item.toneClass)}>
-                {stageCompleted ? "V " : ""}
-                {count} {item.label}
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="font-semibold">{item.label}</span>
+                  <span className="font-semibold">{getStageRatio(summary, count)}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full border border-slate-200/80 bg-slate-100">
+                  <div className={cn("h-full", item.fillClass)} style={{ width: `${fillPercent}%` }} />
+                </div>
               </div>
             );
           })}
         </div>
-        <p className="text-xs text-slate-500">{getWorkflowFeedback(summary)}</p>
+        <p className="text-xs text-slate-500">
+          Stage distribution across {summary.totalItems} object{summary.totalItems === 1 ? "" : "s"}.
+        </p>
       </CardContent>
     </Card>
   );
