@@ -128,7 +128,7 @@ export function WorkflowOverview({
                 <button
                   key={item.stage}
                   type="button"
-                  onClick={() => onToggleStage(item.stage)}
+                  onClick={() => onToggleStage?.(item.stage)}
                   className={cn(
                     "rounded-md border px-2 py-1 text-left transition hover:shadow-sm",
                     item.toneClass,
