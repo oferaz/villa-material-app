@@ -37,6 +37,7 @@ import {
 } from "@/lib/supabase/projects-repository";
 import { summarizeWorkflowForProject } from "@/lib/workflow/summary";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
+import { exportProjectToExcel } from "@/lib/export/project-excel";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
 interface ProjectWorkspaceProps {
@@ -1450,6 +1451,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       activeTab={activeTab}
       onTabChange={setActiveTab}
       onRenameProject={handleRenameProject}
+      onExportProject={async () => {
+        await exportProjectToExcel(project, calculatedProjectBudget);
+      }}
       onDeleteProject={
         isSupabaseConfigured && isSignedIn
           ? async () => {

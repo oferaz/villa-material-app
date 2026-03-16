@@ -262,6 +262,20 @@ export function WorkspaceShell({
       <Card className="border-slate-200 shadow-sm">
         <CardContent className="pt-5">
           <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as "rooms" | "materials" | "budget" | "client")}>
+            {onExportProject ? (
+              <div className="mb-3 flex items-center justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+                  onClick={() => void handleExportProject()}
+                  disabled={isExportingProject}
+                >
+                  <Download className="h-4 w-4" />
+                  {isExportingProject ? "Exporting..." : "Export to Excel"}
+                </Button>
+              </div>
+            ) : null}
             <TabsList className="sticky top-[72px] z-20 w-full justify-start overflow-x-auto border border-slate-200 bg-white/95 shadow-sm backdrop-blur">
               <TabsTrigger value="rooms">Rooms</TabsTrigger>
               <TabsTrigger value="materials">Materials</TabsTrigger>
