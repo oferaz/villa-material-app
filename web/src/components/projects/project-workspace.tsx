@@ -19,7 +19,7 @@ import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock
 import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { addLinkMaterialForCurrentUser, searchMaterialsForCurrentUser } from "@/lib/supabase/materials-repository";
-import { deleteProjectById, loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
+import { createRoomForHouse, deleteProjectById, loadProjectsForWorkspace, renameRoomById } from "@/lib/supabase/projects-repository";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
@@ -370,6 +370,13 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   }
 
   function handleRenameRoom(roomId: string, nextName: string) {
+    const normalizedName = nextName.trim();
+    if (!normalizedName) {
+      return;
+    }
+
+    const previousName = findRoomInProject(project, roomId)?.room.name ?? "";
+
     updateCurrentProject((targetProject) => ({
       ...targetProject,
       houses: targetProject.houses.map((house) => ({
@@ -378,20 +385,79 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
           room.id === roomId
             ? {
                 ...room,
-                name: nextName,
+                name: normalizedName,
               }
             : room
         ),
       })),
     }));
+
+    if (isSupabaseConfigured) {
+      void renameRoomById(roomId, normalizedName).catch((error) => {
+        if (previousName) {
+          updateCurrentProject((targetProject) => ({
+            ...targetProject,
+            houses: targetProject.houses.map((house) => ({
+              ...house,
+              rooms: house.rooms.map((room) =>
+                room.id === roomId
+                  ? {
+                      ...room,
+                      name: previousName,
+                    }
+                  : room
+              ),
+            })),
+          }));
+        }
+        window.alert(error instanceof Error ? error.message : "Failed to rename room.");
+      });
+    }
   }
 
-  function handleAddRoom(houseId: string, roomName: string, roomType: RoomType, roomSizeSqm?: number) {
+  async function handleAddRoom(houseId: string, roomName: string, roomType: RoomType, roomSizeSqm?: number) {
+    const normalizedName = roomName.trim();
+    if (!normalizedName) {
+      return;
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        const createdRoom = await createRoomForHouse({
+          houseId,
+          name: normalizedName,
+          roomType,
+          sizeSqm: roomSizeSqm,
+        });
+
+        updateCurrentProject((targetProject) => ({
+          ...targetProject,
+          houses: targetProject.houses.map((house) =>
+            house.id === houseId
+              ? {
+                  ...house,
+                  rooms: [...house.rooms, createdRoom],
+                }
+              : house
+          ),
+        }));
+
+        setActiveTab("rooms");
+        setSelectedHouseId(houseId);
+        setSelectedRoomId(createdRoom.id);
+        setSelectedObjectId("");
+        setPendingScrollRoomId(createdRoom.id);
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "Failed to add room.");
+      }
+      return;
+    }
+
     const newRoomId = `${houseId}-room-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const newRoom: Room = {
       id: newRoomId,
       houseId,
-      name: roomName,
+      name: normalizedName,
       sizeSqm: roomSizeSqm,
       type: roomType,
       objects: [],

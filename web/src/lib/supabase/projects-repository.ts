@@ -26,6 +26,13 @@ interface RoomRow {
   sort_order: number | null;
 }
 
+interface CreateRoomInput {
+  houseId: string;
+  name: string;
+  roomType: RoomType;
+  sizeSqm?: number;
+}
+
 interface RoomObjectRow {
   id: string;
   room_id: string;
@@ -285,6 +292,91 @@ export async function deleteProjectById(projectId: string): Promise<void> {
   }
 
   const { error } = await supabase.from("projects").delete().eq("id", normalizedProjectId);
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function createRoomForHouse({ houseId, name, roomType, sizeSqm }: CreateRoomInput): Promise<Room> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedHouseId = houseId.trim();
+  const normalizedName = name.trim();
+  if (!normalizedHouseId) {
+    throw new Error("House ID is required.");
+  }
+  if (!normalizedName) {
+    throw new Error("Room name is required.");
+  }
+
+  const normalizedSize =
+    typeof sizeSqm === "number" && Number.isFinite(sizeSqm) && sizeSqm > 0
+      ? Math.round(sizeSqm * 100) / 100
+      : null;
+
+  const { data: latestRoomRows, error: latestRoomError } = await supabase
+    .from("rooms")
+    .select("sort_order")
+    .eq("house_id", normalizedHouseId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+
+  if (latestRoomError) {
+    throw new Error(latestRoomError.message);
+  }
+
+  const nextSortOrder = ((latestRoomRows?.[0]?.sort_order as number | null | undefined) ?? -1) + 1;
+
+  const { data, error } = await supabase
+    .from("rooms")
+    .insert({
+      house_id: normalizedHouseId,
+      name: normalizedName,
+      room_type: roomType,
+      size_sq_m: normalizedSize,
+      sort_order: nextSortOrder,
+    })
+    .select("id,house_id,name,size_sq_m,room_type,sort_order")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const row = data as RoomRow;
+  return {
+    id: row.id,
+    houseId: row.house_id,
+    name: row.name,
+    sizeSqm: normalizeSizeSqm(row.size_sq_m),
+    type: normalizeRoomType(row.room_type),
+    objects: [],
+  };
+}
+
+export async function renameRoomById(roomId: string, nextName: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedRoomId = roomId.trim();
+  const normalizedName = nextName.trim();
+  if (!normalizedRoomId) {
+    throw new Error("Room ID is required.");
+  }
+  if (!normalizedName) {
+    throw new Error("Room name is required.");
+  }
+
+  const { error } = await supabase
+    .from("rooms")
+    .update({
+      name: normalizedName,
+    })
+    .eq("id", normalizedRoomId);
+
   if (error) {
     throw new Error(error.message);
   }
