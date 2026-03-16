@@ -14,6 +14,10 @@ interface ProjectRoomsStackProps {
   onAddSuggestion: (roomId: string, objectName: string, category: string, basePrice: number) => void;
   onSelectObject: (houseId: string, roomId: string, objectId: string) => void;
   onDeleteObject: (roomId: string, objectId: string) => void;
+  onUpdateWorkflow: (
+    objectId: string,
+    patch: { poApproved?: boolean; ordered?: boolean; installed?: boolean }
+  ) => void;
   onOpenAddCustomObject: (roomId: string) => void;
 }
 
@@ -24,6 +28,7 @@ export function ProjectRoomsStack({
   onAddSuggestion,
   onSelectObject,
   onDeleteObject,
+  onUpdateWorkflow,
   onOpenAddCustomObject,
 }: ProjectRoomsStackProps) {
   return (
@@ -79,6 +84,7 @@ export function ProjectRoomsStack({
                   selectedObjectId={selectedObjectId}
                   onSelectObject={(objectId) => onSelectObject(house.id, room.id, objectId)}
                   onDeleteObject={(objectId) => onDeleteObject(room.id, objectId)}
+                  onUpdateWorkflow={onUpdateWorkflow}
                 />
               </div>
             );

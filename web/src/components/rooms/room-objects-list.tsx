@@ -10,6 +10,10 @@ interface RoomObjectsListProps {
   selectedObjectId: string;
   onSelectObject: (objectId: string) => void;
   onDeleteObject: (objectId: string) => void;
+  onUpdateWorkflow: (
+    objectId: string,
+    patch: { poApproved?: boolean; ordered?: boolean; installed?: boolean }
+  ) => void;
 }
 
 export function RoomObjectsList({
@@ -17,6 +21,7 @@ export function RoomObjectsList({
   selectedObjectId,
   onSelectObject,
   onDeleteObject,
+  onUpdateWorkflow,
 }: RoomObjectsListProps) {
   if (!room) {
     return (
@@ -45,6 +50,7 @@ export function RoomObjectsList({
             const status = getObjectStatus(objectItem);
             const workflowStage = getObjectWorkflowStage(objectItem);
             const isSelected = selectedObjectId === objectItem.id;
+            const hasMaterial = Boolean(objectItem.selectedProductId);
             return (
               <li key={objectItem.id}>
                 <div
@@ -53,15 +59,62 @@ export function RoomObjectsList({
                     isSelected ? "border-primary bg-blue-50 shadow-sm" : "border-slate-200 bg-white"
                   )}
                 >
-                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelectObject(objectItem.id)}>
-                    <p className="truncate text-sm font-medium text-slate-800">
-                      {objectItem.name}
-                      {objectItem.quantity > 1 ? ` x${objectItem.quantity}` : ""}
-                    </p>
-                    <p className="text-xs text-slate-500">{objectItem.category}</p>
-                  </button>
-                  <Badge variant={status === "selected" ? "success" : "danger"}>{status}</Badge>
-                  <Badge variant="outline">{getWorkflowStageLabel(workflowStage)}</Badge>
+                  <div className="min-w-0 flex-1">
+                    <button type="button" className="min-w-0 w-full text-left" onClick={() => onSelectObject(objectItem.id)}>
+                      <p className="truncate text-sm font-medium text-slate-800">
+                        {objectItem.name}
+                        {objectItem.quantity > 1 ? ` x${objectItem.quantity}` : ""}
+                      </p>
+                      <p className="text-xs text-slate-500">{objectItem.category}</p>
+                    </button>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <Badge variant={status === "selected" ? "success" : "danger"}>{status}</Badge>
+                      <Badge variant="outline">{getWorkflowStageLabel(workflowStage)}</Badge>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={objectItem.poApproved ? "default" : "outline"}
+                        className="h-7 px-2 text-xs"
+                        disabled={!hasMaterial || Boolean(objectItem.poApproved)}
+                        onClick={() => onUpdateWorkflow(objectItem.id, { poApproved: true })}
+                      >
+                        Approve PO
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={objectItem.ordered ? "default" : "outline"}
+                        className="h-7 px-2 text-xs"
+                        disabled={!hasMaterial || !Boolean(objectItem.poApproved) || Boolean(objectItem.ordered)}
+                        onClick={() => onUpdateWorkflow(objectItem.id, { ordered: true })}
+                      >
+                        Ordered
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={objectItem.installed ? "default" : "outline"}
+                        className="h-7 px-2 text-xs"
+                        disabled={!hasMaterial || !Boolean(objectItem.ordered) || Boolean(objectItem.installed)}
+                        onClick={() => onUpdateWorkflow(objectItem.id, { installed: true })}
+                      >
+                        Installed
+                      </Button>
+                      {(objectItem.poApproved || objectItem.ordered || objectItem.installed) ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => onUpdateWorkflow(objectItem.id, { poApproved: false })}
+                        >
+                          Reset
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"

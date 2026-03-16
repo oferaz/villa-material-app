@@ -1298,6 +1298,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onAddSuggestion={(roomId, objectName, category, basePrice) => handleAddObject(roomId, objectName, category, basePrice)}
         onSelectObject={handleSelectObject}
         onDeleteObject={handleDeleteObject}
+        onUpdateWorkflow={handleUpdateObjectWorkflow}
         onOpenAddCustomObject={(roomId) => setAddObjectRoomId(roomId)}
       />
       <AddObjectDialog
@@ -1347,7 +1348,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         roomObject={selectedObject}
         globalSearchQuery={searchQuery}
         onSelectProduct={handleSelectProduct}
-        onUpdateWorkflow={handleUpdateObjectWorkflow}
         onSearchCatalog={handleSearchCatalog}
         onAddFromLink={handleAddFromLink}
       />
