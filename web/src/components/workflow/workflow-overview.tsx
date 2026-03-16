@@ -24,36 +24,36 @@ const workflowStageConfig: Array<{
   {
     stage: "material_missing",
     label: "unassigned",
-    toneClass: "border-red-200 bg-red-50/70 text-red-800",
-    fillClass: "bg-red-500",
+    toneClass: "border-slate-200 bg-slate-50/80 text-slate-700",
+    fillClass: "bg-slate-300",
     countKey: "materialMissing",
   },
   {
     stage: "material_assigned",
     label: "assigned",
-    toneClass: "border-blue-200 bg-blue-50/70 text-blue-800",
-    fillClass: "bg-blue-500",
+    toneClass: "border-slate-200 bg-slate-50/80 text-slate-700",
+    fillClass: "bg-sky-300",
     countKey: "materialAssigned",
   },
   {
     stage: "po_approved",
     label: "PO approved",
-    toneClass: "border-amber-200 bg-amber-50/70 text-amber-800",
-    fillClass: "bg-amber-500",
+    toneClass: "border-slate-200 bg-slate-50/80 text-slate-700",
+    fillClass: "bg-sky-400",
     countKey: "poApproved",
   },
   {
     stage: "ordered",
     label: "ordered",
-    toneClass: "border-violet-200 bg-violet-50/70 text-violet-800",
-    fillClass: "bg-violet-500",
+    toneClass: "border-slate-200 bg-slate-50/80 text-slate-700",
+    fillClass: "bg-sky-500",
     countKey: "ordered",
   },
   {
     stage: "installed",
     label: "installed",
-    toneClass: "border-emerald-200 bg-emerald-50/70 text-emerald-800",
-    fillClass: "bg-emerald-500",
+    toneClass: "border-slate-200 bg-slate-50/80 text-slate-700",
+    fillClass: "bg-sky-600",
     countKey: "installed",
   },
 ];
@@ -93,23 +93,23 @@ export function WorkflowOverview({
 }: WorkflowOverviewProps) {
   if (compact) {
     return (
-      <div className="space-y-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+      <div className="space-y-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-2">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-          <span className="text-xs font-semibold text-slate-700">{summary.completionPercent}% complete</span>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+          <span className="text-[10px] font-semibold text-slate-700">{summary.completionPercent}%</span>
         </div>
         <Progress value={summary.completionPercent} />
-        <div className="space-y-1.5">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1 sm:grid-cols-5">
           {workflowStageConfig.map((item) => {
             const count = summary.stages[item.countKey];
             const fillPercent = getStageFillPercent(summary, count);
             return (
-              <div key={item.stage} className="space-y-1">
-                <div className="flex items-center justify-between text-[11px]">
+              <div key={item.stage} className="space-y-0.5">
+                <div className="flex items-center justify-between text-[10px]">
                   <span className="font-medium text-slate-700">{item.label}</span>
                   <span className="font-semibold text-slate-600">{getStageRatio(summary, count)}</span>
                 </div>
-                <div className={cn("h-1.5 overflow-hidden rounded-full border border-slate-200/80 bg-slate-100", item.toneClass)}>
+                <div className={cn("h-1 overflow-hidden rounded-full border border-slate-200/80 bg-slate-100", item.toneClass)}>
                   <div className={cn("h-full", item.fillClass)} style={{ width: `${fillPercent}%` }} />
                 </div>
               </div>

@@ -21,6 +21,7 @@ import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { addLinkMaterialForCurrentUser, searchMaterialsForCurrentUser } from "@/lib/supabase/materials-repository";
 import {
+  createProjectSnapshotByProjectId,
   createRoomObjectForRoom,
   createHouseForProject,
   createRoomForHouse,
@@ -28,13 +29,16 @@ import {
   deleteProjectById,
   duplicateHouseWithContents,
   inviteProjectCollaboratorByEmail,
+  listProjectSnapshotsByProjectId,
   loadProjectsForWorkspace,
   renameHouseById,
   renameProjectById,
   renameRoomById,
+  restoreProjectSnapshotById,
   updateRoomObjectQuantityById,
   updateRoomObjectSelectedMaterialById,
   updateRoomObjectWorkflowById,
+  type ProjectSnapshotSummary,
 } from "@/lib/supabase/projects-repository";
 import { summarizeWorkflowForProject } from "@/lib/workflow/summary";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
@@ -202,6 +206,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [showDefaultStructureNotice, setShowDefaultStructureNotice] = useState(false);
   const [preferences, setPreferences] = useState(defaultUserPreferences);
   const [workflowStageFilters, setWorkflowStageFilters] = useState<WorkflowStage[]>([]);
+  const [projectSnapshots, setProjectSnapshots] = useState<ProjectSnapshotSummary[]>([]);
 
   useEffect(() => {
     if (searchParams.get("onboarding") === "default-rooms") {
@@ -283,6 +288,35 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const project = useMemo(() => {
     return projects.find((item) => item.id === initialProjectId) ?? projects[0];
   }, [projects, initialProjectId]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadProjectSnapshotsForCurrentProject() {
+      if (!isSupabaseConfigured || !isSignedIn || !project?.id) {
+        setProjectSnapshots([]);
+        return;
+      }
+
+      try {
+        const snapshots = await listProjectSnapshotsByProjectId(project.id);
+        if (!isCancelled) {
+          setProjectSnapshots(snapshots);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.warn("Failed to load project snapshots.", error);
+          setProjectSnapshots([]);
+        }
+      }
+    }
+
+    void loadProjectSnapshotsForCurrentProject();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isSignedIn, project?.id]);
 
   const selectedHouse = useMemo(() => {
     return project?.houses.find((house) => house.id === selectedHouseId) ?? project?.houses[0];
@@ -543,6 +577,30 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     if (isDeletingCurrentProject) {
       router.push(`/projects/${loadedProjects[0].id}`);
     }
+  }
+
+  async function handleSaveProjectSnapshot(snapshotName?: string) {
+    if (!project) {
+      return;
+    }
+
+    await createProjectSnapshotByProjectId(project.id, snapshotName);
+    const snapshots = await listProjectSnapshotsByProjectId(project.id);
+    setProjectSnapshots(snapshots);
+  }
+
+  async function handleRestoreProjectSnapshot(snapshotId: string) {
+    if (!project) {
+      return;
+    }
+
+    await restoreProjectSnapshotById(project.id, snapshotId);
+
+    const loadedProjects = await loadProjectsForWorkspace();
+    setProjects(loadedProjects);
+
+    const snapshots = await listProjectSnapshotsByProjectId(project.id);
+    setProjectSnapshots(snapshots);
   }
 
   function handleSelectRoom(houseId: string, roomId: string) {
@@ -1559,6 +1617,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             }
           : undefined
       }
+      snapshotOptions={projectSnapshots}
+      onSaveSnapshot={isSupabaseConfigured && isSignedIn ? handleSaveProjectSnapshot : undefined}
+      onRestoreSnapshot={isSupabaseConfigured && isSignedIn ? handleRestoreProjectSnapshot : undefined}
       roomsContent={roomsContent}
       materialsContent={materialsContent}
       budgetContent={budgetContent}

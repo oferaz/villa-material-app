@@ -58,6 +58,20 @@ interface InviteProjectCollaboratorInput {
   role?: "viewer" | "editor";
 }
 
+interface ProjectSnapshotRow {
+  id: string;
+  project_id: string;
+  snapshot_name: string;
+  created_at: string;
+}
+
+export interface ProjectSnapshotSummary {
+  id: string;
+  projectId: string;
+  name: string;
+  createdAt: string;
+}
+
 interface RoomObjectRow {
   id: string;
   room_id: string;
@@ -166,6 +180,14 @@ function hasMissingRpcFunctionError(code?: string, message?: string, functionNam
     return normalizedMessage.includes("does not exist");
   }
   return normalizedMessage.includes(functionName.toLowerCase());
+}
+
+function hasMissingSnapshotsSchemaError(code?: string, message?: string): boolean {
+  if (code === "42P01" || code === "PGRST205") {
+    return true;
+  }
+  const normalizedMessage = (message ?? "").toLowerCase();
+  return normalizedMessage.includes("project_snapshots");
 }
 
 function toProductOptionFromMaterial(material: MaterialRow, objectName: string, objectCategory: string): ProductOption {
@@ -583,6 +605,91 @@ export async function inviteProjectCollaboratorByEmail({
   });
 
   if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function listProjectSnapshotsByProjectId(projectId: string): Promise<ProjectSnapshotSummary[]> {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  const normalizedProjectId = projectId.trim();
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+
+  const { data, error } = await supabase
+    .from("project_snapshots")
+    .select("id,project_id,snapshot_name,created_at")
+    .eq("project_id", normalizedProjectId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    if (hasMissingSnapshotsSchemaError(error.code, error.message)) {
+      return [];
+    }
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as ProjectSnapshotRow[]).map((row) => ({
+    id: row.id,
+    projectId: row.project_id,
+    name: row.snapshot_name,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function createProjectSnapshotByProjectId(projectId: string, snapshotName?: string): Promise<string> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedProjectId = projectId.trim();
+  const normalizedSnapshotName = snapshotName?.trim() || null;
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+
+  const { data, error } = await supabase.rpc("create_project_snapshot", {
+    p_project_id: normalizedProjectId,
+    p_snapshot_name: normalizedSnapshotName,
+  });
+
+  if (error) {
+    if (hasMissingRpcFunctionError(error.code, error.message, "create_project_snapshot")) {
+      throw new Error("Project snapshots are not available yet. Apply the latest database migrations and retry.");
+    }
+    throw new Error(error.message);
+  }
+
+  return String(data ?? "");
+}
+
+export async function restoreProjectSnapshotById(projectId: string, snapshotId: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedProjectId = projectId.trim();
+  const normalizedSnapshotId = snapshotId.trim();
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+  if (!normalizedSnapshotId) {
+    throw new Error("Snapshot ID is required.");
+  }
+
+  const { error } = await supabase.rpc("restore_project_snapshot", {
+    p_project_id: normalizedProjectId,
+    p_snapshot_id: normalizedSnapshotId,
+  });
+
+  if (error) {
+    if (hasMissingRpcFunctionError(error.code, error.message, "restore_project_snapshot")) {
+      throw new Error("Project snapshots are not available yet. Apply the latest database migrations and retry.");
+    }
     throw new Error(error.message);
   }
 }

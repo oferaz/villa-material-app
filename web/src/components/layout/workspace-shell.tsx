@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
-import { Check, Download, Pencil, Trash2, UserPlus, X } from "lucide-react";
+import { Check, Download, History, Pencil, RotateCcw, Save, Trash2, UserPlus, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -29,6 +29,13 @@ interface WorkspaceShellProps {
   onExportProject?: () => Promise<void> | void;
   onDeleteProject?: () => Promise<void> | void;
   onInviteCollaborator?: (email: string, role: "viewer" | "editor") => Promise<void> | void;
+  snapshotOptions?: Array<{
+    id: string;
+    name: string;
+    createdAt: string;
+  }>;
+  onSaveSnapshot?: (snapshotName?: string) => Promise<void> | void;
+  onRestoreSnapshot?: (snapshotId: string) => Promise<void> | void;
   roomsContent: ReactNode;
   materialsContent: ReactNode;
   budgetContent: ReactNode;
@@ -48,6 +55,9 @@ export function WorkspaceShell({
   onExportProject,
   onDeleteProject,
   onInviteCollaborator,
+  snapshotOptions = [],
+  onSaveSnapshot,
+  onRestoreSnapshot,
   roomsContent,
   materialsContent,
   budgetContent,
@@ -62,12 +72,31 @@ export function WorkspaceShell({
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"viewer" | "editor">("viewer");
   const [isInvitingCollaborator, setIsInvitingCollaborator] = useState(false);
+  const [isSnapshotsDialogOpen, setIsSnapshotsDialogOpen] = useState(false);
+  const [snapshotNameDraft, setSnapshotNameDraft] = useState("");
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState("");
+  const [isSavingSnapshot, setIsSavingSnapshot] = useState(false);
+  const [isRestoringSnapshot, setIsRestoringSnapshot] = useState(false);
 
   useEffect(() => {
     if (!isEditingProjectName) {
       setProjectNameDraft(projectName);
     }
   }, [isEditingProjectName, projectName]);
+
+  useEffect(() => {
+    if (!isSnapshotsDialogOpen) {
+      return;
+    }
+    if (snapshotOptions.length === 0) {
+      setSelectedSnapshotId("");
+      return;
+    }
+    const hasSelectedSnapshot = snapshotOptions.some((item) => item.id === selectedSnapshotId);
+    if (!hasSelectedSnapshot) {
+      setSelectedSnapshotId(snapshotOptions[0].id);
+    }
+  }, [isSnapshotsDialogOpen, selectedSnapshotId, snapshotOptions]);
 
   async function handleSaveProjectName() {
     if (!onRenameProject) {
@@ -179,6 +208,61 @@ export function WorkspaceShell({
     }
   }
 
+  function handleSnapshotsDialogOpenChange(nextOpen: boolean) {
+    if (isSavingSnapshot || isRestoringSnapshot) {
+      return;
+    }
+    setIsSnapshotsDialogOpen(nextOpen);
+    if (!nextOpen) {
+      setSnapshotNameDraft("");
+    }
+  }
+
+  async function handleSaveSnapshot() {
+    if (!onSaveSnapshot) {
+      return;
+    }
+
+    setIsSavingSnapshot(true);
+    try {
+      await onSaveSnapshot(snapshotNameDraft.trim() || undefined);
+      setSnapshotNameDraft("");
+      window.alert("Project state saved.");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to save project state.");
+    } finally {
+      setIsSavingSnapshot(false);
+    }
+  }
+
+  async function handleRestoreSnapshot() {
+    if (!onRestoreSnapshot) {
+      return;
+    }
+    if (!selectedSnapshotId) {
+      window.alert("Select a saved state first.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Restore this saved state?\n\nCurrent project structure and object progress will be replaced."
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsRestoringSnapshot(true);
+    try {
+      await onRestoreSnapshot(selectedSnapshotId);
+      setIsSnapshotsDialogOpen(false);
+      window.alert("Project restored to the selected saved state.");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to restore project state.");
+    } finally {
+      setIsRestoringSnapshot(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card className="border-slate-200 bg-gradient-to-r from-white to-slate-50 shadow-sm">
@@ -249,6 +333,17 @@ export function WorkspaceShell({
                     >
                       <UserPlus className="h-4 w-4" />
                       Invite collaborator
+                    </Button>
+                  ) : null}
+                  {onSaveSnapshot || onRestoreSnapshot ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 border-slate-300 text-slate-700 hover:bg-slate-100"
+                      onClick={() => handleSnapshotsDialogOpenChange(true)}
+                    >
+                      <History className="h-4 w-4" />
+                      Saved states
                     </Button>
                   ) : null}
                   {onExportProject ? (
@@ -366,6 +461,89 @@ export function WorkspaceShell({
             <Button type="button" onClick={() => void handleInviteCollaborator()} disabled={isInvitingCollaborator}>
               {isInvitingCollaborator ? "Inviting..." : "Send invite"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isSnapshotsDialogOpen} onOpenChange={handleSnapshotsDialogOpenChange}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Saved project states</DialogTitle>
+            <DialogDescription>
+              Save the current project state and restore a previous one whenever needed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-4">
+            {onSaveSnapshot ? (
+              <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <label htmlFor="snapshot-name" className="text-sm font-medium text-slate-700">
+                  Save current state
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="snapshot-name"
+                    placeholder="Optional name (e.g. Before supplier changes)"
+                    value={snapshotNameDraft}
+                    onChange={(event) => setSnapshotNameDraft(event.target.value)}
+                    disabled={isSavingSnapshot || isRestoringSnapshot}
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => void handleSaveSnapshot()}
+                    disabled={isSavingSnapshot || isRestoringSnapshot}
+                  >
+                    <Save className="h-4 w-4" />
+                    {isSavingSnapshot ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="space-y-1.5">
+              <label htmlFor="restore-snapshot" className="text-sm font-medium text-slate-700">
+                Restore saved state
+              </label>
+              <select
+                id="restore-snapshot"
+                className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                value={selectedSnapshotId}
+                onChange={(event) => setSelectedSnapshotId(event.target.value)}
+                disabled={snapshotOptions.length === 0 || isSavingSnapshot || isRestoringSnapshot}
+              >
+                {snapshotOptions.length === 0 ? (
+                  <option value="">No saved states yet</option>
+                ) : (
+                  snapshotOptions.map((snapshot) => (
+                    <option key={snapshot.id} value={snapshot.id}>
+                      {snapshot.name} - {new Date(snapshot.createdAt).toLocaleString()}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleSnapshotsDialogOpenChange(false)}
+              disabled={isSavingSnapshot || isRestoringSnapshot}
+            >
+              Cancel
+            </Button>
+            {onRestoreSnapshot ? (
+              <Button
+                type="button"
+                variant="default"
+                onClick={() => void handleRestoreSnapshot()}
+                disabled={
+                  snapshotOptions.length === 0 || !selectedSnapshotId || isSavingSnapshot || isRestoringSnapshot
+                }
+              >
+                <RotateCcw className="h-4 w-4" />
+                {isRestoringSnapshot ? "Restoring..." : "Restore"}
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>

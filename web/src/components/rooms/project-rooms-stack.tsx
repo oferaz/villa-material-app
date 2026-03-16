@@ -34,16 +34,16 @@ export function ProjectRoomsStack({
   onOpenAddCustomObject,
 }: ProjectRoomsStackProps) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {houses.map((house, houseIndex) => {
         const houseColor = getHouseColor(house.id, houseIndex);
         const houseWorkflowSummary = summarizeWorkflowForHouse(house);
         return (
-        <section key={house.id} className="space-y-4">
-          <div className={cn("rounded-xl border px-4 py-3", houseColor.softBorder, houseColor.softBg)}>
+        <section key={house.id} className="space-y-3">
+          <div className={cn("rounded-lg border px-3 py-2", houseColor.softBorder, houseColor.softBg)}>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">House</p>
-            <h3 className={cn("inline-flex items-center gap-2 text-lg font-semibold", houseColor.strongText)}>
-              <span className={cn("h-2.5 w-2.5 rounded-full", houseColor.dot)} />
+            <h3 className={cn("inline-flex items-center gap-1.5 text-base font-semibold", houseColor.strongText)}>
+              <span className={cn("h-2 w-2 rounded-full", houseColor.dot)} />
               {house.name}
             </h3>
             {house.sizeSqm ? <p className="text-xs text-slate-500">{house.sizeSqm} m2</p> : null}
@@ -67,7 +67,7 @@ export function ProjectRoomsStack({
                 data-house-id={house.id}
                 data-room-id={room.id}
                 className={cn(
-                  "scroll-mt-28 space-y-3 rounded-2xl border-y border-r border-l-4 p-3 transition sm:p-4",
+                  "scroll-mt-28 space-y-2.5 rounded-xl border-y border-r border-l-4 p-2.5 transition sm:p-3",
                   isRoomSelected ? `${houseColor.softBorder} ${houseColor.softBg} shadow-sm` : "border-slate-200 bg-white",
                   houseColor.roomRail
                 )}
