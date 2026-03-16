@@ -225,57 +225,12 @@ export function WorkspaceShell({
           <span>{roomsCount} rooms</span>
           <Separator orientation="vertical" className="h-4" />
           <span>{objectsCount} objects</span>
-          {(onExportProject || onDeleteProject) && <div className="my-1 h-px w-full bg-slate-200" />}
-          {onExportProject || onDeleteProject ? (
-            <div className="flex w-full flex-wrap items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project actions</span>
-              {onExportProject ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
-                  onClick={() => void handleExportProject()}
-                  disabled={isExportingProject}
-                >
-                  <Download className="h-4 w-4" />
-                  {isExportingProject ? "Exporting..." : "Export Excel"}
-                </Button>
-              ) : null}
-              {onDeleteProject ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800"
-                  onClick={() => void handleDeleteProject()}
-                  disabled={isDeletingProject}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {isDeletingProject ? "Deleting..." : "Delete project"}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 
       <Card className="border-slate-200 shadow-sm">
         <CardContent className="pt-5">
           <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as "rooms" | "materials" | "budget" | "client")}>
-            {onExportProject ? (
-              <div className="mb-3 flex items-center justify-end">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
-                  onClick={() => void handleExportProject()}
-                  disabled={isExportingProject}
-                >
-                  <Download className="h-4 w-4" />
-                  {isExportingProject ? "Exporting..." : "Export to Excel"}
-                </Button>
-              </div>
-            ) : null}
             <TabsList className="sticky top-[72px] z-20 w-full justify-start overflow-x-auto border border-slate-200 bg-white/95 shadow-sm backdrop-blur">
               <TabsTrigger value="rooms">Rooms</TabsTrigger>
               <TabsTrigger value="materials">Materials</TabsTrigger>
