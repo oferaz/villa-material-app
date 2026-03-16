@@ -33,12 +33,27 @@ interface CreateRoomInput {
   sizeSqm?: number;
 }
 
+interface CreateHouseInput {
+  projectId: string;
+  name: string;
+  sizeSqm?: number;
+}
+
+interface DuplicateHouseInput {
+  projectId: string;
+  sourceHouse: House;
+  name?: string;
+}
+
 interface RoomObjectRow {
   id: string;
   room_id: string;
   name: string;
   category: string;
   selected_material_id: string | null;
+  po_approved?: boolean | null;
+  is_ordered?: boolean | null;
+  is_installed?: boolean | null;
   sort_order: number | null;
 }
 
@@ -65,6 +80,15 @@ const roomTypeSet = new Set<RoomType>([
   "laundry",
   "outdoor",
 ]);
+
+const defaultRoomBlueprint: Array<{ name: string; roomType: RoomType }> = [
+  { name: "Entry", roomType: "entry" },
+  { name: "Living Room", roomType: "living_room" },
+  { name: "Kitchen", roomType: "kitchen" },
+  { name: "Dining Room", roomType: "dining_room" },
+  { name: "Bedroom", roomType: "bedroom" },
+  { name: "Bathroom", roomType: "bathroom" },
+];
 
 const budgetCategorySet = new Set<BudgetCategoryName>([
   "Furniture",
@@ -94,6 +118,18 @@ function normalizeSizeSqm(value: number | null): number | undefined {
     return undefined;
   }
   return Number(value);
+}
+
+function hasMissingWorkflowColumnsError(code?: string, message?: string): boolean {
+  if (code === "42703" || code === "PGRST204") {
+    return true;
+  }
+  const normalizedMessage = (message ?? "").toLowerCase();
+  return (
+    normalizedMessage.includes("po_approved") ||
+    normalizedMessage.includes("is_ordered") ||
+    normalizedMessage.includes("is_installed")
+  );
 }
 
 function toProductOptionFromMaterial(material: MaterialRow, objectName: string, objectCategory: string): ProductOption {
@@ -167,18 +203,35 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
     const rooms = (roomRows ?? []) as RoomRow[];
 
     const roomIds = rooms.map((room) => room.id);
-    const roomObjectsQuery = supabase
-      .from("room_objects")
-      .select("id,room_id,name,category,selected_material_id,sort_order")
-      .order("sort_order", { ascending: true });
-    const { data: roomObjectRows, error: roomObjectError } =
-      roomIds.length > 0 ? await roomObjectsQuery.in("room_id", roomIds) : await roomObjectsQuery.limit(0);
+    const baseRoomObjectSelect = "id,room_id,name,category,selected_material_id,sort_order";
+    const workflowRoomObjectSelect = `${baseRoomObjectSelect},po_approved,is_ordered,is_installed`;
 
-    if (roomObjectError) {
-      throw roomObjectError;
+    let roomObjects: RoomObjectRow[] = [];
+    if (roomIds.length > 0) {
+      const withWorkflowQuery = supabase
+        .from("room_objects")
+        .select(workflowRoomObjectSelect)
+        .in("room_id", roomIds)
+        .order("sort_order", { ascending: true });
+      const { data: roomObjectRows, error: roomObjectError } = await withWorkflowQuery;
+
+      if (roomObjectError && hasMissingWorkflowColumnsError(roomObjectError.code, roomObjectError.message)) {
+        const fallbackQuery = supabase
+          .from("room_objects")
+          .select(baseRoomObjectSelect)
+          .in("room_id", roomIds)
+          .order("sort_order", { ascending: true });
+        const { data: fallbackRows, error: fallbackError } = await fallbackQuery;
+        if (fallbackError) {
+          throw fallbackError;
+        }
+        roomObjects = (fallbackRows ?? []) as RoomObjectRow[];
+      } else if (roomObjectError) {
+        throw roomObjectError;
+      } else {
+        roomObjects = (roomObjectRows ?? []) as RoomObjectRow[];
+      }
     }
-
-    const roomObjects = (roomObjectRows ?? []) as RoomObjectRow[];
     const selectedMaterialIds = roomObjects
       .map((objectItem) => objectItem.selected_material_id)
       .filter((item): item is string => Boolean(item));
@@ -242,6 +295,9 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
                     category: roomObject.category,
                     quantity: 1,
                     selectedProductId: selectedOption?.id,
+                    poApproved: Boolean(roomObject.po_approved),
+                    ordered: Boolean(roomObject.is_ordered),
+                    installed: Boolean(roomObject.is_installed),
                     productOptions: options,
                   };
                 });
@@ -430,6 +486,320 @@ export async function renameProjectById(projectId: string, nextName: string): Pr
     .eq("id", normalizedProjectId);
 
   if (error) {
+    throw new Error(error.message);
+  }
+}
+
+function normalizePositiveSizeSqm(value: number | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Math.round(value * 100) / 100;
+}
+
+function buildRoomObjectFromSource(
+  sourceObject: RoomObject,
+  targetRoomId: string,
+  objectIndex: number
+): {
+  room_id: string;
+  name: string;
+  category: string;
+  selected_material_id: string | null;
+  po_approved: boolean;
+  is_ordered: boolean;
+  is_installed: boolean;
+  sort_order: number;
+} {
+  const poApproved = Boolean(sourceObject.poApproved);
+  const ordered = Boolean(sourceObject.ordered) && poApproved;
+  const installed = Boolean(sourceObject.installed) && ordered;
+  return {
+    room_id: targetRoomId,
+    name: sourceObject.name.trim() || "Object",
+    category: sourceObject.category.trim() || "Custom",
+    selected_material_id: sourceObject.selectedProductId ?? null,
+    po_approved: poApproved,
+    is_ordered: ordered,
+    is_installed: installed,
+    sort_order: objectIndex,
+  };
+}
+
+export async function createHouseForProject({ projectId, name, sizeSqm }: CreateHouseInput): Promise<House> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedProjectId = projectId.trim();
+  const normalizedName = name.trim();
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+  if (!normalizedName) {
+    throw new Error("House name is required.");
+  }
+
+  const normalizedSizeSqm = normalizePositiveSizeSqm(sizeSqm);
+
+  const { data: latestHouseRows, error: latestHouseError } = await supabase
+    .from("houses")
+    .select("sort_order")
+    .eq("project_id", normalizedProjectId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  if (latestHouseError) {
+    throw new Error(latestHouseError.message);
+  }
+
+  const nextHouseSortOrder = ((latestHouseRows?.[0]?.sort_order as number | null | undefined) ?? -1) + 1;
+
+  const { data: createdHouseRow, error: createHouseError } = await supabase
+    .from("houses")
+    .insert({
+      project_id: normalizedProjectId,
+      name: normalizedName,
+      size_sq_m: normalizedSizeSqm,
+      sort_order: nextHouseSortOrder,
+    })
+    .select("id,project_id,name,size_sq_m,sort_order")
+    .single();
+
+  if (createHouseError) {
+    throw new Error(createHouseError.message);
+  }
+
+  const houseRow = createdHouseRow as HouseRow;
+  const roomInsertPayload = defaultRoomBlueprint.map((room, index) => ({
+    house_id: houseRow.id,
+    name: room.name,
+    room_type: room.roomType,
+    sort_order: index,
+  }));
+
+  const { data: createdRoomRows, error: createRoomsError } = await supabase
+    .from("rooms")
+    .insert(roomInsertPayload)
+    .select("id,house_id,name,size_sq_m,room_type,sort_order")
+    .order("sort_order", { ascending: true });
+
+  if (createRoomsError) {
+    throw new Error(createRoomsError.message);
+  }
+
+  const mappedRooms: Room[] = ((createdRoomRows ?? []) as RoomRow[]).map((row) => ({
+    id: row.id,
+    houseId: row.house_id,
+    name: row.name,
+    sizeSqm: normalizeSizeSqm(row.size_sq_m),
+    type: normalizeRoomType(row.room_type),
+    objects: [],
+  }));
+
+  return {
+    id: houseRow.id,
+    projectId: houseRow.project_id,
+    name: houseRow.name,
+    sizeSqm: normalizeSizeSqm(houseRow.size_sq_m),
+    rooms: mappedRooms,
+  };
+}
+
+export async function duplicateHouseWithContents({
+  projectId,
+  sourceHouse,
+  name,
+}: DuplicateHouseInput): Promise<House> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedProjectId = projectId.trim();
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+
+  const normalizedName = (name?.trim() || `${sourceHouse.name} Copy`).trim();
+  if (!normalizedName) {
+    throw new Error("Duplicated house name is required.");
+  }
+
+  const { data: latestHouseRows, error: latestHouseError } = await supabase
+    .from("houses")
+    .select("sort_order")
+    .eq("project_id", normalizedProjectId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  if (latestHouseError) {
+    throw new Error(latestHouseError.message);
+  }
+
+  const nextHouseSortOrder = ((latestHouseRows?.[0]?.sort_order as number | null | undefined) ?? -1) + 1;
+
+  const { data: createdHouseRow, error: createHouseError } = await supabase
+    .from("houses")
+    .insert({
+      project_id: normalizedProjectId,
+      name: normalizedName,
+      size_sq_m: normalizePositiveSizeSqm(sourceHouse.sizeSqm),
+      sort_order: nextHouseSortOrder,
+    })
+    .select("id,project_id,name,size_sq_m,sort_order")
+    .single();
+  if (createHouseError) {
+    throw new Error(createHouseError.message);
+  }
+
+  const houseRow = createdHouseRow as HouseRow;
+  const sourceRooms = [...sourceHouse.rooms];
+
+  const roomInsertPayload = sourceRooms.map((room, roomIndex) => ({
+    house_id: houseRow.id,
+    name: room.name.trim() || `Room ${roomIndex + 1}`,
+    size_sq_m: normalizePositiveSizeSqm(room.sizeSqm),
+    room_type: room.type,
+    sort_order: roomIndex,
+  }));
+
+  const { data: createdRoomRows, error: createRoomsError } = await supabase
+    .from("rooms")
+    .insert(roomInsertPayload)
+    .select("id,house_id,name,size_sq_m,room_type,sort_order")
+    .order("sort_order", { ascending: true });
+  if (createRoomsError) {
+    throw new Error(createRoomsError.message);
+  }
+
+  const duplicatedRooms = ((createdRoomRows ?? []) as RoomRow[]).sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
+
+  const objectInsertPayload = sourceRooms.flatMap((sourceRoom, roomIndex) => {
+    const duplicatedRoom = duplicatedRooms[roomIndex];
+    if (!duplicatedRoom) {
+      return [];
+    }
+    return sourceRoom.objects.map((sourceObject, objectIndex) =>
+      buildRoomObjectFromSource(sourceObject, duplicatedRoom.id, objectIndex)
+    );
+  });
+
+  if (objectInsertPayload.length > 0) {
+    let { error: createObjectsError } = await supabase.from("room_objects").insert(objectInsertPayload);
+    if (createObjectsError && hasMissingWorkflowColumnsError(createObjectsError.code, createObjectsError.message)) {
+      const fallbackPayload = objectInsertPayload.map((item) => ({
+        room_id: item.room_id,
+        name: item.name,
+        category: item.category,
+        selected_material_id: item.selected_material_id,
+        sort_order: item.sort_order,
+      }));
+      const fallbackResult = await supabase.from("room_objects").insert(fallbackPayload);
+      createObjectsError = fallbackResult.error;
+    }
+    if (createObjectsError) {
+      throw new Error(createObjectsError.message);
+    }
+  }
+
+  const duplicatedRoomsById = new Map(
+    duplicatedRooms.map((row) => [
+      row.id,
+      {
+        id: row.id,
+        houseId: row.house_id,
+        name: row.name,
+        sizeSqm: normalizeSizeSqm(row.size_sq_m),
+        type: normalizeRoomType(row.room_type),
+        objects: [] as RoomObject[],
+      },
+    ])
+  );
+
+  sourceRooms.forEach((sourceRoom, roomIndex) => {
+    const duplicatedRoom = duplicatedRooms[roomIndex];
+    if (!duplicatedRoom) {
+      return;
+    }
+    const targetRoom = duplicatedRoomsById.get(duplicatedRoom.id);
+    if (!targetRoom) {
+      return;
+    }
+    targetRoom.objects = sourceRoom.objects.map((sourceObject, objectIndex) => ({
+      ...sourceObject,
+      id: `${duplicatedRoom.id}-object-${objectIndex}-${Date.now()}`,
+      roomId: duplicatedRoom.id,
+      quantity: Math.max(1, sourceObject.quantity),
+      selectedProductId: sourceObject.selectedProductId,
+      poApproved: Boolean(sourceObject.poApproved),
+      ordered: Boolean(sourceObject.ordered),
+      installed: Boolean(sourceObject.installed),
+      productOptions: sourceObject.productOptions,
+    }));
+  });
+
+  return {
+    id: houseRow.id,
+    projectId: houseRow.project_id,
+    name: houseRow.name,
+    sizeSqm: normalizeSizeSqm(houseRow.size_sq_m),
+    rooms: duplicatedRooms.map((row) => duplicatedRoomsById.get(row.id)!).filter(Boolean),
+  };
+}
+
+export async function updateRoomObjectSelectedMaterialById(
+  roomObjectId: string,
+  selectedMaterialId: string | null
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedObjectId = roomObjectId.trim();
+  if (!normalizedObjectId) {
+    throw new Error("Room object ID is required.");
+  }
+
+  const normalizedMaterialId = selectedMaterialId?.trim() || null;
+
+  const { error } = await supabase
+    .from("room_objects")
+    .update({
+      selected_material_id: normalizedMaterialId,
+    })
+    .eq("id", normalizedObjectId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function updateRoomObjectWorkflowById(
+  roomObjectId: string,
+  workflow: { poApproved: boolean; ordered: boolean; installed: boolean }
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedObjectId = roomObjectId.trim();
+  if (!normalizedObjectId) {
+    throw new Error("Room object ID is required.");
+  }
+
+  const { error } = await supabase
+    .from("room_objects")
+    .update({
+      po_approved: Boolean(workflow.poApproved),
+      is_ordered: Boolean(workflow.ordered),
+      is_installed: Boolean(workflow.installed),
+    })
+    .eq("id", normalizedObjectId);
+
+  if (error) {
+    if (hasMissingWorkflowColumnsError(error.code, error.message)) {
+      throw new Error("Workflow columns are missing in DB. Apply latest migrations and retry.");
+    }
     throw new Error(error.message);
   }
 }

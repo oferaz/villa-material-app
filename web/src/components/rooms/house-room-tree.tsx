@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Home, Pencil, Plus, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, Home, Pencil, Plus, X } from "lucide-react";
 import { House, RoomType } from "@/types";
 import { Sidebar } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { getHouseColor } from "@/lib/ui/house-colors";
 import { AddRoomDialog } from "@/components/rooms/add-room-dialog";
+import { AddHouseDialog } from "@/components/rooms/add-house-dialog";
 
 interface HouseRoomTreeProps {
   houses: House[];
@@ -17,6 +18,8 @@ interface HouseRoomTreeProps {
   onSelectRoom: (houseId: string, roomId: string) => void;
   onRenameHouse: (houseId: string, nextName: string) => void;
   onRenameRoom: (roomId: string, nextName: string) => void;
+  onAddHouse: (houseName: string, houseSizeSqm?: number) => void;
+  onDuplicateHouse: (houseId: string, duplicateName?: string) => void;
   onAddRoom: (houseId: string, roomName: string, roomType: RoomType, roomSizeSqm?: number) => void;
 }
 
@@ -34,12 +37,15 @@ export function HouseRoomTree({
   onSelectRoom,
   onRenameHouse,
   onRenameRoom,
+  onAddHouse,
+  onDuplicateHouse,
   onAddRoom,
 }: HouseRoomTreeProps) {
   const [collapsedHouses, setCollapsedHouses] = useState<Record<string, boolean>>({});
   const [editingTarget, setEditingTarget] = useState<EditingTarget>(null);
   const [draftName, setDraftName] = useState("");
   const [roomDialogHouseId, setRoomDialogHouseId] = useState<string | null>(null);
+  const [isAddHouseOpen, setIsAddHouseOpen] = useState(false);
 
   const selectedHouse = useMemo(() => {
     return houses.find((house) => house.id === selectedHouseId) ?? houses[0];
@@ -88,7 +94,13 @@ export function HouseRoomTree({
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project map</p>
             <h2 className="text-sm font-semibold text-slate-800">Houses and rooms</h2>
           </div>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{houses.length}</span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{houses.length}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddHouseOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add house
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -163,6 +175,23 @@ export function HouseRoomTree({
                           }}
                         >
                           <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-slate-500"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            const suggestedName = `${house.name} Copy`;
+                            const requestedName = window.prompt("Duplicate house as:", suggestedName);
+                            if (requestedName === null) {
+                              return;
+                            }
+                            onDuplicateHouse(house.id, requestedName.trim() || suggestedName);
+                          }}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </>
@@ -277,6 +306,14 @@ export function HouseRoomTree({
             return;
           }
           onAddRoom(targetHouseId, roomName, roomType, roomSizeSqm);
+        }}
+      />
+
+      <AddHouseDialog
+        open={isAddHouseOpen}
+        onOpenChange={setIsAddHouseOpen}
+        onCreateHouse={(houseName, houseSizeSqm) => {
+          onAddHouse(houseName, houseSizeSqm);
         }}
       />
     </>

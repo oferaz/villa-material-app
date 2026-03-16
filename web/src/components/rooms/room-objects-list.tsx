@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react";
-import { Room, getObjectStatus } from "@/types";
+import { Room, getObjectStatus, getObjectWorkflowStage, getWorkflowStageLabel } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,7 @@ export function RoomObjectsList({
         <ul className="space-y-2">
           {room.objects.map((objectItem) => {
             const status = getObjectStatus(objectItem);
+            const workflowStage = getObjectWorkflowStage(objectItem);
             const isSelected = selectedObjectId === objectItem.id;
             return (
               <li key={objectItem.id}>
@@ -60,6 +61,7 @@ export function RoomObjectsList({
                     <p className="text-xs text-slate-500">{objectItem.category}</p>
                   </button>
                   <Badge variant={status === "selected" ? "success" : "danger"}>{status}</Badge>
+                  <Badge variant="outline">{getWorkflowStageLabel(workflowStage)}</Badge>
                   <Button
                     type="button"
                     variant="ghost"

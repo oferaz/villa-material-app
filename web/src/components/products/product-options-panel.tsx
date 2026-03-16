@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Search, Link as LinkIcon } from "lucide-react";
-import { RoomObject, getObjectStatus } from "@/types";
+import { RoomObject, getObjectStatus, getObjectWorkflowStage, getWorkflowStageLabel } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ interface ProductOptionsPanelProps {
   roomObject: RoomObject | undefined;
   globalSearchQuery: string;
   onSelectProduct: (productId: string) => void;
+  onUpdateWorkflow: (objectId: string, patch: Partial<Pick<RoomObject, "poApproved" | "ordered" | "installed">>) => void;
   onSearchCatalog: (objectId: string, query: string) => void;
   onAddFromLink: (objectId: string, payload: AddFromLinkPayload) => void;
 }
@@ -28,6 +29,7 @@ export function ProductOptionsPanel({
   roomObject,
   globalSearchQuery,
   onSelectProduct,
+  onUpdateWorkflow,
   onSearchCatalog,
   onAddFromLink,
 }: ProductOptionsPanelProps) {
@@ -77,6 +79,7 @@ export function ProductOptionsPanel({
   }
 
   const objectStatus = getObjectStatus(roomObject);
+  const workflowStage = getObjectWorkflowStage(roomObject);
   const showLinkOptionalFields = linkUrl.trim().length > 0;
 
   function handleSearchSubmit(event?: FormEvent) {
@@ -135,6 +138,49 @@ export function ProductOptionsPanel({
             <CardDescription>{visibleOptions.length} option(s) shown from your private materials</CardDescription>
           </div>
           <Badge variant={objectStatus === "selected" ? "success" : "danger"}>{objectStatus}</Badge>
+        </div>
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workflow stage</p>
+          <p className="text-sm font-medium text-slate-800">{getWorkflowStageLabel(workflowStage)}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={roomObject.poApproved ? "default" : "outline"}
+              disabled={!roomObject.selectedProductId || roomObject.poApproved}
+              onClick={() => onUpdateWorkflow(roomObject.id, { poApproved: true })}
+            >
+              Approve for PO
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={roomObject.ordered ? "default" : "outline"}
+              disabled={!roomObject.selectedProductId || !roomObject.poApproved || roomObject.ordered}
+              onClick={() => onUpdateWorkflow(roomObject.id, { ordered: true })}
+            >
+              Mark ordered
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={roomObject.installed ? "default" : "outline"}
+              disabled={!roomObject.selectedProductId || !roomObject.ordered || roomObject.installed}
+              onClick={() => onUpdateWorkflow(roomObject.id, { installed: true })}
+            >
+              Mark installed
+            </Button>
+            {(roomObject.poApproved || roomObject.ordered || roomObject.installed) ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onUpdateWorkflow(roomObject.id, { poApproved: false })}
+              >
+                Reset stage
+              </Button>
+            ) : null}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex-1 space-y-4 overflow-y-auto pb-5">

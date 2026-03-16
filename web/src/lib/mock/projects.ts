@@ -278,6 +278,9 @@ export function createMockRoomObject(
     name: objectName,
     category,
     quantity: 1,
+    poApproved: false,
+    ordered: false,
+    installed: false,
     productOptions: buildProductOptions(objectName, basePrice, seed, budgetCategory),
   };
 }
@@ -322,6 +325,9 @@ function buildProjects(): Project[] {
                   name: template.name,
                   category: template.category,
                   quantity: 1,
+                  poApproved: false,
+                  ordered: false,
+                  installed: false,
                   productOptions,
                   selectedProductId: shouldStartSelected ? productOptions[0]?.id : undefined,
                 };

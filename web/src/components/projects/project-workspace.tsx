@@ -12,6 +12,7 @@ import { HouseRoomTree } from "@/components/rooms/house-room-tree";
 import { ProjectRoomsStack } from "@/components/rooms/project-rooms-stack";
 import { AddObjectDialog } from "@/components/rooms/add-object-dialog";
 import { ProductOptionsPanel } from "@/components/products/product-options-panel";
+import { WorkflowOverview } from "@/components/workflow/workflow-overview";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { budgetCategoryOrder, calculateProjectBudget, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
@@ -20,13 +21,18 @@ import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { addLinkMaterialForCurrentUser, searchMaterialsForCurrentUser } from "@/lib/supabase/materials-repository";
 import {
+  createHouseForProject,
   createRoomForHouse,
   deleteProjectById,
+  duplicateHouseWithContents,
   loadProjectsForWorkspace,
   renameHouseById,
   renameProjectById,
   renameRoomById,
+  updateRoomObjectSelectedMaterialById,
+  updateRoomObjectWorkflowById,
 } from "@/lib/supabase/projects-repository";
+import { summarizeWorkflowForProject } from "@/lib/workflow/summary";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
@@ -88,6 +94,58 @@ function findRoomInProject(project: Project | undefined, roomId: string) {
   return undefined;
 }
 
+function findObjectInProject(project: Project | undefined, objectId: string) {
+  if (!project) {
+    return undefined;
+  }
+  for (const house of project.houses) {
+    for (const room of house.rooms) {
+      const objectItem = room.objects.find((item) => item.id === objectId);
+      if (objectItem) {
+        return { house, room, objectItem };
+      }
+    }
+  }
+  return undefined;
+}
+
+function normalizeWorkflowState(
+  roomObject: RoomObject,
+  patch: Partial<Pick<RoomObject, "poApproved" | "ordered" | "installed">>
+) {
+  let poApproved = patch.poApproved ?? Boolean(roomObject.poApproved);
+  let ordered = patch.ordered ?? Boolean(roomObject.ordered);
+  let installed = patch.installed ?? Boolean(roomObject.installed);
+
+  if (patch.ordered === true) {
+    poApproved = true;
+  }
+  if (patch.installed === true) {
+    poApproved = true;
+    ordered = true;
+  }
+
+  if (patch.poApproved === false) {
+    ordered = false;
+    installed = false;
+  }
+  if (patch.ordered === false) {
+    installed = false;
+  }
+
+  if (!roomObject.selectedProductId) {
+    poApproved = false;
+    ordered = false;
+    installed = false;
+  }
+
+  return {
+    poApproved,
+    ordered,
+    installed,
+  };
+}
+
 function isLinkOption(option: ProductOption): boolean {
   return option.sourceType === "link";
 }
@@ -98,6 +156,15 @@ function createInitialBudgetMap(projects: Project[] = []): Record<string, Projec
     return acc;
   }, {});
 }
+
+const defaultHouseRoomBlueprint: Array<{ name: string; type: RoomType }> = [
+  { name: "Entry", type: "entry" },
+  { name: "Living Room", type: "living_room" },
+  { name: "Kitchen", type: "kitchen" },
+  { name: "Dining Room", type: "dining_room" },
+  { name: "Bedroom", type: "bedroom" },
+  { name: "Bathroom", type: "bathroom" },
+];
 
 export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const router = useRouter();
@@ -210,6 +277,19 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const calculatedProjectBudget = useMemo(() => {
     return calculateProjectBudget(baseProjectBudget, project);
   }, [baseProjectBudget, project]);
+
+  const projectWorkflowSummary = useMemo(() => {
+    if (!project) {
+      return summarizeWorkflowForProject({
+        id: "",
+        name: "",
+        customer: "",
+        location: "",
+        houses: [],
+      });
+    }
+    return summarizeWorkflowForProject(project);
+  }, [project]);
 
   useEffect(() => {
     if (!project) {
@@ -578,6 +658,147 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setPendingScrollRoomId(newRoomId);
   }
 
+  async function handleAddHouse(houseName: string, houseSizeSqm?: number) {
+    const normalizedName = houseName.trim();
+    if (!project || !normalizedName) {
+      return;
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        const createdHouse = await createHouseForProject({
+          projectId: project.id,
+          name: normalizedName,
+          sizeSqm: houseSizeSqm,
+        });
+
+        updateCurrentProject((targetProject) => ({
+          ...targetProject,
+          houses: [...targetProject.houses, createdHouse],
+        }));
+
+        const firstRoom = createdHouse.rooms[0];
+        setSelectedHouseId(createdHouse.id);
+        setSelectedRoomId(firstRoom?.id ?? "");
+        setSelectedObjectId("");
+        if (firstRoom) {
+          setPendingScrollRoomId(firstRoom.id);
+        }
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "Failed to add house.");
+      }
+      return;
+    }
+
+    const newHouseId = `${project.id}-house-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const normalizedSize =
+      typeof houseSizeSqm === "number" && Number.isFinite(houseSizeSqm) && houseSizeSqm > 0
+        ? Math.round(houseSizeSqm * 100) / 100
+        : undefined;
+
+    const newRooms: Room[] = defaultHouseRoomBlueprint.map((roomTemplate, roomIndex) => ({
+      id: `${newHouseId}-room-${roomIndex}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      houseId: newHouseId,
+      name: roomTemplate.name,
+      type: roomTemplate.type,
+      objects: [],
+    }));
+
+    const newHouse = {
+      id: newHouseId,
+      projectId: project.id,
+      name: normalizedName,
+      sizeSqm: normalizedSize,
+      rooms: newRooms,
+    };
+
+    updateCurrentProject((targetProject) => ({
+      ...targetProject,
+      houses: [...targetProject.houses, newHouse],
+    }));
+
+    setSelectedHouseId(newHouse.id);
+    setSelectedRoomId(newRooms[0]?.id ?? "");
+    setSelectedObjectId("");
+    if (newRooms[0]) {
+      setPendingScrollRoomId(newRooms[0].id);
+    }
+  }
+
+  async function handleDuplicateHouse(houseId: string, duplicateName?: string) {
+    if (!project) {
+      return;
+    }
+
+    const sourceHouse = project.houses.find((house) => house.id === houseId);
+    if (!sourceHouse) {
+      return;
+    }
+
+    const normalizedDuplicateName = (duplicateName?.trim() || `${sourceHouse.name} Copy`).trim();
+
+    if (isSupabaseConfigured) {
+      try {
+        const duplicatedHouse = await duplicateHouseWithContents({
+          projectId: project.id,
+          sourceHouse,
+          name: normalizedDuplicateName,
+        });
+
+        updateCurrentProject((targetProject) => ({
+          ...targetProject,
+          houses: [...targetProject.houses, duplicatedHouse],
+        }));
+
+        const firstRoom = duplicatedHouse.rooms[0];
+        setSelectedHouseId(duplicatedHouse.id);
+        setSelectedRoomId(firstRoom?.id ?? "");
+        setSelectedObjectId(firstRoom?.objects[0]?.id ?? "");
+        if (firstRoom) {
+          setPendingScrollRoomId(firstRoom.id);
+        }
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "Failed to duplicate house.");
+      }
+      return;
+    }
+
+    const duplicatedHouseId = `${project.id}-house-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const duplicatedRooms = sourceHouse.rooms.map((sourceRoom, roomIndex) => {
+      const duplicatedRoomId = `${duplicatedHouseId}-room-${roomIndex}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      return {
+        ...sourceRoom,
+        id: duplicatedRoomId,
+        houseId: duplicatedHouseId,
+        objects: sourceRoom.objects.map((sourceObject, objectIndex) => ({
+          ...sourceObject,
+          id: `${duplicatedRoomId}-object-${objectIndex}-${Date.now()}`,
+          roomId: duplicatedRoomId,
+        })),
+      };
+    });
+
+    const duplicatedHouse = {
+      ...sourceHouse,
+      id: duplicatedHouseId,
+      name: normalizedDuplicateName,
+      rooms: duplicatedRooms,
+    };
+
+    updateCurrentProject((targetProject) => ({
+      ...targetProject,
+      houses: [...targetProject.houses, duplicatedHouse],
+    }));
+
+    const firstRoom = duplicatedRooms[0];
+    setSelectedHouseId(duplicatedHouse.id);
+    setSelectedRoomId(firstRoom?.id ?? "");
+    setSelectedObjectId(firstRoom?.objects[0]?.id ?? "");
+    if (firstRoom) {
+      setPendingScrollRoomId(firstRoom.id);
+    }
+  }
+
   function buildObjectInstance(
     roomId: string,
     objectName: string,
@@ -592,6 +813,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         name: objectName,
         category,
         quantity: 1,
+        poApproved: false,
+        ordered: false,
+        installed: false,
         productOptions: [],
       };
     }
@@ -744,10 +968,58 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       return;
     }
 
+    const previousObjectState = { ...selectedObject };
+    const isMaterialChanged = selectedObject.selectedProductId !== productId;
+
     updateObjectById(selectedObject.id, (objectItem) => ({
       ...objectItem,
       selectedProductId: productId,
+      poApproved: isMaterialChanged ? false : Boolean(objectItem.poApproved),
+      ordered: isMaterialChanged ? false : Boolean(objectItem.ordered),
+      installed: isMaterialChanged ? false : Boolean(objectItem.installed),
     }));
+
+    if (isSupabaseConfigured) {
+      void updateRoomObjectSelectedMaterialById(selectedObject.id, productId)
+        .then(async () => {
+          if (isMaterialChanged) {
+            await updateRoomObjectWorkflowById(selectedObject.id, {
+              poApproved: false,
+              ordered: false,
+              installed: false,
+            });
+          }
+        })
+        .catch((error) => {
+          updateObjectById(selectedObject.id, () => previousObjectState);
+          window.alert(error instanceof Error ? error.message : "Failed to save selected material.");
+        });
+    }
+  }
+
+  function handleUpdateObjectWorkflow(
+    objectId: string,
+    patch: Partial<Pick<RoomObject, "poApproved" | "ordered" | "installed">>
+  ) {
+    const locatedObject = findObjectInProject(project, objectId)?.objectItem;
+    if (!locatedObject) {
+      return;
+    }
+
+    const previousState = { ...locatedObject };
+    const nextWorkflow = normalizeWorkflowState(locatedObject, patch);
+
+    updateObjectById(objectId, (objectItem) => ({
+      ...objectItem,
+      ...nextWorkflow,
+    }));
+
+    if (isSupabaseConfigured) {
+      void updateRoomObjectWorkflowById(objectId, nextWorkflow).catch((error) => {
+        updateObjectById(objectId, () => previousState);
+        window.alert(error instanceof Error ? error.message : "Failed to update workflow stage.");
+      });
+    }
   }
 
   async function handleSearchCatalog(objectId: string, query: string) {
@@ -978,6 +1250,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       onSelectRoom={handleSelectRoom}
       onRenameHouse={handleRenameHouse}
       onRenameRoom={handleRenameRoom}
+      onAddHouse={handleAddHouse}
+      onDuplicateHouse={handleDuplicateHouse}
       onAddRoom={handleAddRoom}
     />
   );
@@ -1015,6 +1289,11 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
           </CardHeader>
         </Card>
       ) : null}
+      <WorkflowOverview
+        title="Project progress overview"
+        description="Track where you stand across all objects: assign material, approve PO, order, and install."
+        summary={projectWorkflowSummary}
+      />
       <ProjectRoomsStack
         houses={project.houses}
         selectedRoomId={selectedRoom?.id ?? ""}
@@ -1071,6 +1350,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         roomObject={selectedObject}
         globalSearchQuery={searchQuery}
         onSelectProduct={handleSelectProduct}
+        onUpdateWorkflow={handleUpdateObjectWorkflow}
         onSearchCatalog={handleSearchCatalog}
         onAddFromLink={handleAddFromLink}
       />

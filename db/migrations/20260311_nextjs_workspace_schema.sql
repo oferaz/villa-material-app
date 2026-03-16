@@ -106,9 +106,14 @@ create table if not exists public.room_objects (
   category text not null,
   material_search_query text,
   selected_material_id uuid,
+  po_approved boolean not null default false,
+  is_ordered boolean not null default false,
+  is_installed boolean not null default false,
   sort_order integer not null default 0,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint chk_room_objects_order_requires_po_approved check (not is_ordered or po_approved),
+  constraint chk_room_objects_install_requires_ordered check (not is_installed or is_ordered)
 );
 
 drop trigger if exists trg_room_objects_touch_updated_at on public.room_objects;
