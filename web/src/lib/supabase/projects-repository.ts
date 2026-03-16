@@ -381,3 +381,55 @@ export async function renameRoomById(roomId: string, nextName: string): Promise<
     throw new Error(error.message);
   }
 }
+
+export async function renameHouseById(houseId: string, nextName: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedHouseId = houseId.trim();
+  const normalizedName = nextName.trim();
+  if (!normalizedHouseId) {
+    throw new Error("House ID is required.");
+  }
+  if (!normalizedName) {
+    throw new Error("House name is required.");
+  }
+
+  const { error } = await supabase
+    .from("houses")
+    .update({
+      name: normalizedName,
+    })
+    .eq("id", normalizedHouseId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function renameProjectById(projectId: string, nextName: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedProjectId = projectId.trim();
+  const normalizedName = nextName.trim();
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+  if (!normalizedName) {
+    throw new Error("Project name is required.");
+  }
+
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      name: normalizedName,
+    })
+    .eq("id", normalizedProjectId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}

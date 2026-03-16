@@ -1,8 +1,8 @@
 "use client";
 
 import { ComponentType, useEffect, useMemo, useState } from "react";
-import { Boxes, Presentation } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Boxes, Info, Presentation, X } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { NewProjectWizardPayload, TopNav } from "@/components/layout/top-nav";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
@@ -19,7 +19,14 @@ import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock
 import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { addLinkMaterialForCurrentUser, searchMaterialsForCurrentUser } from "@/lib/supabase/materials-repository";
-import { createRoomForHouse, deleteProjectById, loadProjectsForWorkspace, renameRoomById } from "@/lib/supabase/projects-repository";
+import {
+  createRoomForHouse,
+  deleteProjectById,
+  loadProjectsForWorkspace,
+  renameHouseById,
+  renameProjectById,
+  renameRoomById,
+} from "@/lib/supabase/projects-repository";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
@@ -94,6 +101,8 @@ function createInitialBudgetMap(projects: Project[] = []): Record<string, Projec
 
 export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectBudgets, setProjectBudgets] = useState<Record<string, ProjectBudget>>(() =>
     createInitialBudgetMap([])
@@ -107,6 +116,13 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [selectedObjectId, setSelectedObjectId] = useState<string>("");
   const [addObjectRoomId, setAddObjectRoomId] = useState<string | null>(null);
   const [pendingScrollRoomId, setPendingScrollRoomId] = useState<string | null>(null);
+  const [showDefaultStructureNotice, setShowDefaultStructureNotice] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("onboarding") === "default-rooms") {
+      setShowDefaultStructureNotice(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -338,7 +354,21 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
     const loadedProjects = await loadProjectsForWorkspace();
     setProjects(loadedProjects);
-    router.push(`/projects/${projectId}`);
+    router.push(`/projects/${projectId}?onboarding=default-rooms`);
+  }
+
+  function handleDismissDefaultStructureNotice() {
+    setShowDefaultStructureNotice(false);
+
+    if (searchParams.get("onboarding") !== "default-rooms") {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("onboarding");
+    const nextQuery = nextParams.toString();
+    const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+    router.replace(nextUrl, { scroll: false });
   }
 
   async function handleDeleteProject(projectId: string) {
@@ -412,6 +442,72 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         }
         window.alert(error instanceof Error ? error.message : "Failed to rename room.");
       });
+    }
+  }
+
+  function handleRenameHouse(houseId: string, nextName: string) {
+    const normalizedName = nextName.trim();
+    if (!normalizedName) {
+      return;
+    }
+
+    const previousName = project?.houses.find((house) => house.id === houseId)?.name ?? "";
+
+    updateCurrentProject((targetProject) => ({
+      ...targetProject,
+      houses: targetProject.houses.map((house) =>
+        house.id === houseId
+          ? {
+              ...house,
+              name: normalizedName,
+            }
+          : house
+      ),
+    }));
+
+    if (isSupabaseConfigured) {
+      void renameHouseById(houseId, normalizedName).catch((error) => {
+        if (previousName) {
+          updateCurrentProject((targetProject) => ({
+            ...targetProject,
+            houses: targetProject.houses.map((house) =>
+              house.id === houseId
+                ? {
+                    ...house,
+                    name: previousName,
+                  }
+                : house
+            ),
+          }));
+        }
+        window.alert(error instanceof Error ? error.message : "Failed to rename house.");
+      });
+    }
+  }
+
+  async function handleRenameProject(nextName: string) {
+    const normalizedName = nextName.trim();
+    if (!project || !normalizedName || normalizedName === project.name) {
+      return;
+    }
+
+    const previousName = project.name;
+
+    updateCurrentProject((targetProject) => ({
+      ...targetProject,
+      name: normalizedName,
+    }));
+
+    if (isSupabaseConfigured) {
+      try {
+        await renameProjectById(project.id, normalizedName);
+      } catch (error) {
+        updateCurrentProject((targetProject) => ({
+          ...targetProject,
+          name: previousName,
+        }));
+        throw error;
+      }
     }
   }
 
@@ -880,6 +976,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       selectedHouseId={selectedHouse?.id ?? ""}
       selectedRoomId={selectedRoom?.id ?? ""}
       onSelectRoom={handleSelectRoom}
+      onRenameHouse={handleRenameHouse}
       onRenameRoom={handleRenameRoom}
       onAddRoom={handleAddRoom}
     />
@@ -892,6 +989,32 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         <p className="text-sm font-semibold text-slate-800">{selectedHouse?.name ?? "No house selected"}</p>
         <p className="text-xs text-slate-500">{selectedRoom?.name ?? "No room selected"}</p>
       </div>
+      {showDefaultStructureNotice ? (
+        <Card className="border-blue-200 bg-blue-50 shadow-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="inline-flex items-center gap-2 text-base text-blue-900">
+                  <Info className="h-4 w-4" />
+                  Default structure created
+                </CardTitle>
+                <CardDescription className="mt-1 text-blue-800">
+                  Every new house starts with these rooms: Entry, Living Room, Kitchen, Dining Room, Bedroom, Bathroom.
+                </CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-blue-800"
+                onClick={handleDismissDefaultStructureNotice}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+        </Card>
+      ) : null}
       <ProjectRoomsStack
         houses={project.houses}
         selectedRoomId={selectedRoom?.id ?? ""}
@@ -968,6 +1091,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       objectsCount={totalObjects}
       activeTab={activeTab}
       onTabChange={setActiveTab}
+      onRenameProject={handleRenameProject}
       roomsContent={roomsContent}
       materialsContent={materialsContent}
       budgetContent={budgetContent}

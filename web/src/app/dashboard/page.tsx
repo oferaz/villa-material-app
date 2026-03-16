@@ -94,7 +94,7 @@ export default function DashboardPage() {
 
     const loadedProjects = await loadProjectsForWorkspace();
     setProjects(loadedProjects);
-    router.push(`/projects/${projectId}`);
+    router.push(`/projects/${projectId}?onboarding=default-rooms`);
   }
 
   async function handleDeleteProject(projectId: string) {
@@ -120,7 +120,7 @@ export default function DashboardPage() {
 
       const loadedProjects = await loadProjectsForWorkspace();
       setProjects(loadedProjects);
-      router.push(`/projects/${projectId}`);
+      router.push(`/projects/${projectId}?onboarding=default-rooms`);
     } finally {
       setIsCreatingDemoProject(false);
     }

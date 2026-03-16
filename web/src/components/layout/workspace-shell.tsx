@@ -1,7 +1,12 @@
-import { ReactNode } from "react";
+"use client";
+
+import { ReactNode, useEffect, useState } from "react";
+import { Check, Pencil, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface WorkspaceShellProps {
   projectName: string;
@@ -12,6 +17,7 @@ interface WorkspaceShellProps {
   objectsCount: number;
   activeTab: "rooms" | "materials" | "budget" | "client";
   onTabChange: (value: "rooms" | "materials" | "budget" | "client") => void;
+  onRenameProject?: (nextName: string) => Promise<void> | void;
   roomsContent: ReactNode;
   materialsContent: ReactNode;
   budgetContent: ReactNode;
@@ -27,16 +33,117 @@ export function WorkspaceShell({
   objectsCount,
   activeTab,
   onTabChange,
+  onRenameProject,
   roomsContent,
   materialsContent,
   budgetContent,
   clientContent,
 }: WorkspaceShellProps) {
+  const [isEditingProjectName, setIsEditingProjectName] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState(projectName);
+  const [isSavingProjectName, setIsSavingProjectName] = useState(false);
+
+  useEffect(() => {
+    if (!isEditingProjectName) {
+      setProjectNameDraft(projectName);
+    }
+  }, [isEditingProjectName, projectName]);
+
+  async function handleSaveProjectName() {
+    if (!onRenameProject) {
+      setIsEditingProjectName(false);
+      return;
+    }
+
+    const normalizedName = projectNameDraft.trim();
+    if (!normalizedName) {
+      setProjectNameDraft(projectName);
+      setIsEditingProjectName(false);
+      return;
+    }
+
+    if (normalizedName === projectName) {
+      setIsEditingProjectName(false);
+      return;
+    }
+
+    setIsSavingProjectName(true);
+    try {
+      await onRenameProject(normalizedName);
+      setIsEditingProjectName(false);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to rename project.");
+    } finally {
+      setIsSavingProjectName(false);
+    }
+  }
+
+  function handleCancelProjectRename() {
+    setProjectNameDraft(projectName);
+    setIsEditingProjectName(false);
+  }
+
   return (
     <div className="space-y-4">
       <Card className="border-slate-200 bg-gradient-to-r from-white to-slate-50 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-2xl">{projectName}</CardTitle>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            {isEditingProjectName ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <Input
+                  autoFocus
+                  value={projectNameDraft}
+                  onChange={(event) => setProjectNameDraft(event.target.value)}
+                  className="h-10 max-w-xl text-lg font-semibold"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleSaveProjectName();
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      handleCancelProjectRename();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => void handleSaveProjectName()}
+                  disabled={isSavingProjectName}
+                >
+                  <Check className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleCancelProjectRename}
+                  disabled={isSavingProjectName}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex min-w-0 items-center gap-2">
+                <CardTitle className="truncate text-2xl">{projectName}</CardTitle>
+                {onRenameProject ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-600"
+                    onClick={() => setIsEditingProjectName(true)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </div>
           <CardDescription>
             {customer} - {location}
           </CardDescription>

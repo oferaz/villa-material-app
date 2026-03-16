@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Pencil, Plus, Home } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Home, Pencil, Plus, X } from "lucide-react";
 import { House, RoomType } from "@/types";
 import { Sidebar } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { getHouseColor } from "@/lib/ui/house-colors";
 import { AddRoomDialog } from "@/components/rooms/add-room-dialog";
 
 interface HouseRoomTreeProps {
@@ -14,20 +15,29 @@ interface HouseRoomTreeProps {
   selectedHouseId: string;
   selectedRoomId: string;
   onSelectRoom: (houseId: string, roomId: string) => void;
+  onRenameHouse: (houseId: string, nextName: string) => void;
   onRenameRoom: (roomId: string, nextName: string) => void;
   onAddRoom: (houseId: string, roomName: string, roomType: RoomType, roomSizeSqm?: number) => void;
 }
+
+type EditingTarget =
+  | {
+      kind: "house" | "room";
+      id: string;
+    }
+  | null;
 
 export function HouseRoomTree({
   houses,
   selectedHouseId,
   selectedRoomId,
   onSelectRoom,
+  onRenameHouse,
   onRenameRoom,
   onAddRoom,
 }: HouseRoomTreeProps) {
   const [collapsedHouses, setCollapsedHouses] = useState<Record<string, boolean>>({});
-  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const [editingTarget, setEditingTarget] = useState<EditingTarget>(null);
   const [draftName, setDraftName] = useState("");
   const [roomDialogHouseId, setRoomDialogHouseId] = useState<string | null>(null);
 
@@ -39,21 +49,34 @@ export function HouseRoomTree({
     setCollapsedHouses((prev) => ({ ...prev, [houseId]: !prev[houseId] }));
   }
 
-  function startRename(roomId: string, currentName: string) {
-    setEditingRoomId(roomId);
+  function startRenameHouse(houseId: string, currentName: string) {
+    setEditingTarget({ kind: "house", id: houseId });
+    setDraftName(currentName);
+  }
+
+  function startRenameRoom(roomId: string, currentName: string) {
+    setEditingTarget({ kind: "room", id: roomId });
     setDraftName(currentName);
   }
 
   function cancelRename() {
-    setEditingRoomId(null);
+    setEditingTarget(null);
     setDraftName("");
   }
 
-  function saveRename(roomId: string) {
+  function saveRename() {
     const trimmedName = draftName.trim();
-    if (trimmedName) {
-      onRenameRoom(roomId, trimmedName);
+    if (!editingTarget || !trimmedName) {
+      cancelRename();
+      return;
     }
+
+    if (editingTarget.kind === "house") {
+      onRenameHouse(editingTarget.id, trimmedName);
+    } else {
+      onRenameRoom(editingTarget.id, trimmedName);
+    }
+
     cancelRename();
   }
 
@@ -69,31 +92,81 @@ export function HouseRoomTree({
         </div>
 
         <div className="space-y-3">
-          {houses.map((house) => {
+          {houses.map((house, houseIndex) => {
             const isCollapsed = collapsedHouses[house.id] ?? false;
             const isHouseSelected = house.id === selectedHouseId;
+            const isEditingHouse = editingTarget?.kind === "house" && editingTarget.id === house.id;
+            const houseColor = getHouseColor(house.id, houseIndex);
 
             return (
               <section
                 key={house.id}
                 className={cn(
                   "rounded-xl border bg-slate-50/70 transition",
-                  isHouseSelected ? "border-blue-200 shadow-sm" : "border-slate-200"
+                  isHouseSelected ? `${houseColor.softBorder} ${houseColor.softBg} shadow-sm` : "border-slate-200"
                 )}
               >
                 <div className="flex items-center justify-between px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => toggleHouse(house.id)}
-                    className="flex items-center gap-2 text-left text-sm font-medium text-slate-800"
-                  >
-                    {isCollapsed ? <ChevronRight className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
-                    <Home className="h-4 w-4 text-slate-500" />
-                    <span>{house.name}</span>
-                  </button>
-                  <span className="text-xs text-slate-500">
-                    {house.sizeSqm ? `${house.sizeSqm} m2` : `${house.rooms.length} rooms`}
-                  </span>
+                  {isEditingHouse ? (
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <Input
+                        autoFocus
+                        value={draftName}
+                        className="h-8"
+                        onChange={(event) => setDraftName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            saveRename();
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            cancelRename();
+                          }
+                        }}
+                      />
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={saveRename}>
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={cancelRename}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => toggleHouse(house.id)}
+                        className="flex min-w-0 items-center gap-2 text-left text-sm font-medium text-slate-800"
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+                        )}
+                        <span className={cn("h-2.5 w-2.5 rounded-full", houseColor.dot)} />
+                        <Home className="h-4 w-4 shrink-0 text-slate-500" />
+                        <span className="truncate">{house.name}</span>
+                      </button>
+                      <div className="ml-2 flex items-center gap-1">
+                        <span className="text-xs text-slate-500">
+                          {house.sizeSqm ? `${house.sizeSqm} m2` : `${house.rooms.length} rooms`}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-slate-500"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            startRenameHouse(house.id, house.name);
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {!isCollapsed ? (
@@ -101,35 +174,44 @@ export function HouseRoomTree({
                     <ul className="space-y-1">
                       {house.rooms.map((room) => {
                         const isSelected = room.id === selectedRoomId;
-                        const isEditing = room.id === editingRoomId;
+                        const isEditingRoom = editingTarget?.kind === "room" && editingTarget.id === room.id;
 
                         return (
                           <li key={room.id}>
                             <div
                               className={cn(
                                 "flex items-center gap-2 rounded-md border px-2 py-1.5 transition",
-                                isSelected ? "border-blue-200 bg-blue-50" : "border-transparent bg-white hover:border-slate-200"
+                                isSelected
+                                  ? `${houseColor.softBorder} ${houseColor.softBg}`
+                                  : "border-transparent bg-white hover:border-slate-200"
                               )}
                               onClick={() => onSelectRoom(house.id, room.id)}
                             >
-                              {isEditing ? (
-                                <Input
-                                  autoFocus
-                                  value={draftName}
-                                  className="h-8"
-                                  onChange={(event) => setDraftName(event.target.value)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter") {
-                                      event.preventDefault();
-                                      saveRename(room.id);
-                                    }
-                                    if (event.key === "Escape") {
-                                      event.preventDefault();
-                                      cancelRename();
-                                    }
-                                  }}
-                                  onBlur={() => saveRename(room.id)}
-                                />
+                              {isEditingRoom ? (
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                  <Input
+                                    autoFocus
+                                    value={draftName}
+                                    className="h-8"
+                                    onChange={(event) => setDraftName(event.target.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.preventDefault();
+                                        saveRename();
+                                      }
+                                      if (event.key === "Escape") {
+                                        event.preventDefault();
+                                        cancelRename();
+                                      }
+                                    }}
+                                  />
+                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={saveRename}>
+                                    <Check className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={cancelRename}>
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               ) : (
                                 <>
                                   <button
@@ -151,7 +233,7 @@ export function HouseRoomTree({
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       onSelectRoom(house.id, room.id);
-                                      startRename(room.id, room.name);
+                                      startRenameRoom(room.id, room.name);
                                     }}
                                   >
                                     <Pencil className="h-3.5 w-3.5" />
