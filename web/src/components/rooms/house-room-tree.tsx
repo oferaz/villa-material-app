@@ -88,7 +88,7 @@ export function HouseRoomTree({
 
   return (
     <>
-      <Sidebar className="h-full space-y-4 border-slate-200">
+      <Sidebar className="min-h-full space-y-4 border-slate-200">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project map</p>
