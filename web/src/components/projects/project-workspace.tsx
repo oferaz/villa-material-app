@@ -40,7 +40,17 @@ import { summarizeWorkflowForProject } from "@/lib/workflow/summary";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { exportProjectToExcel } from "@/lib/export/project-excel";
 import { defaultUserPreferences, loadUserPreferences, USER_PREFERENCES_EVENT } from "@/lib/user-preferences";
-import { BudgetCategoryName, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
+import {
+  BudgetCategoryName,
+  getObjectWorkflowStage,
+  ProductOption,
+  Project,
+  ProjectBudget,
+  Room,
+  RoomObject,
+  RoomType,
+  WorkflowStage,
+} from "@/types";
 
 interface ProjectWorkspaceProps {
   initialProjectId: string;
@@ -191,6 +201,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [pendingScrollRoomId, setPendingScrollRoomId] = useState<string | null>(null);
   const [showDefaultStructureNotice, setShowDefaultStructureNotice] = useState(false);
   const [preferences, setPreferences] = useState(defaultUserPreferences);
+  const [workflowStageFilters, setWorkflowStageFilters] = useState<WorkflowStage[]>([]);
 
   useEffect(() => {
     if (searchParams.get("onboarding") === "default-rooms") {
@@ -312,6 +323,50 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
     return summarizeWorkflowForProject(project);
   }, [project]);
+
+  const filteredHousesForRooms = useMemo(() => {
+    if (!project) {
+      return [];
+    }
+    if (workflowStageFilters.length === 0) {
+      return project.houses;
+    }
+
+    const selectedStageSet = new Set(workflowStageFilters);
+    return project.houses
+      .map((house) => ({
+        ...house,
+        rooms: house.rooms
+          .map((room) => ({
+            ...room,
+            objects: room.objects.filter((objectItem) => selectedStageSet.has(getObjectWorkflowStage(objectItem))),
+          }))
+          .filter((room) => room.objects.length > 0),
+      }))
+      .filter((house) => house.rooms.length > 0);
+  }, [project, workflowStageFilters]);
+
+  const visibleSelectedHouse = useMemo(() => {
+    return filteredHousesForRooms.find((house) => house.id === selectedHouseId) ?? filteredHousesForRooms[0];
+  }, [filteredHousesForRooms, selectedHouseId]);
+
+  const visibleSelectedRoom = useMemo(() => {
+    return visibleSelectedHouse?.rooms.find((room) => room.id === selectedRoomId) ?? visibleSelectedHouse?.rooms[0];
+  }, [visibleSelectedHouse, selectedRoomId]);
+
+  const visibleSelectedObject = useMemo(() => {
+    return visibleSelectedRoom?.objects.find((obj) => obj.id === selectedObjectId) ?? visibleSelectedRoom?.objects[0];
+  }, [visibleSelectedRoom, selectedObjectId]);
+
+  function handleToggleWorkflowStageFilter(stage: WorkflowStage) {
+    setWorkflowStageFilters((prev) =>
+      prev.includes(stage) ? prev.filter((existingStage) => existingStage !== stage) : [...prev, stage]
+    );
+  }
+
+  function handleClearWorkflowStageFilters() {
+    setWorkflowStageFilters([]);
+  }
 
   useEffect(() => {
     if (!project) {
@@ -1357,8 +1412,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     <div className="space-y-4 pb-20">
       <div className="sticky top-[122px] z-10 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current house</p>
-        <p className="text-sm font-semibold text-slate-800">{selectedHouse?.name ?? "No house selected"}</p>
-        <p className="text-xs text-slate-500">{selectedRoom?.name ?? "No room selected"}</p>
+        <p className="text-sm font-semibold text-slate-800">{visibleSelectedHouse?.name ?? "No house selected"}</p>
+        <p className="text-xs text-slate-500">{visibleSelectedRoom?.name ?? "No room selected"}</p>
       </div>
       {showDefaultStructureNotice ? (
         <Card className="border-blue-200 bg-blue-50 shadow-sm">
@@ -1390,11 +1445,24 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         title="Project progress overview"
         description="Track where you stand across all objects: assign material, approve PO, order, and install."
         summary={projectWorkflowSummary}
+        selectedStages={workflowStageFilters}
+        onToggleStage={handleToggleWorkflowStageFilter}
+        onClearStageFilter={handleClearWorkflowStageFilters}
       />
+      {workflowStageFilters.length > 0 && filteredHousesForRooms.length === 0 ? (
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardContent className="flex items-center justify-between gap-3 py-4">
+            <p className="text-sm text-slate-600">No objects match the selected statuses.</p>
+            <Button type="button" variant="outline" onClick={handleClearWorkflowStageFilters}>
+              Clear filter
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
       <ProjectRoomsStack
-        houses={project.houses}
-        selectedRoomId={selectedRoom?.id ?? ""}
-        selectedObjectId={selectedObject?.id ?? ""}
+        houses={filteredHousesForRooms}
+        selectedRoomId={visibleSelectedRoom?.id ?? ""}
+        selectedObjectId={visibleSelectedObject?.id ?? ""}
         showWorkflowHints={preferences.showWorkflowHints}
         onAddSuggestion={(roomId, objectName, category, basePrice) => handleAddObject(roomId, objectName, category, basePrice)}
         onSelectObject={handleSelectObject}
@@ -1446,7 +1514,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const rightPanel =
     activeTab === "rooms" ? (
       <ProductOptionsPanel
-        roomObject={selectedObject}
+        roomObject={visibleSelectedObject}
         globalSearchQuery={searchQuery}
         onSelectProduct={handleSelectProduct}
         onSearchCatalog={handleSearchCatalog}
