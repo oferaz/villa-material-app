@@ -363,6 +363,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [workflowStageFilters, setWorkflowStageFilters] = useState<WorkflowStage[]>([]);
   const [projectSnapshots, setProjectSnapshots] = useState<ProjectSnapshotSummary[]>([]);
   const [materialSearchResults, setMaterialSearchResults] = useState<ProductOption[]>([]);
+  const [pendingMaterialAssignment, setPendingMaterialAssignment] = useState<ProductOption | null>(null);
 
   useEffect(() => {
     if (searchParams.get("onboarding") === "default-rooms") {
@@ -1566,6 +1567,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       return;
     }
 
+    if (pendingMaterialAssignment) {
+      setPendingMaterialAssignment(null);
+    }
+
     const previousObjectState = { ...selectedObject };
     const isMaterialChanged = selectedObject.selectedProductId !== productId;
 
@@ -1595,18 +1600,13 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
   }
 
-  function handleAssignMaterialFromGallery(material: ProductOption) {
-    if (!selectedObject) {
-      window.alert("Select a room object first.");
-      return;
-    }
-
-    const targetObjectId = selectedObject.id;
+  function applyMaterialToObject(targetObject: RoomObject, material: ProductOption) {
+    const targetObjectId = targetObject.id;
     const previousObjectState: RoomObject = {
-      ...selectedObject,
-      productOptions: [...selectedObject.productOptions],
+      ...targetObject,
+      productOptions: [...targetObject.productOptions],
     };
-    const isMaterialChanged = selectedObject.selectedProductId !== material.id;
+    const isMaterialChanged = targetObject.selectedProductId !== material.id;
 
     updateObjectById(targetObjectId, (objectItem) => ({
       ...objectItem,
@@ -1633,6 +1633,29 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
           window.alert(error instanceof Error ? error.message : "Failed to assign material to object.");
         });
     }
+  }
+
+  function handleAssignMaterialFromGallery(material: ProductOption) {
+    setPendingMaterialAssignment(material);
+    setActiveTab("rooms");
+    setPendingScrollRoomId(selectedRoom?.id ?? null);
+  }
+
+  function handleConfirmPendingMaterialAssignment() {
+    if (!pendingMaterialAssignment) {
+      return;
+    }
+    if (!selectedObject) {
+      window.alert("Select a room object first, then confirm assignment.");
+      return;
+    }
+
+    applyMaterialToObject(selectedObject, pendingMaterialAssignment);
+    setPendingMaterialAssignment(null);
+  }
+
+  function handleCancelPendingMaterialAssignment() {
+    setPendingMaterialAssignment(null);
   }
 
   function handleUpdateObjectWorkflow(
@@ -1903,6 +1926,30 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         <p className="text-sm font-semibold text-slate-800">{visibleSelectedHouse?.name ?? "No house selected"}</p>
         <p className="text-xs text-slate-500">{visibleSelectedRoom?.name ?? "No room selected"}</p>
       </div>
+      {pendingMaterialAssignment ? (
+        <Card className="border-amber-200 bg-amber-50 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-amber-900">Pending material assignment</CardTitle>
+            <CardDescription className="text-amber-800">
+              Select the target room object, then confirm assigning <strong>{pendingMaterialAssignment.name}</strong>.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-2">
+            <p className="mr-auto text-xs text-amber-800">
+              Target:{" "}
+              {selectedObject
+                ? `${selectedObject.name} (${selectedRoom?.name ?? "Room"} / ${selectedHouse?.name ?? "House"})`
+                : "No object selected"}
+            </p>
+            <Button type="button" size="sm" onClick={handleConfirmPendingMaterialAssignment} disabled={!selectedObject}>
+              Assign to selected object
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={handleCancelPendingMaterialAssignment}>
+              Cancel
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
       {showDefaultStructureNotice ? (
         <Card className="border-blue-200 bg-blue-50 shadow-sm">
           <CardHeader className="pb-2">
@@ -1991,6 +2038,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             }
           : undefined
       }
+      pendingMaterialId={pendingMaterialAssignment?.id}
       onAssignMaterial={handleAssignMaterialFromGallery}
     />
   ) : (
