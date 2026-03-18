@@ -451,9 +451,17 @@ export function MaterialsGallery({
                 </div>
                 <p>{material.price > 0 ? `${material.price.toLocaleString()} per unit` : "Price on request"}</p>
                 <p>Updated: {formatLastUpdated(material.updatedAt)}</p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {material.sourceType ? <Badge variant="outline">{material.sourceType}</Badge> : null}
-                  {material.sku ? <Badge variant="outline">{material.sku}</Badge> : null}
+                  {material.sku ? (
+                    <Badge
+                      variant="outline"
+                      className="max-w-[11rem] overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[10px]"
+                      title={material.sku}
+                    >
+                      {material.sku}
+                    </Badge>
+                  ) : null}
                 </div>
                 <div className="grid grid-cols-3 gap-1.5">
                   <Button
