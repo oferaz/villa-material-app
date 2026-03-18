@@ -1,10 +1,11 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useState } from "react";
-import { Database, ExternalLink, RefreshCcw, Trash2 } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Database, ExternalLink, Link2, RefreshCcw, Trash2 } from "lucide-react";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import {
+  addLinkMaterialForCurrentUser,
   deleteMaterialForCurrentUser,
   listMaterialsForCurrentUser,
   UserMaterial,
@@ -12,9 +13,22 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 interface MaterialsGalleryProps {
   searchQuery: string;
+}
+
+interface LinkPreviewResult {
+  ok: boolean;
+  name?: string;
+  supplier?: string;
+  imageUrl?: string;
+  price?: number;
+  priceFound: boolean;
+  imageFound: boolean;
+  warning?: string;
 }
 
 function formatLastUpdated(value?: string): string {
@@ -34,6 +48,16 @@ export function MaterialsGallery({ searchQuery }: MaterialsGalleryProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isAddLinkOpen, setIsAddLinkOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkName, setLinkName] = useState("");
+  const [linkSupplier, setLinkSupplier] = useState("");
+  const [linkPrice, setLinkPrice] = useState("");
+  const [linkImageUrl, setLinkImageUrl] = useState("");
+  const [linkError, setLinkError] = useState("");
+  const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
+  const [isFetchingLinkPreview, setIsFetchingLinkPreview] = useState(false);
+  const [isSavingFromLink, setIsSavingFromLink] = useState(false);
 
   async function loadMaterials(refresh = false) {
     if (!isSupabaseConfigured) {
@@ -100,6 +124,136 @@ export function MaterialsGallery({ searchQuery }: MaterialsGalleryProps) {
     }
   }
 
+  function resetLinkForm() {
+    setLinkUrl("");
+    setLinkName("");
+    setLinkSupplier("");
+    setLinkPrice("");
+    setLinkImageUrl("");
+    setLinkError("");
+    setLinkPreviewMessage("");
+    setIsFetchingLinkPreview(false);
+    setIsSavingFromLink(false);
+  }
+
+  async function fetchLinkDetails() {
+    const trimmedUrl = linkUrl.trim();
+    if (!trimmedUrl) {
+      setLinkError("Link is required.");
+      return false;
+    }
+
+    try {
+      new URL(trimmedUrl);
+    } catch {
+      setLinkError("Please enter a valid URL.");
+      return false;
+    }
+
+    setLinkError("");
+    setLinkPreviewMessage("");
+    setIsFetchingLinkPreview(true);
+    try {
+      const response = await fetch("/api/link-preview", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: trimmedUrl }),
+      });
+      const payload = (await response.json()) as LinkPreviewResult & { error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Failed to fetch link details.");
+      }
+
+      if (!linkName.trim() && payload.name) {
+        setLinkName(payload.name);
+      }
+      if (!linkSupplier.trim() && payload.supplier) {
+        setLinkSupplier(payload.supplier);
+      }
+      if (!linkPrice.trim() && typeof payload.price === "number" && payload.price > 0) {
+        setLinkPrice(String(payload.price));
+      }
+      if (!linkImageUrl.trim() && payload.imageUrl) {
+        setLinkImageUrl(payload.imageUrl);
+      }
+
+      if (payload.priceFound && payload.imageFound) {
+        setLinkPreviewMessage("Fetched price and image from link.");
+      } else if (payload.priceFound) {
+        setLinkPreviewMessage("Fetched price from link.");
+      } else if (payload.imageFound) {
+        setLinkPreviewMessage("Fetched image from link.");
+      } else {
+        setLinkPreviewMessage(payload.warning ?? "Could not auto-fetch details. You can still add manually.");
+      }
+      return true;
+    } catch (fetchError) {
+      setLinkError(fetchError instanceof Error ? fetchError.message : "Failed to fetch link details.");
+      return false;
+    } finally {
+      setIsFetchingLinkPreview(false);
+    }
+  }
+
+  async function handleAddFromLink(event: FormEvent) {
+    event.preventDefault();
+
+    const trimmedUrl = linkUrl.trim();
+    if (!trimmedUrl) {
+      setLinkError("Link is required.");
+      return;
+    }
+
+    try {
+      new URL(trimmedUrl);
+    } catch {
+      setLinkError("Please enter a valid URL.");
+      return;
+    }
+
+    const trimmedPrice = linkPrice.trim();
+    let parsedPrice: number | undefined;
+    if (trimmedPrice) {
+      parsedPrice = Number(trimmedPrice);
+      if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+        setLinkError("Please enter a valid positive price.");
+        return;
+      }
+    }
+
+    const trimmedImageUrl = linkImageUrl.trim();
+    if (trimmedImageUrl) {
+      try {
+        new URL(trimmedImageUrl);
+      } catch {
+        setLinkError("Please enter a valid image URL.");
+        return;
+      }
+    }
+
+    setLinkError("");
+    setIsSavingFromLink(true);
+    try {
+      await addLinkMaterialForCurrentUser({
+        objectName: linkName.trim() || "Link Material",
+        url: trimmedUrl,
+        name: linkName.trim() || undefined,
+        supplier: linkSupplier.trim() || undefined,
+        price: parsedPrice,
+        imageUrl: trimmedImageUrl || undefined,
+      });
+      setIsAddLinkOpen(false);
+      resetLinkForm();
+      await loadMaterials(true);
+    } catch (saveError) {
+      setLinkError(saveError instanceof Error ? saveError.message : "Failed to save material from link.");
+    } finally {
+      setIsSavingFromLink(false);
+    }
+  }
+
   if (!isSupabaseConfigured) {
     return (
       <Card className="border-slate-200 shadow-sm">
@@ -124,16 +278,110 @@ export function MaterialsGallery({ searchQuery }: MaterialsGalleryProps) {
               View and remove materials from your personal DB. Added link products appear here automatically.
             </CardDescription>
           </div>
-          <Button type="button" variant="outline" onClick={() => void loadMaterials(true)} disabled={isRefreshing}>
-            <RefreshCcw className="h-4 w-4" />
-            {isRefreshing ? "Refreshing..." : "Refresh"}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button type="button" onClick={() => setIsAddLinkOpen(true)}>
+              <Link2 className="h-4 w-4" />
+              Add from link
+            </Button>
+            <Button type="button" variant="outline" onClick={() => void loadMaterials(true)} disabled={isRefreshing}>
+              <RefreshCcw className="h-4 w-4" />
+              {isRefreshing ? "Refreshing..." : "Refresh"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="text-xs text-slate-500">
           {materials.length} total materials
           {searchQuery.trim() ? ` - ${filteredMaterials.length} matching "${searchQuery.trim()}"` : ""}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={isAddLinkOpen}
+        onOpenChange={(nextOpen) => {
+          setIsAddLinkOpen(nextOpen);
+          if (!nextOpen) {
+            resetLinkForm();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="inline-flex items-center gap-2">
+              <Link2 className="h-4 w-4" />
+              Add Material From Link
+            </DialogTitle>
+            <DialogDescription>
+              Paste a product URL to fetch metadata and save it into your personal materials database.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAddFromLink} className="space-y-3">
+            <Input
+              value={linkUrl}
+              onChange={(event) => {
+                setLinkUrl(event.target.value);
+                setLinkError("");
+                setLinkPreviewMessage("");
+              }}
+              placeholder="https://supplier-site.com/product"
+              onBlur={() => {
+                if (linkUrl.trim()) {
+                  void fetchLinkDetails();
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={() => void fetchLinkDetails()}
+              disabled={isFetchingLinkPreview}
+            >
+              {isFetchingLinkPreview ? "Fetching details..." : "Fetch details from link"}
+            </Button>
+            <Input
+              value={linkName}
+              onChange={(event) => setLinkName(event.target.value)}
+              placeholder="Product name (optional)"
+            />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Input
+                value={linkSupplier}
+                onChange={(event) => setLinkSupplier(event.target.value)}
+                placeholder="Supplier (optional)"
+              />
+              <Input
+                value={linkPrice}
+                onChange={(event) => setLinkPrice(event.target.value)}
+                placeholder="Price (optional)"
+                inputMode="decimal"
+              />
+            </div>
+            <Input
+              value={linkImageUrl}
+              onChange={(event) => setLinkImageUrl(event.target.value)}
+              placeholder="Image URL (optional)"
+            />
+            {linkPreviewMessage ? <p className="text-xs text-emerald-700">{linkPreviewMessage}</p> : null}
+            {linkError ? <p className="text-xs text-red-600">{linkError}</p> : null}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsAddLinkOpen(false);
+                  resetLinkForm();
+                }}
+                disabled={isSavingFromLink}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSavingFromLink}>
+                {isSavingFromLink ? "Adding..." : "Add to Materials"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {error ? (
         <Card className="border-red-200 bg-red-50">

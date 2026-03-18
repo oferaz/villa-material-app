@@ -45,6 +45,7 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
 
     return "minmax(0,1fr)";
   })();
+  const panelToggleBtnClass = "h-7 w-7 lg:h-8 lg:w-8 2xl:h-9 2xl:w-9";
 
   return (
     <div className={cn("min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-white", className)}>
@@ -112,7 +113,7 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
                         type="button"
                         size="icon"
                         variant="outline"
-                        className="h-8 w-8"
+                        className={panelToggleBtnClass}
                         onClick={() => setIsLeftPanelCollapsed(false)}
                         title="Expand project map"
                       >
@@ -121,19 +122,21 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
                       </Button>
                     </div>
                   ) : (
-                    <div className="relative h-full overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white/80 p-2">
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        className="absolute right-2 top-2 z-10 h-8 w-8"
-                        onClick={() => setIsLeftPanelCollapsed(true)}
-                        title="Minimize project map"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                        <span className="sr-only">Minimize project map</span>
-                      </Button>
-                      <div className="pr-10">{sidebar}</div>
+                    <div className="h-full overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white/80">
+                      <div className="sticky top-0 z-20 flex justify-end border-b border-slate-200 bg-white/95 px-2 py-2 backdrop-blur">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className={panelToggleBtnClass}
+                          onClick={() => setIsLeftPanelCollapsed(true)}
+                          title="Minimize project map"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          <span className="sr-only">Minimize project map</span>
+                        </Button>
+                      </div>
+                      <div className="p-2">{sidebar}</div>
                     </div>
                   )}
                 </div>
@@ -149,7 +152,7 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
                         type="button"
                         size="icon"
                         variant="outline"
-                        className="h-8 w-8"
+                        className={panelToggleBtnClass}
                         onClick={() => setIsRightPanelCollapsed(false)}
                         title="Expand options panel"
                       >
@@ -158,19 +161,21 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
                       </Button>
                     </div>
                   ) : (
-                    <div className="relative h-full overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white/80 p-2">
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        className="absolute left-2 top-2 z-10 h-8 w-8"
-                        onClick={() => setIsRightPanelCollapsed(true)}
-                        title="Minimize options panel"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                        <span className="sr-only">Minimize options panel</span>
-                      </Button>
-                      <div className="pl-10">{rightPanel}</div>
+                    <div className="h-full overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white/80">
+                      <div className="sticky top-0 z-20 flex justify-start border-b border-slate-200 bg-white/95 px-2 py-2 backdrop-blur">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className={panelToggleBtnClass}
+                          onClick={() => setIsRightPanelCollapsed(true)}
+                          title="Minimize options panel"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                          <span className="sr-only">Minimize options panel</span>
+                        </Button>
+                      </div>
+                      <div className="p-2">{rightPanel}</div>
                     </div>
                   )}
                 </div>
