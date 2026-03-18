@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Database, ExternalLink, Link2, RefreshCcw, Trash2 } from "lucide-react";
+import { Database, Link2, RefreshCcw } from "lucide-react";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import {
   addLinkMaterialForCurrentUser,
@@ -453,10 +453,11 @@ export function MaterialsGallery({
                   {material.sourceType ? <Badge variant="outline">{material.sourceType}</Badge> : null}
                   {material.sku ? <Badge variant="outline">{material.sku}</Badge> : null}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   <Button
                     type="button"
                     size="sm"
+                    className="h-7 w-full px-2 text-[11px]"
                     variant={focusTarget?.selectedProductId === material.id ? "secondary" : "default"}
                     onClick={() => onAssignMaterial?.(material)}
                     disabled={!focusTarget || !onAssignMaterial}
@@ -464,22 +465,25 @@ export function MaterialsGallery({
                     {focusTarget?.selectedProductId === material.id ? "Assigned" : "Assign"}
                   </Button>
                   {material.sourceUrl ? (
-                    <Button type="button" variant="outline" size="sm" asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-7 w-full px-2 text-[11px]" asChild>
                       <a href={material.sourceUrl} target="_blank" rel="noreferrer">
-                        <ExternalLink className="h-3.5 w-3.5" />
                         Open
                       </a>
                     </Button>
-                  ) : null}
+                  ) : (
+                    <Button type="button" variant="outline" size="sm" className="h-7 w-full px-2 text-[11px]" disabled>
+                      Open
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="destructive"
                     size="sm"
+                    className="h-7 w-full px-2 text-[11px]"
                     onClick={() => void handleDelete(material)}
                     disabled={deletingId === material.id}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    {deletingId === material.id ? "Deleting..." : "Delete"}
+                    {deletingId === material.id ? "Deleting" : "Delete"}
                   </Button>
                 </div>
               </CardContent>
