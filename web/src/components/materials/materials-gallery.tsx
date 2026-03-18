@@ -25,7 +25,6 @@ interface MaterialsGalleryProps {
     objectId: string;
     selectedProductId?: string;
   };
-  pendingMaterialId?: string;
   onAssignMaterial?: (material: UserMaterial) => void;
 }
 
@@ -54,7 +53,6 @@ function formatLastUpdated(value?: string): string {
 export function MaterialsGallery({
   searchQuery,
   focusTarget,
-  pendingMaterialId,
   onAssignMaterial,
 }: MaterialsGalleryProps) {
   const [materials, setMaterials] = useState<UserMaterial[]>([]);
@@ -307,11 +305,9 @@ export function MaterialsGallery({
           {materials.length} total materials
           {searchQuery.trim() ? ` - ${filteredMaterials.length} matching "${searchQuery.trim()}"` : ""}
           <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
-            {pendingMaterialId
-              ? "Assignment started. Continue in Rooms tab to choose object and confirm."
-              : focusTarget
-                ? `Current focus: ${focusTarget.objectName} (${focusTarget.roomName} / ${focusTarget.houseName})`
-                : "Select a room object in the right panel to enable one-click assignment from this gallery."}
+            {focusTarget
+              ? `Current focus: ${focusTarget.objectName} (${focusTarget.roomName} / ${focusTarget.houseName}). You can choose another object in the right panel before assigning.`
+              : "Select a room object in the right panel to enable one-click assignment from this gallery."}
           </div>
         </CardContent>
       </Card>
@@ -461,21 +457,11 @@ export function MaterialsGallery({
                   <Button
                     type="button"
                     size="sm"
-                    variant={
-                      pendingMaterialId === material.id
-                        ? "secondary"
-                        : focusTarget?.selectedProductId === material.id
-                          ? "secondary"
-                          : "default"
-                    }
+                    variant={focusTarget?.selectedProductId === material.id ? "secondary" : "default"}
                     onClick={() => onAssignMaterial?.(material)}
                     disabled={!focusTarget || !onAssignMaterial}
                   >
-                    {pendingMaterialId === material.id
-                      ? "Choosing object..."
-                      : focusTarget?.selectedProductId === material.id
-                        ? "Assigned"
-                        : "Assign"}
+                    {focusTarget?.selectedProductId === material.id ? "Assigned" : "Assign"}
                   </Button>
                   {material.sourceUrl ? (
                     <Button type="button" variant="outline" size="sm" asChild>
