@@ -18,6 +18,14 @@ import { Input } from "@/components/ui/input";
 
 interface MaterialsGalleryProps {
   searchQuery: string;
+  focusTarget?: {
+    houseName: string;
+    roomName: string;
+    objectName: string;
+    objectId: string;
+    selectedProductId?: string;
+  };
+  onAssignMaterial?: (material: UserMaterial) => void;
 }
 
 interface LinkPreviewResult {
@@ -42,7 +50,7 @@ function formatLastUpdated(value?: string): string {
   return date.toLocaleDateString();
 }
 
-export function MaterialsGallery({ searchQuery }: MaterialsGalleryProps) {
+export function MaterialsGallery({ searchQuery, focusTarget, onAssignMaterial }: MaterialsGalleryProps) {
   const [materials, setMaterials] = useState<UserMaterial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -292,6 +300,11 @@ export function MaterialsGallery({ searchQuery }: MaterialsGalleryProps) {
         <CardContent className="text-xs text-slate-500">
           {materials.length} total materials
           {searchQuery.trim() ? ` - ${filteredMaterials.length} matching "${searchQuery.trim()}"` : ""}
+          <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
+            {focusTarget
+              ? `Assigning to: ${focusTarget.objectName} (${focusTarget.roomName} / ${focusTarget.houseName})`
+              : "Select a room object in the right panel to enable one-click assignment from this gallery."}
+          </div>
         </CardContent>
       </Card>
 
@@ -437,6 +450,15 @@ export function MaterialsGallery({ searchQuery }: MaterialsGalleryProps) {
                   {material.sku ? <Badge variant="outline">{material.sku}</Badge> : null}
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={focusTarget?.selectedProductId === material.id ? "secondary" : "default"}
+                    onClick={() => onAssignMaterial?.(material)}
+                    disabled={!focusTarget || !onAssignMaterial}
+                  >
+                    {focusTarget?.selectedProductId === material.id ? "Assigned" : "Assign"}
+                  </Button>
                   {material.sourceUrl ? (
                     <Button type="button" variant="outline" size="sm" asChild>
                       <a href={material.sourceUrl} target="_blank" rel="noreferrer">

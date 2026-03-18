@@ -18,6 +18,7 @@ import { ProjectRoomsStack } from "@/components/rooms/project-rooms-stack";
 import { AddObjectDialog } from "@/components/rooms/add-object-dialog";
 import { ProductOptionsPanel } from "@/components/products/product-options-panel";
 import { WorkflowOverview } from "@/components/workflow/workflow-overview";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { budgetCategoryOrder, calculateProjectBudget, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
@@ -142,6 +143,116 @@ function RightPanelPlaceholder({ title, description }: { title: string; descript
         <CardDescription>{description}</CardDescription>
       </CardHeader>
     </Card>
+  );
+}
+
+function MaterialsFocusPanel({
+  houses,
+  selectedHouseId,
+  selectedRoomId,
+  selectedObjectId,
+  onSelectRoom,
+  onSelectObject,
+}: {
+  houses: Project["houses"];
+  selectedHouseId: string;
+  selectedRoomId: string;
+  selectedObjectId: string;
+  onSelectRoom: (houseId: string, roomId: string) => void;
+  onSelectObject: (houseId: string, roomId: string, objectId: string) => void;
+}) {
+  const selectedHouse = houses.find((house) => house.id === selectedHouseId) ?? houses[0];
+  const selectedRoom = selectedHouse?.rooms.find((room) => room.id === selectedRoomId) ?? selectedHouse?.rooms[0];
+  const selectedObject = selectedRoom?.objects.find((objectItem) => objectItem.id === selectedObjectId) ?? selectedRoom?.objects[0];
+
+  return (
+    <div className="space-y-3">
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle>Room and object focus</CardTitle>
+          <CardDescription>Choose where selected materials should be assigned.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-xs text-slate-600">
+          <p>
+            House: <span className="font-semibold text-slate-800">{selectedHouse?.name ?? "None"}</span>
+          </p>
+          <p>
+            Room: <span className="font-semibold text-slate-800">{selectedRoom?.name ?? "None"}</span>
+          </p>
+          <p>
+            Object: <span className="font-semibold text-slate-800">{selectedObject?.name ?? "None"}</span>
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Rooms</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {houses.map((house) => (
+            <section key={house.id} className="space-y-1.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{house.name}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {house.rooms.map((room) => {
+                  const isSelected = room.id === selectedRoom?.id;
+                  return (
+                    <Button
+                      key={room.id}
+                      type="button"
+                      size="sm"
+                      variant={isSelected ? "default" : "outline"}
+                      className="h-7 px-2 text-[11px]"
+                      onClick={() => onSelectRoom(house.id, room.id)}
+                    >
+                      {room.name}
+                      <span className="ml-1 text-[10px] opacity-80">({room.objects.length})</span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Objects</CardTitle>
+          <CardDescription>{selectedRoom?.name ?? "Select a room"} </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {selectedRoom?.objects.length ? (
+            selectedRoom.objects.map((objectItem) => {
+              const isSelected = objectItem.id === selectedObject?.id;
+              const hasMaterial = Boolean(objectItem.selectedProductId);
+              return (
+                <button
+                  key={objectItem.id}
+                  type="button"
+                  className={`flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition ${
+                    isSelected
+                      ? "border-blue-300 bg-blue-50 text-blue-900"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  onClick={() => onSelectObject(selectedHouse?.id ?? "", selectedRoom.id, objectItem.id)}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{objectItem.name}</p>
+                    <p className="text-[11px] text-slate-500">Qty {Math.max(1, objectItem.quantity)}</p>
+                  </div>
+                  <Badge variant={hasMaterial ? "success" : "outline"}>{hasMaterial ? "Assigned" : "Missing"}</Badge>
+                </button>
+              );
+            })
+          ) : (
+            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-2.5 py-3 text-xs text-slate-500">
+              No objects in this room.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -836,6 +947,15 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setPendingScrollRoomId(roomId);
   }
 
+  function handleFocusRoom(houseId: string, roomId: string) {
+    setSelectedHouseId(houseId);
+    setSelectedRoomId(roomId);
+
+    const house = project?.houses.find((item) => item.id === houseId);
+    const room = house?.rooms.find((item) => item.id === roomId);
+    setSelectedObjectId(room?.objects[0]?.id ?? "");
+  }
+
   function handleRenameRoom(roomId: string, nextName: string) {
     const normalizedName = nextName.trim();
     if (!normalizedName) {
@@ -1382,6 +1502,12 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setSelectedObjectId(objectId);
   }
 
+  function handleFocusObject(houseId: string, roomId: string, objectId: string) {
+    setSelectedHouseId(houseId);
+    setSelectedRoomId(roomId);
+    setSelectedObjectId(objectId);
+  }
+
   function handleSelectGlobalSearchResult(item: TopNavSearchResultItem) {
     const action = topNavSearchActionById.get(item.id);
     if (!action) {
@@ -1465,6 +1591,46 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         .catch((error) => {
           updateObjectById(selectedObject.id, () => previousObjectState);
           window.alert(error instanceof Error ? error.message : "Failed to save selected material.");
+        });
+    }
+  }
+
+  function handleAssignMaterialFromGallery(material: ProductOption) {
+    if (!selectedObject) {
+      window.alert("Select a room object first.");
+      return;
+    }
+
+    const targetObjectId = selectedObject.id;
+    const previousObjectState: RoomObject = {
+      ...selectedObject,
+      productOptions: [...selectedObject.productOptions],
+    };
+    const isMaterialChanged = selectedObject.selectedProductId !== material.id;
+
+    updateObjectById(targetObjectId, (objectItem) => ({
+      ...objectItem,
+      productOptions: [material, ...objectItem.productOptions.filter((item) => item.id !== material.id)],
+      selectedProductId: material.id,
+      poApproved: isMaterialChanged ? false : Boolean(objectItem.poApproved),
+      ordered: isMaterialChanged ? false : Boolean(objectItem.ordered),
+      installed: isMaterialChanged ? false : Boolean(objectItem.installed),
+    }));
+
+    if (isSupabaseConfigured) {
+      void updateRoomObjectSelectedMaterialById(targetObjectId, material.id)
+        .then(async () => {
+          if (isMaterialChanged) {
+            await updateRoomObjectWorkflowById(targetObjectId, {
+              poApproved: false,
+              ordered: false,
+              installed: false,
+            });
+          }
+        })
+        .catch((error) => {
+          updateObjectById(targetObjectId, () => previousObjectState);
+          window.alert(error instanceof Error ? error.message : "Failed to assign material to object.");
         });
     }
   }
@@ -1812,7 +1978,21 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   );
 
   const materialsContent = isSupabaseConfigured ? (
-    <MaterialsGallery searchQuery={searchQuery} />
+    <MaterialsGallery
+      searchQuery={searchQuery}
+      focusTarget={
+        selectedObject
+          ? {
+              houseName: selectedHouse?.name ?? "House",
+              roomName: selectedRoom?.name ?? "Room",
+              objectName: selectedObject.name,
+              objectId: selectedObject.id,
+              selectedProductId: selectedObject.selectedProductId,
+            }
+          : undefined
+      }
+      onAssignMaterial={handleAssignMaterialFromGallery}
+    />
   ) : (
     <PlaceholderTab
       icon={Boxes}
@@ -1841,6 +2021,15 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onSelectProduct={handleSelectProduct}
         onSearchCatalog={handleSearchCatalog}
         onAddFromLink={handleAddFromLink}
+      />
+    ) : activeTab === "materials" ? (
+      <MaterialsFocusPanel
+        houses={project.houses}
+        selectedHouseId={selectedHouse?.id ?? ""}
+        selectedRoomId={selectedRoom?.id ?? ""}
+        selectedObjectId={selectedObject?.id ?? ""}
+        onSelectRoom={handleFocusRoom}
+        onSelectObject={handleFocusObject}
       />
     ) : (
       <RightPanelPlaceholder
