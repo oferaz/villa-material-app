@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useState } from "react";
-import { Menu, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, Menu, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,6 +18,33 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
   const hasSplitLayout = Boolean(sidebar) || Boolean(rightPanel);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
+  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+
+  const desktopGridCols = (() => {
+    if (sidebar && rightPanel) {
+      if (isLeftPanelCollapsed && isRightPanelCollapsed) {
+        return "56px minmax(0,1fr) 56px";
+      }
+      if (isLeftPanelCollapsed) {
+        return "56px minmax(0,3fr) minmax(0,1fr)";
+      }
+      if (isRightPanelCollapsed) {
+        return "minmax(0,1fr) minmax(0,3fr) 56px";
+      }
+      return "minmax(0,1fr) minmax(0,2fr) minmax(0,1fr)";
+    }
+
+    if (sidebar) {
+      return isLeftPanelCollapsed ? "56px minmax(0,1fr)" : "minmax(0,1fr) minmax(0,3fr)";
+    }
+
+    if (rightPanel) {
+      return isRightPanelCollapsed ? "minmax(0,1fr) 56px" : "minmax(0,3fr) minmax(0,1fr)";
+    }
+
+    return "minmax(0,1fr)";
+  })();
 
   return (
     <div className={cn("min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-white", className)}>
@@ -73,14 +100,81 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
               </Dialog>
             ) : null}
 
-            <div className="grid min-h-[calc(100vh-120px)] grid-cols-1 gap-5 pb-24 lg:grid-cols-[320px_minmax(0,1fr)_380px] lg:pb-0">
-              <div className="hidden space-y-4 lg:sticky lg:top-[88px] lg:block lg:h-[calc(100vh-110px)] lg:overflow-y-auto">
-                {sidebar}
-              </div>
-              <div className="space-y-4">{main}</div>
-              <div className="hidden space-y-4 lg:sticky lg:top-[88px] lg:block lg:h-[calc(100vh-110px)] lg:overflow-hidden">
-                {rightPanel}
-              </div>
+            <div
+              className="grid min-h-[calc(100vh-120px)] grid-cols-1 gap-5 pb-24 lg:[grid-template-columns:var(--desktop-grid-cols)] lg:pb-0"
+              style={{ ["--desktop-grid-cols" as string]: desktopGridCols }}
+            >
+              {sidebar ? (
+                <div className="hidden min-w-0 lg:sticky lg:top-[88px] lg:block lg:h-[calc(100vh-110px)]">
+                  {isLeftPanelCollapsed ? (
+                    <div className="flex h-full items-start justify-center rounded-2xl border border-slate-200 bg-white/80 p-2">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        onClick={() => setIsLeftPanelCollapsed(false)}
+                        title="Expand project map"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                        <span className="sr-only">Expand project map</span>
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="relative h-full overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white/80 p-2">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="absolute right-2 top-2 z-10 h-8 w-8"
+                        onClick={() => setIsLeftPanelCollapsed(true)}
+                        title="Minimize project map"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        <span className="sr-only">Minimize project map</span>
+                      </Button>
+                      <div className="pr-10">{sidebar}</div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              <div className="min-w-0 space-y-4">{main}</div>
+
+              {rightPanel ? (
+                <div className="hidden min-w-0 lg:sticky lg:top-[88px] lg:block lg:h-[calc(100vh-110px)]">
+                  {isRightPanelCollapsed ? (
+                    <div className="flex h-full items-start justify-center rounded-2xl border border-slate-200 bg-white/80 p-2">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        onClick={() => setIsRightPanelCollapsed(false)}
+                        title="Expand options panel"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        <span className="sr-only">Expand options panel</span>
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="relative h-full overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white/80 p-2">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="absolute left-2 top-2 z-10 h-8 w-8"
+                        onClick={() => setIsRightPanelCollapsed(true)}
+                        title="Minimize options panel"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                        <span className="sr-only">Minimize options panel</span>
+                      </Button>
+                      <div className="pl-10">{rightPanel}</div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           </>
         ) : (
