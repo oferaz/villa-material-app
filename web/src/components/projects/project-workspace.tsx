@@ -169,9 +169,9 @@ function MaterialsFocusPanel({
   onSelectRoom: (houseId: string, roomId: string) => void;
   onSelectObject: (houseId: string, roomId: string, objectId: string) => void;
 }) {
-  const selectedHouse = houses.find((house) => house.id === selectedHouseId) ?? houses[0];
-  const selectedRoom = selectedHouse?.rooms.find((room) => room.id === selectedRoomId) ?? selectedHouse?.rooms[0];
-  const selectedObject = selectedRoom?.objects.find((objectItem) => objectItem.id === selectedObjectId) ?? selectedRoom?.objects[0];
+  const selectedHouse = houses.find((house) => house.id === selectedHouseId);
+  const selectedRoom = selectedHouse?.rooms.find((room) => room.id === selectedRoomId);
+  const selectedObject = selectedRoom?.objects.find((objectItem) => objectItem.id === selectedObjectId);
 
   return (
     <div className="space-y-3">
@@ -180,7 +180,7 @@ function MaterialsFocusPanel({
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-amber-900">Pending assignment</CardTitle>
             <CardDescription className="text-amber-800">
-              Assign <strong>{pendingMaterial.name}</strong> to the selected object.
+              Choose a room and a specific object for <strong>{pendingMaterial.name}</strong>, then click OK.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -189,7 +189,7 @@ function MaterialsFocusPanel({
               <span className="font-semibold">
                 {selectedObject
                   ? `${selectedObject.name} (${selectedRoom?.name ?? "Room"} / ${selectedHouse?.name ?? "House"})`
-                  : "No object selected"}
+                  : "Not selected yet"}
               </span>
             </p>
             <div className="flex items-center gap-2">
@@ -255,7 +255,7 @@ function MaterialsFocusPanel({
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Objects</CardTitle>
-          <CardDescription>{selectedRoom?.name ?? "Select a room"} </CardDescription>
+          <CardDescription>{selectedRoom?.name ?? "Choose a room first"}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {selectedRoom?.objects.length ? (
@@ -283,7 +283,7 @@ function MaterialsFocusPanel({
             })
           ) : (
             <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-2.5 py-3 text-xs text-slate-500">
-              No objects in this room.
+              {selectedRoom ? "No objects in this room." : "Choose a room to list its objects."}
             </p>
           )}
         </CardContent>
@@ -400,6 +400,15 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [projectSnapshots, setProjectSnapshots] = useState<ProjectSnapshotSummary[]>([]);
   const [materialSearchResults, setMaterialSearchResults] = useState<ProductOption[]>([]);
   const [pendingMaterialAssignment, setPendingMaterialAssignment] = useState<ProductOption | null>(null);
+  const [pendingAssignmentSelection, setPendingAssignmentSelection] = useState<{
+    houseId: string;
+    roomId: string;
+    objectId: string;
+  }>({
+    houseId: "",
+    roomId: "",
+    objectId: "",
+  });
 
   useEffect(() => {
     if (searchParams.get("onboarding") === "default-rooms") {
@@ -984,15 +993,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setPendingScrollRoomId(roomId);
   }
 
-  function handleFocusRoom(houseId: string, roomId: string) {
-    setSelectedHouseId(houseId);
-    setSelectedRoomId(roomId);
-
-    const house = project?.houses.find((item) => item.id === houseId);
-    const room = house?.rooms.find((item) => item.id === roomId);
-    setSelectedObjectId(room?.objects[0]?.id ?? "");
-  }
-
   function handleRenameRoom(roomId: string, nextName: string) {
     const normalizedName = nextName.trim();
     if (!normalizedName) {
@@ -1539,12 +1539,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setSelectedObjectId(objectId);
   }
 
-  function handleFocusObject(houseId: string, roomId: string, objectId: string) {
-    setSelectedHouseId(houseId);
-    setSelectedRoomId(roomId);
-    setSelectedObjectId(objectId);
-  }
-
   function handleSelectGlobalSearchResult(item: TopNavSearchResultItem) {
     const action = topNavSearchActionById.get(item.id);
     if (!action) {
@@ -1669,22 +1663,57 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   function handleAssignMaterialFromGallery(material: ProductOption) {
     setPendingMaterialAssignment(material);
+    setPendingAssignmentSelection({
+      houseId: "",
+      roomId: "",
+      objectId: "",
+    });
   }
 
   function handleConfirmPendingMaterialAssignment() {
     if (!pendingMaterialAssignment) {
       return;
     }
-    if (!selectedObject) {
-      window.alert("Choose an object in the Rooms panel first.");
+    const located = findObjectInProject(project, pendingAssignmentSelection.objectId);
+    if (!located) {
+      window.alert("Choose a room and specific object in the Rooms panel first.");
       return;
     }
-    applyMaterialToObject(selectedObject, pendingMaterialAssignment);
+    applyMaterialToObject(located.objectItem, pendingMaterialAssignment);
+    setSelectedHouseId(located.house.id);
+    setSelectedRoomId(located.room.id);
+    setSelectedObjectId(located.objectItem.id);
     setPendingMaterialAssignment(null);
+    setPendingAssignmentSelection({
+      houseId: "",
+      roomId: "",
+      objectId: "",
+    });
   }
 
   function handleCancelPendingMaterialAssignment() {
     setPendingMaterialAssignment(null);
+    setPendingAssignmentSelection({
+      houseId: "",
+      roomId: "",
+      objectId: "",
+    });
+  }
+
+  function handlePendingAssignmentRoomSelect(houseId: string, roomId: string) {
+    setPendingAssignmentSelection({
+      houseId,
+      roomId,
+      objectId: "",
+    });
+  }
+
+  function handlePendingAssignmentObjectSelect(houseId: string, roomId: string, objectId: string) {
+    setPendingAssignmentSelection({
+      houseId,
+      roomId,
+      objectId,
+    });
   }
 
   function handleUpdateObjectWorkflow(
@@ -2079,15 +2108,15 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       pendingMaterialAssignment ? (
         <MaterialsFocusPanel
           houses={project.houses}
-          selectedHouseId={selectedHouse?.id ?? ""}
-          selectedRoomId={selectedRoom?.id ?? ""}
-          selectedObjectId={selectedObject?.id ?? ""}
+          selectedHouseId={pendingAssignmentSelection.houseId}
+          selectedRoomId={pendingAssignmentSelection.roomId}
+          selectedObjectId={pendingAssignmentSelection.objectId}
           pendingMaterial={pendingMaterialAssignment}
-          canConfirmAssignment={Boolean(selectedObject)}
+          canConfirmAssignment={Boolean(pendingAssignmentSelection.objectId)}
           onConfirmAssignment={handleConfirmPendingMaterialAssignment}
           onCancelAssignment={handleCancelPendingMaterialAssignment}
-          onSelectRoom={handleFocusRoom}
-          onSelectObject={handleFocusObject}
+          onSelectRoom={handlePendingAssignmentRoomSelect}
+          onSelectObject={handlePendingAssignmentObjectSelect}
         />
       ) : (
         <RightPanelPlaceholder
