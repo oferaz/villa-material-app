@@ -151,6 +151,10 @@ function MaterialsFocusPanel({
   selectedHouseId,
   selectedRoomId,
   selectedObjectId,
+  pendingMaterial,
+  canConfirmAssignment,
+  onConfirmAssignment,
+  onCancelAssignment,
   onSelectRoom,
   onSelectObject,
 }: {
@@ -158,6 +162,10 @@ function MaterialsFocusPanel({
   selectedHouseId: string;
   selectedRoomId: string;
   selectedObjectId: string;
+  pendingMaterial: ProductOption | null;
+  canConfirmAssignment: boolean;
+  onConfirmAssignment: () => void;
+  onCancelAssignment: () => void;
   onSelectRoom: (houseId: string, roomId: string) => void;
   onSelectObject: (houseId: string, roomId: string, objectId: string) => void;
 }) {
@@ -167,6 +175,34 @@ function MaterialsFocusPanel({
 
   return (
     <div className="space-y-3">
+      {pendingMaterial ? (
+        <Card className="border-amber-200 bg-amber-50 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base text-amber-900">Pending assignment</CardTitle>
+            <CardDescription className="text-amber-800">
+              Assign <strong>{pendingMaterial.name}</strong> to the selected object.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-xs text-amber-900">
+              Target:{" "}
+              <span className="font-semibold">
+                {selectedObject
+                  ? `${selectedObject.name} (${selectedRoom?.name ?? "Room"} / ${selectedHouse?.name ?? "House"})`
+                  : "No object selected"}
+              </span>
+            </p>
+            <div className="flex items-center gap-2">
+              <Button type="button" size="sm" onClick={onConfirmAssignment} disabled={!canConfirmAssignment}>
+                OK
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={onCancelAssignment}>
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle>Room and object focus</CardTitle>
@@ -363,6 +399,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [workflowStageFilters, setWorkflowStageFilters] = useState<WorkflowStage[]>([]);
   const [projectSnapshots, setProjectSnapshots] = useState<ProjectSnapshotSummary[]>([]);
   const [materialSearchResults, setMaterialSearchResults] = useState<ProductOption[]>([]);
+  const [pendingMaterialAssignment, setPendingMaterialAssignment] = useState<ProductOption | null>(null);
 
   useEffect(() => {
     if (searchParams.get("onboarding") === "default-rooms") {
@@ -1631,21 +1668,23 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   }
 
   function handleAssignMaterialFromGallery(material: ProductOption) {
+    setPendingMaterialAssignment(material);
+  }
+
+  function handleConfirmPendingMaterialAssignment() {
+    if (!pendingMaterialAssignment) {
+      return;
+    }
     if (!selectedObject) {
-      window.alert("Select a target object in the right panel first.");
+      window.alert("Choose an object in the Rooms panel first.");
       return;
     }
+    applyMaterialToObject(selectedObject, pendingMaterialAssignment);
+    setPendingMaterialAssignment(null);
+  }
 
-    const targetLabel = `${selectedObject.name} (${selectedRoom?.name ?? "Room"} / ${selectedHouse?.name ?? "House"})`;
-    const shouldAssign = window.confirm(
-      `Assign "${material.name}" to "${targetLabel}"?\n\nIf you prefer another target, click Cancel, choose a different object in the right panel, then click Assign again.`
-    );
-
-    if (!shouldAssign) {
-      return;
-    }
-
-    applyMaterialToObject(selectedObject, material);
+  function handleCancelPendingMaterialAssignment() {
+    setPendingMaterialAssignment(null);
   }
 
   function handleUpdateObjectWorkflow(
@@ -2004,6 +2043,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             }
           : undefined
       }
+      pendingMaterialId={pendingMaterialAssignment?.id}
       onAssignMaterial={handleAssignMaterialFromGallery}
     />
   ) : (
@@ -2036,14 +2076,25 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onAddFromLink={handleAddFromLink}
       />
     ) : activeTab === "materials" ? (
-      <MaterialsFocusPanel
-        houses={project.houses}
-        selectedHouseId={selectedHouse?.id ?? ""}
-        selectedRoomId={selectedRoom?.id ?? ""}
-        selectedObjectId={selectedObject?.id ?? ""}
-        onSelectRoom={handleFocusRoom}
-        onSelectObject={handleFocusObject}
-      />
+      pendingMaterialAssignment ? (
+        <MaterialsFocusPanel
+          houses={project.houses}
+          selectedHouseId={selectedHouse?.id ?? ""}
+          selectedRoomId={selectedRoom?.id ?? ""}
+          selectedObjectId={selectedObject?.id ?? ""}
+          pendingMaterial={pendingMaterialAssignment}
+          canConfirmAssignment={Boolean(selectedObject)}
+          onConfirmAssignment={handleConfirmPendingMaterialAssignment}
+          onCancelAssignment={handleCancelPendingMaterialAssignment}
+          onSelectRoom={handleFocusRoom}
+          onSelectObject={handleFocusObject}
+        />
+      ) : (
+        <RightPanelPlaceholder
+          title="Room and object focus"
+          description='Click "Assign" in the Materials Gallery to choose a room object and confirm with OK.'
+        />
+      )
     ) : (
       <RightPanelPlaceholder
         title="Workspace context"
