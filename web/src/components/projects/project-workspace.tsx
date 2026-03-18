@@ -192,14 +192,6 @@ function MaterialsFocusPanel({
                   : "Not selected yet"}
               </span>
             </p>
-            <div className="flex items-center gap-2">
-              <Button type="button" size="sm" onClick={onConfirmAssignment} disabled={!canConfirmAssignment}>
-                OK
-              </Button>
-              <Button type="button" size="sm" variant="outline" onClick={onCancelAssignment}>
-                Cancel
-              </Button>
-            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -288,6 +280,22 @@ function MaterialsFocusPanel({
           )}
         </CardContent>
       </Card>
+
+      {pendingMaterial ? (
+        <Card className="sticky bottom-2 z-30 border-amber-300 bg-amber-100/95 shadow-md backdrop-blur">
+          <CardContent className="flex items-center gap-2 py-2">
+            <Button type="button" size="sm" onClick={onConfirmAssignment} disabled={!canConfirmAssignment}>
+              OK
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={onCancelAssignment}>
+              Cancel
+            </Button>
+            <p className="ml-auto truncate text-[11px] text-amber-900">
+              {selectedObject ? `Selected: ${selectedObject.name}` : "Choose object to enable OK"}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
