@@ -1529,6 +1529,80 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
   }
 
+  function handleDecreaseSuggestedObject(roomId: string, objectName: string, category: string) {
+    const target = findRoomInProject(project, roomId);
+    if (!target) {
+      return;
+    }
+
+    const normalizedName = objectName.trim().toLowerCase();
+    const normalizedCategory = category.trim().toLowerCase();
+    const existingMatch = target.room.objects.find(
+      (item) =>
+        item.name.trim().toLowerCase() === normalizedName && item.category.trim().toLowerCase() === normalizedCategory
+    );
+
+    if (!existingMatch) {
+      return;
+    }
+
+    const previousObjects = target.room.objects;
+    const willFullyRemove = existingMatch.quantity <= 1;
+    const nextQuantity = Math.max(1, existingMatch.quantity - 1);
+
+    updateCurrentProject((targetProject) => ({
+      ...targetProject,
+      houses: targetProject.houses.map((house) => ({
+        ...house,
+        rooms: house.rooms.map((room) => {
+          if (room.id !== roomId) {
+            return room;
+          }
+
+          return {
+            ...room,
+            objects: willFullyRemove
+              ? room.objects.filter((item) => item.id !== existingMatch.id)
+              : room.objects.map((item) => (item.id === existingMatch.id ? { ...item, quantity: nextQuantity } : item)),
+          };
+        }),
+      })),
+    }));
+
+    if (selectedRoomId === roomId && selectedObjectId === existingMatch.id && willFullyRemove) {
+      const nextSelectedObject = previousObjects.find((item) => item.id !== existingMatch.id);
+      setSelectedObjectId(nextSelectedObject?.id ?? "");
+    }
+
+    if (isSupabaseConfigured) {
+      const persistPromise = willFullyRemove
+        ? deleteRoomObjectById(existingMatch.id)
+        : updateRoomObjectQuantityById(existingMatch.id, nextQuantity);
+
+      void persistPromise.catch((error) => {
+        updateCurrentProject((targetProject) => ({
+          ...targetProject,
+          houses: targetProject.houses.map((house) => ({
+            ...house,
+            rooms: house.rooms.map((room) =>
+              room.id === roomId
+                ? {
+                    ...room,
+                    objects: previousObjects,
+                  }
+                : room
+            ),
+          })),
+        }));
+
+        if (selectedRoomId === roomId && !selectedObjectId) {
+          setSelectedObjectId(previousObjects[0]?.id ?? "");
+        }
+
+        window.alert(error instanceof Error ? error.message : "Failed to update suggested object quantity.");
+      });
+    }
+  }
   function handleDeleteObject(roomId: string, objectId: string) {
     const target = findRoomInProject(project, roomId);
     if (!target) {
@@ -2113,7 +2187,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         selectedRoomId={visibleSelectedRoom?.id ?? ""}
         selectedObjectId={visibleSelectedObject?.id ?? ""}
         showWorkflowHints={preferences.showWorkflowHints}
-        onAddSuggestion={(roomId, objectName, category, basePrice) => handleAddObject(roomId, objectName, category, basePrice)}
+        onAddSuggestion={(roomId, objectName, category, basePrice, quantity = 1) =>
+          handleAddObject(roomId, objectName, category, basePrice, quantity)
+        }
+        onDecreaseSuggestion={handleDecreaseSuggestedObject}
         onSelectObject={handleSelectObject}
         onDeleteObject={handleDeleteObject}
         onUpdateWorkflow={handleUpdateObjectWorkflow}

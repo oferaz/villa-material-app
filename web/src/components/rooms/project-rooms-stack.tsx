@@ -12,7 +12,8 @@ interface ProjectRoomsStackProps {
   selectedRoomId: string;
   selectedObjectId: string;
   showWorkflowHints: boolean;
-  onAddSuggestion: (roomId: string, objectName: string, category: string, basePrice: number) => void;
+  onAddSuggestion: (roomId: string, objectName: string, category: string, basePrice: number, quantity?: number) => void;
+  onDecreaseSuggestion: (roomId: string, objectName: string, category: string) => void;
   onSelectObject: (houseId: string, roomId: string, objectId: string) => void;
   onDeleteObject: (roomId: string, objectId: string) => void;
   onUpdateWorkflow: (
@@ -28,6 +29,7 @@ export function ProjectRoomsStack({
   selectedObjectId,
   showWorkflowHints,
   onAddSuggestion,
+  onDecreaseSuggestion,
   onSelectObject,
   onDeleteObject,
   onUpdateWorkflow,
@@ -114,9 +116,10 @@ export function ProjectRoomsStack({
                   ) : null}
                   <SuggestedObjects
                     room={room}
-                    onAddSuggestion={(objectName, category, basePrice) =>
-                      onAddSuggestion(room.id, objectName, category, basePrice)
+                    onAddSuggestion={(objectName, category, basePrice, quantity = 1) =>
+                      onAddSuggestion(room.id, objectName, category, basePrice, quantity)
                     }
+                    onDecreaseSuggestion={(objectName, category) => onDecreaseSuggestion(room.id, objectName, category)}
                     onOpenAddCustomObject={() => onOpenAddCustomObject(room.id)}
                   />
                   <RoomObjectsList
