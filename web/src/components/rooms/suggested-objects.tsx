@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Room } from "@/types";
 import { getSuggestedObjectsForRoomType } from "@/lib/mock/projects";
@@ -13,17 +12,12 @@ interface SuggestedObjectsProps {
   onOpenAddCustomObject: () => void;
 }
 
-const MIN_ADD_QUANTITY = 1;
-const MAX_ADD_QUANTITY = 20;
-
 export function SuggestedObjects({
   room,
   onAddSuggestion,
   onDecreaseSuggestion,
   onOpenAddCustomObject,
 }: SuggestedObjectsProps) {
-  const [draftAddQuantities, setDraftAddQuantities] = useState<Record<string, number>>({});
-
   if (!room) {
     return null;
   }
@@ -35,39 +29,15 @@ export function SuggestedObjects({
     return acc;
   }, {});
 
-  function getSuggestionKey(suggestionName: string, suggestionCategory: string) {
-    return `${suggestionName.trim().toLowerCase()}::${suggestionCategory.trim().toLowerCase()}`;
-  }
-
-  function getDraftQuantity(suggestionName: string, suggestionCategory: string) {
-    const key = getSuggestionKey(suggestionName, suggestionCategory);
-    return draftAddQuantities[key] ?? MIN_ADD_QUANTITY;
-  }
-
-  function updateDraftQuantity(suggestionName: string, suggestionCategory: string, nextQuantity: number) {
-    const key = getSuggestionKey(suggestionName, suggestionCategory);
-    const safeQuantity = Math.max(MIN_ADD_QUANTITY, Math.min(MAX_ADD_QUANTITY, Math.round(nextQuantity)));
-    setDraftAddQuantities((prev) => ({
-      ...prev,
-      [key]: safeQuantity,
-    }));
-  }
-
-  function adjustDraftQuantity(suggestionName: string, suggestionCategory: string, delta: number) {
-    const currentValue = getDraftQuantity(suggestionName, suggestionCategory);
-    updateDraftQuantity(suggestionName, suggestionCategory, currentValue + delta);
-  }
-
   return (
     <Card className="border-slate-200 shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Suggested objects</CardTitle>
-        <CardDescription>Add common objects quickly and edit quantities inline.</CardDescription>
+        <CardDescription>Control the total number of each suggested object in this room.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {suggestions.map((suggestion) => {
           const quantityCount = existingCountsByName[suggestion.name.trim().toLowerCase()] ?? 0;
-          const draftQuantity = getDraftQuantity(suggestion.name, suggestion.category);
           return (
             <div
               key={suggestion.name}
@@ -78,71 +48,32 @@ export function SuggestedObjects({
                 <p className="text-xs text-slate-500">{suggestion.category}</p>
 
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Add qty</span>
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">In room</span>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     className="h-7 px-2"
-                    onClick={() => adjustDraftQuantity(suggestion.name, suggestion.category, -1)}
-                    disabled={draftQuantity <= MIN_ADD_QUANTITY}
-                    aria-label={`Decrease add quantity for ${suggestion.name}`}
+                    onClick={() => onDecreaseSuggestion(suggestion.name, suggestion.category)}
+                    disabled={quantityCount <= 0}
+                    aria-label={`Decrease room quantity for ${suggestion.name}`}
                   >
                     <Minus className="h-3.5 w-3.5" />
                   </Button>
                   <Badge variant="outline" className="h-7 min-w-8 justify-center px-2 text-xs">
-                    {draftQuantity}
+                    {quantityCount}
                   </Badge>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     className="h-7 px-2"
-                    onClick={() => adjustDraftQuantity(suggestion.name, suggestion.category, 1)}
-                    disabled={draftQuantity >= MAX_ADD_QUANTITY}
-                    aria-label={`Increase add quantity for ${suggestion.name}`}
+                    onClick={() => onAddSuggestion(suggestion.name, suggestion.category, suggestion.basePrice, 1)}
+                    aria-label={`Increase room quantity for ${suggestion.name}`}
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2"
-                    onClick={() => onAddSuggestion(suggestion.name, suggestion.category, suggestion.basePrice, draftQuantity)}
-                  >
-                    Add
-                  </Button>
                 </div>
-
-                {quantityCount > 0 ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">In room</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2"
-                      onClick={() => onDecreaseSuggestion(suggestion.name, suggestion.category)}
-                      aria-label={`Decrease room quantity for ${suggestion.name}`}
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                    </Button>
-                    <Badge variant="outline" className="h-7 min-w-8 justify-center px-2 text-xs">
-                      {quantityCount}
-                    </Badge>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2"
-                      onClick={() => onAddSuggestion(suggestion.name, suggestion.category, suggestion.basePrice, 1)}
-                      aria-label={`Increase room quantity for ${suggestion.name}`}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ) : null}
               </div>
             </div>
           );
