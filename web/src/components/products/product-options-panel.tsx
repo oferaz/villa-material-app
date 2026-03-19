@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Link as LinkIcon } from "lucide-react";
 import { RoomObject, getObjectStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +53,7 @@ export function ProductOptionsPanel({
   const [isFetchingLinkPreview, setIsFetchingLinkPreview] = useState(false);
   const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
   const [showSearchTools, setShowSearchTools] = useState(true);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!roomObject) {
@@ -138,6 +139,11 @@ export function ProductOptionsPanel({
     const nextQuery = catalogQuery.trim() || roomObject.name;
     onSearchCatalog(roomObject.id, nextQuery);
     setCatalogQuery(nextQuery);
+
+    window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    });
   }
 
   async function fetchLinkDetails() {
@@ -285,6 +291,7 @@ export function ProductOptionsPanel({
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
               <Input
+                ref={searchInputRef}
                 value={catalogQuery}
                 onChange={(event) => setCatalogQuery(event.target.value)}
                 placeholder="Refine search (e.g. white oak matte, brushed brass)"
@@ -388,3 +395,4 @@ export function ProductOptionsPanel({
     </Card>
   );
 }
+
