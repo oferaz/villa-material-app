@@ -70,6 +70,10 @@ export function ProductOptionsPanel({
     setCatalogQuery(defaultQuery);
     if (!hasSelectedMaterial) {
       onSearchCatalog(roomObject.id, defaultQuery);
+      window.requestAnimationFrame(() => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      });
     }
     setLinkUrl("");
     setLinkName("");
