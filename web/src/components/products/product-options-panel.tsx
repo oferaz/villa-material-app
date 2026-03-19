@@ -67,7 +67,9 @@ export function ProductOptionsPanel({
 
     const defaultQuery = roomObject.name;
     setCatalogQuery(defaultQuery);
-    onSearchCatalog(roomObject.id, defaultQuery);
+    if (!hasSelectedMaterial) {
+      onSearchCatalog(roomObject.id, defaultQuery);
+    }
     setLinkUrl("");
     setLinkName("");
     setLinkSupplier("");
@@ -125,6 +127,17 @@ export function ProductOptionsPanel({
   function handleSelectProductOption(productId: string) {
     onSelectProduct(productId);
     setShowSearchTools(false);
+  }
+
+  function handleShowSearchAlternatives() {
+    if (!roomObject) {
+      return;
+    }
+
+    setShowSearchTools(true);
+    const nextQuery = catalogQuery.trim() || roomObject.name;
+    onSearchCatalog(roomObject.id, nextQuery);
+    setCatalogQuery(nextQuery);
   }
 
   async function fetchLinkDetails() {
@@ -255,7 +268,7 @@ export function ProductOptionsPanel({
           <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 shadow-sm">
             <div className="flex items-start justify-between gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Selected material</p>
-              <Button type="button" size="sm" variant="outline" onClick={() => setShowSearchTools(true)}>
+              <Button type="button" size="sm" variant="outline" onClick={handleShowSearchAlternatives}>
                 Search alternatives
               </Button>
             </div>
