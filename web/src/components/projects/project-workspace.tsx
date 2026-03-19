@@ -442,6 +442,45 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   useEffect(() => {
     let isCancelled = false;
 
+    const applyLoadedProjects = (loadedProjects: Project[]) => {
+      setProjects(loadedProjects);
+      setProjectBudgets((prev) => {
+        const next = createInitialBudgetMap(loadedProjects);
+        for (const [projectId, budget] of Object.entries(prev)) {
+          if (next[projectId]) {
+            next[projectId] = budget;
+          }
+        }
+        return next;
+      });
+    };
+
+    async function loadProjectsWithRetry() {
+      const loadedProjects = await loadProjectsForWorkspace();
+      if (isCancelled) {
+        return;
+      }
+
+      if (loadedProjects.length > 0 || !isSupabaseConfigured) {
+        applyLoadedProjects(loadedProjects);
+        return;
+      }
+
+      // Mobile resume can briefly return an empty result while auth/storage is rehydrating.
+      await new Promise<void>((resolve) => {
+        window.setTimeout(() => resolve(), 350);
+      });
+      if (isCancelled) {
+        return;
+      }
+
+      const retriedProjects = await loadProjectsForWorkspace();
+      if (isCancelled) {
+        return;
+      }
+      applyLoadedProjects(retriedProjects);
+    }
+
     async function loadProjects() {
       if (isSupabaseConfigured) {
         const {
@@ -463,35 +502,45 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         }
       }
 
-      const loadedProjects = await loadProjectsForWorkspace();
-      if (isCancelled) {
-        return;
-      }
-
-      setProjects(loadedProjects);
-      setProjectBudgets((prev) => {
-        const next = createInitialBudgetMap(loadedProjects);
-        for (const [projectId, budget] of Object.entries(prev)) {
-          if (next[projectId]) {
-            next[projectId] = budget;
-          }
-        }
-        return next;
-      });
+      await loadProjectsWithRetry();
     }
 
     void loadProjects();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+      if (
+        event === "INITIAL_SESSION" ||
+        event === "SIGNED_IN" ||
+        event === "SIGNED_OUT" ||
+        event === "USER_UPDATED" ||
+        event === "TOKEN_REFRESHED"
+      ) {
         void loadProjects();
       }
     });
 
+    const handleResumeOrFocus = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      void loadProjects();
+    };
+
+    const handlePageShow = () => {
+      void loadProjects();
+    };
+
+    window.addEventListener("focus", handleResumeOrFocus);
+    document.addEventListener("visibilitychange", handleResumeOrFocus);
+    window.addEventListener("pageshow", handlePageShow);
+
     return () => {
       isCancelled = true;
       subscription.unsubscribe();
+      window.removeEventListener("focus", handleResumeOrFocus);
+      document.removeEventListener("visibilitychange", handleResumeOrFocus);
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, []);
 
@@ -2183,3 +2232,4 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} />;
 }
+
