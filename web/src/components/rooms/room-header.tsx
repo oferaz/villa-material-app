@@ -3,14 +3,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { roomTypeLabels } from "@/lib/mock/projects";
+import { cn } from "@/lib/utils";
 
 interface RoomHeaderProps {
   house?: House;
   room?: Room;
   selectedCount: number;
   missingCount: number;
-  onJumpToSelected?: () => void;
-  onJumpToMissing?: () => void;
+  isAssignedFilterActive?: boolean;
+  isMissingFilterActive?: boolean;
+  onToggleAssignedFilter?: () => void;
+  onToggleMissingFilter?: () => void;
 }
 
 export function RoomHeader({
@@ -18,8 +21,10 @@ export function RoomHeader({
   room,
   selectedCount,
   missingCount,
-  onJumpToSelected,
-  onJumpToMissing,
+  isAssignedFilterActive = false,
+  isMissingFilterActive = false,
+  onToggleAssignedFilter,
+  onToggleMissingFilter,
 }: RoomHeaderProps) {
   if (!house || !room) {
     return (
@@ -51,10 +56,14 @@ export function RoomHeader({
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 border-emerald-200 bg-emerald-50 px-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-          disabled={selectedCount === 0 || !onJumpToSelected}
-          onClick={onJumpToSelected}
-          title="Jump to first assigned object"
+          className={cn(
+            "h-7 border-emerald-200 bg-emerald-50 px-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100",
+            isAssignedFilterActive ? "ring-2 ring-emerald-500 ring-offset-1" : ""
+          )}
+          disabled={selectedCount === 0 || !onToggleAssignedFilter}
+          onClick={onToggleAssignedFilter}
+          title="Toggle assigned filter"
+          aria-pressed={isAssignedFilterActive}
         >
           {selectedCount} selected
         </Button>
@@ -62,10 +71,14 @@ export function RoomHeader({
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 border-rose-200 bg-rose-50 px-2 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-          disabled={missingCount === 0 || !onJumpToMissing}
-          onClick={onJumpToMissing}
-          title="Jump to first missing object"
+          className={cn(
+            "h-7 border-rose-200 bg-rose-50 px-2 text-xs font-semibold text-rose-700 hover:bg-rose-100",
+            isMissingFilterActive ? "ring-2 ring-rose-500 ring-offset-1" : ""
+          )}
+          disabled={missingCount === 0 || !onToggleMissingFilter}
+          onClick={onToggleMissingFilter}
+          title="Toggle missing filter"
+          aria-pressed={isMissingFilterActive}
         >
           {missingCount} missing
         </Button>

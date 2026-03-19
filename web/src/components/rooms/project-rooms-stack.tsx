@@ -1,4 +1,4 @@
-import { House, getObjectStatus } from "@/types";
+import { House, WorkflowStage, getObjectStatus } from "@/types";
 import { RoomHeader } from "@/components/rooms/room-header";
 import { SuggestedObjects } from "@/components/rooms/suggested-objects";
 import { RoomObjectsList } from "@/components/rooms/room-objects-list";
@@ -12,6 +12,8 @@ interface ProjectRoomsStackProps {
   selectedRoomId: string;
   selectedObjectId: string;
   showWorkflowHints: boolean;
+  selectedStages: WorkflowStage[];
+  onToggleStageFilter: (stage: WorkflowStage) => void;
   onAddSuggestion: (roomId: string, objectName: string, category: string, basePrice: number, quantity?: number) => void;
   onDecreaseSuggestion: (roomId: string, objectName: string, category: string) => void;
   onSelectObject: (houseId: string, roomId: string, objectId: string) => void;
@@ -28,6 +30,8 @@ export function ProjectRoomsStack({
   selectedRoomId,
   selectedObjectId,
   showWorkflowHints,
+  selectedStages,
+  onToggleStageFilter,
   onAddSuggestion,
   onDecreaseSuggestion,
   onSelectObject,
@@ -35,18 +39,6 @@ export function ProjectRoomsStack({
   onUpdateWorkflow,
   onOpenAddCustomObject,
 }: ProjectRoomsStackProps) {
-  function scrollToObjectCard(objectId: string) {
-    if (typeof window === "undefined") {
-      return;
-    }
-    window.requestAnimationFrame(() => {
-      const target = document.querySelector(`[data-room-object-id="${objectId}"]`);
-      if (target instanceof HTMLElement) {
-        target.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    });
-  }
-
   return (
     <div className="space-y-5">
       {houses.map((house, houseIndex) => {
@@ -72,8 +64,6 @@ export function ProjectRoomsStack({
               const missingObjects = room.objects.filter((obj) => getObjectStatus(obj) === "missing");
               const missingCount = missingObjects.reduce((acc, obj) => acc + Math.max(1, obj.quantity), 0);
 
-              const firstSelectedObjectId = selectedObjects[0]?.id;
-              const firstMissingObjectId = missingObjects[0]?.id;
               const isRoomSelected = room.id === selectedRoomId;
 
               return (
@@ -94,22 +84,10 @@ export function ProjectRoomsStack({
                     room={room}
                     selectedCount={selectedCount}
                     missingCount={missingCount}
-                    onJumpToSelected={
-                      firstSelectedObjectId
-                        ? () => {
-                            onSelectObject(house.id, room.id, firstSelectedObjectId);
-                            scrollToObjectCard(firstSelectedObjectId);
-                          }
-                        : undefined
-                    }
-                    onJumpToMissing={
-                      firstMissingObjectId
-                        ? () => {
-                            onSelectObject(house.id, room.id, firstMissingObjectId);
-                            scrollToObjectCard(firstMissingObjectId);
-                          }
-                        : undefined
-                    }
+                    isAssignedFilterActive={selectedStages.includes("material_assigned")}
+                    isMissingFilterActive={selectedStages.includes("material_missing")}
+                    onToggleAssignedFilter={() => onToggleStageFilter("material_assigned")}
+                    onToggleMissingFilter={() => onToggleStageFilter("material_missing")}
                   />
                   {showWorkflowHints || isRoomSelected ? (
                     <WorkflowOverview title={`${room.name} progress`} summary={roomWorkflowSummary} compact />

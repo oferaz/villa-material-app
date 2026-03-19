@@ -2187,6 +2187,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         selectedRoomId={visibleSelectedRoom?.id ?? ""}
         selectedObjectId={visibleSelectedObject?.id ?? ""}
         showWorkflowHints={preferences.showWorkflowHints}
+        selectedStages={workflowStageFilters}
+        onToggleStageFilter={handleToggleWorkflowStageFilter}
         onAddSuggestion={(roomId, objectName, category, basePrice, quantity = 1) =>
           handleAddObject(roomId, objectName, category, basePrice, quantity)
         }
@@ -2331,3 +2333,4 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} />;
 }
+
