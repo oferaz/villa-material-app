@@ -979,9 +979,16 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       houseSizesSqm: payload.houseSizesSqm,
     });
 
-    const loadedProjects = await loadProjectsForWorkspace();
-    setProjects(loadedProjects);
     router.push(`/projects/${projectId}?onboarding=default-rooms`);
+
+    // Keep the local project list warm, but never block the create flow on this refresh.
+    void loadProjectsForWorkspace()
+      .then((loadedProjects) => {
+        setProjects(loadedProjects);
+      })
+      .catch((error) => {
+        console.warn("Failed to refresh projects after create.", error);
+      });
   }
 
   function handleDismissDefaultStructureNotice() {
@@ -1436,7 +1443,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       setSelectedHouseId(target.house.id);
       setSelectedRoomId(roomId);
       setSelectedObjectId(existingMatch.id);
-      setPendingScrollRoomId(roomId);
+      if (selectedRoomId !== roomId) {
+        setPendingScrollRoomId(roomId);
+      }
 
       if (isSupabaseConfigured) {
         void updateRoomObjectQuantityById(existingMatch.id, nextQuantity).catch((error) => {
@@ -1480,7 +1489,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setSelectedHouseId(target.house.id);
     setSelectedRoomId(roomId);
     setSelectedObjectId(newObject.id);
-    setPendingScrollRoomId(roomId);
+    if (selectedRoomId !== roomId) {
+      setPendingScrollRoomId(roomId);
+    }
 
     if (isSupabaseConfigured) {
       void createRoomObjectForRoom({
@@ -1594,6 +1605,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setSelectedHouseId(houseId);
     setSelectedRoomId(roomId);
     setSelectedObjectId(objectId);
+
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      window.dispatchEvent(new Event("materia:open-right-panel"));
+    }
   }
 
   function handleSelectGlobalSearchResult(item: TopNavSearchResultItem) {
@@ -1719,12 +1734,20 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   }
 
   function handleAssignMaterialFromGallery(material: ProductOption) {
+    const defaultHouseId = selectedHouse?.id ?? "";
+    const defaultRoomId = selectedRoom?.id ?? "";
+    const defaultObjectId = selectedObject?.id ?? "";
+
     setPendingMaterialAssignment(material);
     setPendingAssignmentSelection({
-      houseId: "",
-      roomId: "",
-      objectId: "",
+      houseId: defaultHouseId,
+      roomId: defaultRoomId,
+      objectId: defaultObjectId,
     });
+
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      window.dispatchEvent(new Event("materia:open-right-panel"));
+    }
   }
 
   function handleConfirmPendingMaterialAssignment() {
@@ -2232,4 +2255,3 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} />;
 }
-

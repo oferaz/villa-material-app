@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Menu, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,23 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (!rightPanel) {
+      return;
+    }
+
+    const openRightPanel = () => setIsRightPanelOpen(true);
+    const closeRightPanel = () => setIsRightPanelOpen(false);
+
+    window.addEventListener("materia:open-right-panel", openRightPanel);
+    window.addEventListener("materia:close-right-panel", closeRightPanel);
+
+    return () => {
+      window.removeEventListener("materia:open-right-panel", openRightPanel);
+      window.removeEventListener("materia:close-right-panel", closeRightPanel);
+    };
+  }, [rightPanel]);
 
   const desktopGridCols = (() => {
     if (sidebar && rightPanel) {
@@ -189,4 +206,3 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
     </div>
   );
 }
-
