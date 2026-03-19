@@ -52,11 +52,19 @@ export function ProductOptionsPanel({
   const [linkError, setLinkError] = useState("");
   const [isFetchingLinkPreview, setIsFetchingLinkPreview] = useState(false);
   const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
+  const [showSearchTools, setShowSearchTools] = useState(true);
 
   useEffect(() => {
     if (!roomObject) {
       return;
     }
+
+    const hasSelectedMaterial = Boolean(
+      roomObject.selectedProductId &&
+        roomObject.productOptions.some((option) => option.id === roomObject.selectedProductId)
+    );
+    setShowSearchTools(!hasSelectedMaterial);
+
     const defaultQuery = roomObject.name;
     setCatalogQuery(defaultQuery);
     onSearchCatalog(roomObject.id, defaultQuery);
@@ -83,6 +91,13 @@ export function ProductOptionsPanel({
     });
   }, [roomObject, globalSearchQuery]);
 
+  const selectedOption = useMemo(() => {
+    if (!roomObject?.selectedProductId) {
+      return undefined;
+    }
+    return roomObject.productOptions.find((option) => option.id === roomObject.selectedProductId);
+  }, [roomObject]);
+
   if (!roomObject) {
     return (
       <Card className="h-full border-slate-200 shadow-sm">
@@ -105,6 +120,11 @@ export function ProductOptionsPanel({
     const nextQuery = catalogQuery.trim() || roomObject.name;
     onSearchCatalog(roomObject.id, nextQuery);
     setCatalogQuery(nextQuery);
+  }
+
+  function handleSelectProductOption(productId: string) {
+    onSelectProduct(productId);
+    setShowSearchTools(false);
   }
 
   async function fetchLinkDetails() {
@@ -231,7 +251,22 @@ export function ProductOptionsPanel({
         </div>
       </CardHeader>
       <CardContent className="flex-1 space-y-4 overflow-y-auto pb-5">
-        <form onSubmit={handleSearchSubmit} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        {selectedOption ? (
+          <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Selected material</p>
+              <Button type="button" size="sm" variant="outline" onClick={() => setShowSearchTools(true)}>
+                Search alternatives
+              </Button>
+            </div>
+            <ProductOptionCard option={selectedOption} isSelected onSelect={() => onSelectProduct(selectedOption.id)} />
+          </div>
+        ) : null}
+
+        <form
+          onSubmit={handleSearchSubmit}
+          className={`rounded-xl border border-slate-200 bg-white p-3 shadow-sm ${showSearchTools ? "" : "hidden"}`}
+        >
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Material search query</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="relative flex-1">
@@ -249,7 +284,10 @@ export function ProductOptionsPanel({
           </div>
         </form>
 
-        <form onSubmit={handleAddFromLink} className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+        <form
+          onSubmit={handleAddFromLink}
+          className={`space-y-2 rounded-lg border border-slate-200 bg-white p-3 ${showSearchTools ? "" : "hidden"}`}
+        >
           <p className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
             <LinkIcon className="h-3.5 w-3.5" />
             Add material from link
@@ -313,24 +351,26 @@ export function ProductOptionsPanel({
           </Button>
         </form>
 
-        {visibleOptions.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-            {(globalSearchQuery ?? "").trim()
-              ? `No options match "${globalSearchQuery}".`
-              : "No options found for this query yet. Try changing search words or add from link."}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {visibleOptions.map((option) => (
-              <ProductOptionCard
-                key={option.id}
-                option={option}
-                isSelected={roomObject.selectedProductId === option.id}
-                onSelect={() => onSelectProduct(option.id)}
-              />
-            ))}
-          </div>
-        )}
+        {showSearchTools ? (
+          visibleOptions.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+              {(globalSearchQuery ?? "").trim()
+                ? `No options match "${globalSearchQuery}".`
+                : "No options found for this query yet. Try changing search words or add from link."}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visibleOptions.map((option) => (
+                <ProductOptionCard
+                  key={option.id}
+                  option={option}
+                  isSelected={roomObject.selectedProductId === option.id}
+                  onSelect={() => handleSelectProductOption(option.id)}
+                />
+              ))}
+            </div>
+          )
+        ) : null}
       </CardContent>
     </Card>
   );
