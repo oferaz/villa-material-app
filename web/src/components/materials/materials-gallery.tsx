@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Database, Link2, RefreshCcw } from "lucide-react";
+import { Database, Link2, RefreshCcw, Search } from "lucide-react";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import {
   addLinkMaterialForCurrentUser,
@@ -17,7 +17,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 
 interface MaterialsGalleryProps {
-  searchQuery: string;
   focusTarget?: {
     houseName: string;
     roomName: string;
@@ -52,7 +51,6 @@ function formatLastUpdated(value?: string): string {
 }
 
 export function MaterialsGallery({
-  searchQuery,
   focusTarget,
   pendingMaterialId,
   onAssignMaterial,
@@ -72,6 +70,7 @@ export function MaterialsGallery({
   const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
   const [isFetchingLinkPreview, setIsFetchingLinkPreview] = useState(false);
   const [isSavingFromLink, setIsSavingFromLink] = useState(false);
+  const [gallerySearchQuery, setGallerySearchQuery] = useState("");
 
   async function loadMaterials(refresh = false) {
     if (!isSupabaseConfigured) {
@@ -104,7 +103,7 @@ export function MaterialsGallery({
   }, []);
 
   const filteredMaterials = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    const query = gallerySearchQuery.trim().toLowerCase();
     if (!query) {
       return materials;
     }
@@ -117,7 +116,7 @@ export function MaterialsGallery({
         (item.sourceUrl ?? "").toLowerCase().includes(query)
       );
     });
-  }, [materials, searchQuery]);
+  }, [materials, gallerySearchQuery]);
 
   async function handleDelete(material: UserMaterial) {
     const confirmed = window.confirm(
@@ -303,9 +302,22 @@ export function MaterialsGallery({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="text-xs text-slate-500">
+        <CardContent className="space-y-2 text-xs text-slate-500">
+          <div className="space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+            <p className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+              <Search className="h-3.5 w-3.5" />
+              Gallery Filter (My Materials Only)
+            </p>
+            <Input
+              value={gallerySearchQuery}
+              onChange={(event) => setGallerySearchQuery(event.target.value)}
+              placeholder="Filter by name, supplier, category, SKU, or source URL"
+              className="h-8 bg-white text-xs"
+            />
+            <p className="text-[11px] text-slate-600">This search filters gallery cards only and does not change project/global search.</p>
+          </div>
           {materials.length} total materials
-          {searchQuery.trim() ? ` - ${filteredMaterials.length} matching "${searchQuery.trim()}"` : ""}
+          {gallerySearchQuery.trim() ? ` - ${filteredMaterials.length} matching "${gallerySearchQuery.trim()}"` : ""}
           <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
             {pendingMaterialId
               ? "Assignment mode is active. Choose the target object in the Rooms panel and click OK."
@@ -417,8 +429,8 @@ export function MaterialsGallery({
       {!isLoading && filteredMaterials.length === 0 ? (
         <Card className="border-slate-200 shadow-sm">
           <CardContent className="py-6 text-sm text-slate-600">
-            {searchQuery.trim()
-              ? "No materials match your search."
+            {gallerySearchQuery.trim()
+              ? "No materials match this gallery filter."
               : "No materials in your DB yet. Add products from link or choose options in rooms."}
           </CardContent>
         </Card>

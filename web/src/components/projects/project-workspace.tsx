@@ -2059,7 +2059,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   const roomsContent = (
     <div className="space-y-4 pb-20">
-      <div className="z-10 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur md:sticky md:top-[122px]">
+      <div className="sticky top-2 z-10 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur md:top-[122px]">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current house</p>
         <p className="text-sm font-semibold text-slate-800">{visibleSelectedHouse?.name ?? "No house selected"}</p>
         <p className="text-xs text-slate-500">{visibleSelectedRoom?.name ?? "No room selected"}</p>
@@ -2140,7 +2140,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   const materialsContent = isSupabaseConfigured ? (
     <MaterialsGallery
-      searchQuery={searchQuery}
       focusTarget={
         selectedObject
           ? {

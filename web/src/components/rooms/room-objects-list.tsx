@@ -52,13 +52,17 @@ export function RoomObjectsList({
             const workflowStage = getObjectWorkflowStage(objectItem);
             const isSelected = selectedObjectId === objectItem.id;
             const hasMaterial = Boolean(objectItem.selectedProductId);
+            const selectedMaterialName =
+              objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId)?.name ?? "";
             const showWorkflowActions = showWorkflowHints || isSelected;
+
             return (
-              <li key={objectItem.id}>
+              <li key={objectItem.id} data-room-object-id={objectItem.id}>
                 <div
                   className={cn(
                     "flex items-start gap-2 rounded-lg border px-3 py-2 transition",
-                    isSelected ? "border-primary bg-blue-50 shadow-sm" : "border-slate-200 bg-white"
+                    hasMaterial ? "border-emerald-200 bg-emerald-50/40" : "border-rose-200 bg-rose-50/40",
+                    isSelected && "border-primary bg-blue-50 ring-2 ring-blue-200 shadow-sm"
                   )}
                 >
                   <div className="min-w-0 flex-1">
@@ -69,10 +73,18 @@ export function RoomObjectsList({
                       </p>
                       <p className="text-xs text-slate-500">{objectItem.category}</p>
                     </button>
+
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <Badge variant="outline">{getWorkflowStageLabel(workflowStage)}</Badge>
-                      {!hasMaterial ? <Badge variant="danger">Needs material</Badge> : null}
+                      {hasMaterial ? <Badge variant="success">Assigned</Badge> : <Badge variant="danger">Missing</Badge>}
                     </div>
+
+                    <p className={cn("mt-1 text-xs", hasMaterial ? "text-emerald-700" : "text-rose-700")}>
+                      {hasMaterial
+                        ? `Selected material: ${selectedMaterialName || "Assigned material"}`
+                        : "No material selected yet. Tap to assign."}
+                    </p>
+
                     {showWorkflowActions ? (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <Button
@@ -105,7 +117,7 @@ export function RoomObjectsList({
                         >
                           Installed
                         </Button>
-                        {(objectItem.poApproved || objectItem.ordered || objectItem.installed) ? (
+                        {objectItem.poApproved || objectItem.ordered || objectItem.installed ? (
                           <Button
                             type="button"
                             size="sm"

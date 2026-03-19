@@ -33,69 +33,105 @@ export function ProjectRoomsStack({
   onUpdateWorkflow,
   onOpenAddCustomObject,
 }: ProjectRoomsStackProps) {
+  function scrollToObjectCard(objectId: string) {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      const target = document.querySelector(`[data-room-object-id="${objectId}"]`);
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }
+
   return (
     <div className="space-y-5">
       {houses.map((house, houseIndex) => {
         const houseColor = getHouseColor(house.id, houseIndex);
         const houseWorkflowSummary = summarizeWorkflowForHouse(house);
         return (
-        <section key={house.id} className="space-y-3">
-          <div className={cn("rounded-lg border px-3 py-2", houseColor.softBorder, houseColor.softBg)}>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">House</p>
-            <h3 className={cn("inline-flex items-center gap-1.5 text-base font-semibold", houseColor.strongText)}>
-              <span className={cn("h-2 w-2 rounded-full", houseColor.dot)} />
-              {house.name}
-            </h3>
-            {house.sizeSqm ? <p className="text-xs text-slate-500">{house.sizeSqm} m2</p> : null}
-          </div>
-          <WorkflowOverview title={`${house.name} progress`} summary={houseWorkflowSummary} compact />
+          <section key={house.id} className="space-y-3">
+            <div className={cn("rounded-lg border px-3 py-2", houseColor.softBorder, houseColor.softBg)}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">House</p>
+              <h3 className={cn("inline-flex items-center gap-1.5 text-base font-semibold", houseColor.strongText)}>
+                <span className={cn("h-2 w-2 rounded-full", houseColor.dot)} />
+                {house.name}
+              </h3>
+              {house.sizeSqm ? <p className="text-xs text-slate-500">{house.sizeSqm} m2</p> : null}
+            </div>
+            <WorkflowOverview title={`${house.name} progress`} summary={houseWorkflowSummary} compact />
 
-          {house.rooms.map((room) => {
-            const roomWorkflowSummary = summarizeWorkflowForRoom(room);
-            const selectedCount = room.objects
-              .filter((obj) => getObjectStatus(obj) === "selected")
-              .reduce((acc, obj) => acc + Math.max(1, obj.quantity), 0);
-            const totalCount = room.objects.reduce((acc, obj) => acc + Math.max(1, obj.quantity), 0);
-            const missingCount = totalCount - selectedCount;
-            const isRoomSelected = room.id === selectedRoomId;
+            {house.rooms.map((room) => {
+              const roomWorkflowSummary = summarizeWorkflowForRoom(room);
+              const selectedObjects = room.objects.filter((obj) => getObjectStatus(obj) === "selected");
+              const selectedCount = selectedObjects.reduce((acc, obj) => acc + Math.max(1, obj.quantity), 0);
 
-            return (
-              <div
-                key={room.id}
-                id={`room-section-${room.id}`}
-                data-room-section="true"
-                data-house-id={house.id}
-                data-room-id={room.id}
-                className={cn(
-                  "scroll-mt-28 space-y-2.5 rounded-xl border-y border-r border-l-4 p-2.5 transition sm:p-3",
-                  isRoomSelected ? `${houseColor.softBorder} ${houseColor.softBg} shadow-sm` : "border-slate-200 bg-white",
-                  houseColor.roomRail
-                )}
-              >
-                <RoomHeader house={house} room={room} selectedCount={selectedCount} missingCount={missingCount} />
-                {(showWorkflowHints || isRoomSelected) ? (
-                  <WorkflowOverview title={`${room.name} progress`} summary={roomWorkflowSummary} compact />
-                ) : null}
-                <SuggestedObjects
-                  room={room}
-                  onAddSuggestion={(objectName, category, basePrice) =>
-                    onAddSuggestion(room.id, objectName, category, basePrice)
-                  }
-                  onOpenAddCustomObject={() => onOpenAddCustomObject(room.id)}
-                />
-                <RoomObjectsList
-                  room={room}
-                  selectedObjectId={selectedObjectId}
-                  showWorkflowHints={showWorkflowHints}
-                  onSelectObject={(objectId) => onSelectObject(house.id, room.id, objectId)}
-                  onDeleteObject={(objectId) => onDeleteObject(room.id, objectId)}
-                  onUpdateWorkflow={onUpdateWorkflow}
-                />
-              </div>
-            );
-          })}
-        </section>
-      );
+              const missingObjects = room.objects.filter((obj) => getObjectStatus(obj) === "missing");
+              const missingCount = missingObjects.reduce((acc, obj) => acc + Math.max(1, obj.quantity), 0);
+
+              const firstSelectedObjectId = selectedObjects[0]?.id;
+              const firstMissingObjectId = missingObjects[0]?.id;
+              const isRoomSelected = room.id === selectedRoomId;
+
+              return (
+                <div
+                  key={room.id}
+                  id={`room-section-${room.id}`}
+                  data-room-section="true"
+                  data-house-id={house.id}
+                  data-room-id={room.id}
+                  className={cn(
+                    "scroll-mt-28 space-y-2.5 rounded-xl border-y border-r border-l-4 p-2.5 transition sm:p-3",
+                    isRoomSelected ? `${houseColor.softBorder} ${houseColor.softBg} shadow-sm` : "border-slate-200 bg-white",
+                    houseColor.roomRail
+                  )}
+                >
+                  <RoomHeader
+                    house={house}
+                    room={room}
+                    selectedCount={selectedCount}
+                    missingCount={missingCount}
+                    onJumpToSelected={
+                      firstSelectedObjectId
+                        ? () => {
+                            onSelectObject(house.id, room.id, firstSelectedObjectId);
+                            scrollToObjectCard(firstSelectedObjectId);
+                          }
+                        : undefined
+                    }
+                    onJumpToMissing={
+                      firstMissingObjectId
+                        ? () => {
+                            onSelectObject(house.id, room.id, firstMissingObjectId);
+                            scrollToObjectCard(firstMissingObjectId);
+                          }
+                        : undefined
+                    }
+                  />
+                  {showWorkflowHints || isRoomSelected ? (
+                    <WorkflowOverview title={`${room.name} progress`} summary={roomWorkflowSummary} compact />
+                  ) : null}
+                  <SuggestedObjects
+                    room={room}
+                    onAddSuggestion={(objectName, category, basePrice) =>
+                      onAddSuggestion(room.id, objectName, category, basePrice)
+                    }
+                    onOpenAddCustomObject={() => onOpenAddCustomObject(room.id)}
+                  />
+                  <RoomObjectsList
+                    room={room}
+                    selectedObjectId={selectedObjectId}
+                    showWorkflowHints={showWorkflowHints}
+                    onSelectObject={(objectId) => onSelectObject(house.id, room.id, objectId)}
+                    onDeleteObject={(objectId) => onDeleteObject(room.id, objectId)}
+                    onUpdateWorkflow={onUpdateWorkflow}
+                  />
+                </div>
+              );
+            })}
+          </section>
+        );
       })}
     </div>
   );
