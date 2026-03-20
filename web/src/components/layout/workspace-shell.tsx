@@ -116,6 +116,10 @@ export function WorkspaceShell({
   }, [isEditingProjectName, projectName]);
 
   const inviteLoginLink = lastInvitedEmail ? buildInviteLoginLink(projectId, lastInvitedEmail) : "";
+  const actionButtonClassName =
+    "h-9 min-w-[148px] justify-center border-slate-300 px-3 text-xs text-slate-700 hover:bg-slate-100 sm:text-sm";
+  const destructiveActionButtonClassName =
+    "h-9 min-w-[148px] justify-center border-rose-200 px-3 text-xs text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800 sm:text-sm";
 
   useEffect(() => {
     if (!isSnapshotsDialogOpen) {
@@ -374,12 +378,12 @@ export function WorkspaceShell({
                     </Button>
                   ) : null}
                 </div>
-                <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                <div className="flex w-full flex-wrap items-stretch gap-2 sm:w-auto sm:justify-end">
                   {onInviteCollaborator ? (
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-100 sm:text-sm"
+                      className={actionButtonClassName}
                       onClick={() => setIsInviteDialogOpen(true)}
                     >
                       <UserPlus className="h-4 w-4" />
@@ -390,7 +394,7 @@ export function WorkspaceShell({
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-100 sm:text-sm"
+                      className={actionButtonClassName}
                       onClick={() => handleSnapshotsDialogOpenChange(true)}
                     >
                       <History className="h-4 w-4" />
@@ -401,7 +405,7 @@ export function WorkspaceShell({
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-100 sm:text-sm"
+                      className={actionButtonClassName}
                       onClick={() => void handleExportProject()}
                       disabled={isExportingProject}
                     >
@@ -413,7 +417,7 @@ export function WorkspaceShell({
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-8 border-rose-200 text-xs text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800 sm:text-sm"
+                      className={destructiveActionButtonClassName}
                       onClick={() => void handleDeleteProject()}
                       disabled={isDeletingProject}
                     >
