@@ -180,7 +180,7 @@ function MaterialsFocusPanel({
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-amber-900">Pending assignment</CardTitle>
             <CardDescription className="text-amber-800">
-              Choose a room and a specific object for <strong>{pendingMaterial.name}</strong>, then click OK.
+              Choose a room and a specific object for <strong>{pendingMaterial.name}</strong>, then click OK. Repeat to assign it to multiple objects.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -1837,10 +1837,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setSelectedHouseId(located.house.id);
     setSelectedRoomId(located.room.id);
     setSelectedObjectId(located.objectItem.id);
-    setPendingMaterialAssignment(null);
     setPendingAssignmentSelection({
-      houseId: "",
-      roomId: "",
+      houseId: located.house.id,
+      roomId: located.room.id,
       objectId: "",
     });
   }
@@ -2049,7 +2048,13 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
               <CardDescription>Workspace data is now protected by Supabase RLS policies.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button type="button" onClick={() => router.push("/login")}>
+              <Button
+                type="button"
+                onClick={() => {
+                  const currentUrl = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : "");
+                  router.push(`/login?next=${encodeURIComponent(currentUrl)}`);
+                }}
+              >
                 Go to login
               </Button>
             </CardContent>
@@ -2291,6 +2296,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   const main = (
     <WorkspaceShell
+      projectId={project.id}
       projectName={project.name}
       customer={project.customer}
       location={project.location}
@@ -2333,4 +2339,3 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} />;
 }
-

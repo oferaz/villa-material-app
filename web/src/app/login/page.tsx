@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,11 +18,26 @@ function normalizeOtpToken(value: string): string {
   return value.replace(/[^a-zA-Z0-9]/g, "").trim();
 }
 
-function buildLoginRedirectUrl(): string {
+function sanitizeNextDestination(value: string | null | undefined): string {
+  const trimmedValue = value?.trim() ?? "";
+  if (!trimmedValue.startsWith("/") || trimmedValue.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  try {
+    const parsedUrl = new URL(trimmedValue, "http://localhost");
+    return `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}` || "/dashboard";
+  } catch {
+    return "/dashboard";
+  }
+}
+
+function buildLoginRedirectUrl(search: string): string {
   const currentOrigin = window.location.origin;
   const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const normalizedSearch = search.trim();
   if (!configuredAppUrl) {
-    return `${currentOrigin.replace(/\/+$/, "")}/login`;
+    return `${currentOrigin.replace(/\/+$/, "")}/login${normalizedSearch}`;
   }
 
   try {
@@ -30,14 +45,15 @@ function buildLoginRedirectUrl(): string {
     const currentUrl = new URL(currentOrigin);
     const shouldUseConfiguredOrigin = configuredUrl.hostname === currentUrl.hostname;
     const baseUrl = shouldUseConfiguredOrigin ? configuredUrl.origin : currentOrigin;
-    return `${baseUrl.replace(/\/+$/, "")}/login`;
+    return `${baseUrl.replace(/\/+$/, "")}/login${normalizedSearch}`;
   } catch {
-    return `${currentOrigin.replace(/\/+$/, "")}/login`;
+    return `${currentOrigin.replace(/\/+$/, "")}/login${normalizedSearch}`;
   }
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
@@ -46,6 +62,20 @@ export default function LoginPage() {
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const loginSearch = searchParams.toString();
+  const loginSearchSuffix = loginSearch ? `?${loginSearch}` : "";
+  const nextDestination = useMemo(() => sanitizeNextDestination(searchParams.get("next")), [searchParams]);
+  const prefilledInviteEmail = useMemo(() => {
+    const normalizedEmail = (searchParams.get("email") ?? "").trim().toLowerCase();
+    return looksLikeEmail(normalizedEmail) ? normalizedEmail : "";
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!prefilledInviteEmail) {
+      return;
+    }
+    setEmail((currentValue) => currentValue || prefilledInviteEmail);
+  }, [prefilledInviteEmail]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -53,7 +83,7 @@ export default function LoginPage() {
     async function checkSession() {
       const { data } = await supabase.auth.getSession();
       if (!isCancelled && data.session) {
-        router.replace("/dashboard");
+        router.replace(nextDestination);
       }
     }
 
@@ -63,7 +93,7 @@ export default function LoginPage() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        router.replace("/dashboard");
+        router.replace(nextDestination);
       }
     });
 
@@ -71,7 +101,7 @@ export default function LoginPage() {
       isCancelled = true;
       subscription.unsubscribe();
     };
-  }, [router]);
+  }, [nextDestination, router]);
 
   async function handleGoogleSignIn() {
     if (!isSupabaseConfigured) {
@@ -83,7 +113,7 @@ export default function LoginPage() {
     setSuccessMessage(null);
     setIsGoogleSubmitting(true);
 
-    const redirectTo = buildLoginRedirectUrl();
+    const redirectTo = buildLoginRedirectUrl(loginSearchSuffix);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -169,7 +199,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.replace("/dashboard");
+    router.replace(nextDestination);
   }
 
   return (
@@ -213,6 +243,12 @@ export default function LoginPage() {
             <p className="mt-1 text-sm text-slate-600">
               Use Google or request a one-time verification code by email.
             </p>
+            {prefilledInviteEmail ? (
+              <p className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                This link is reserved for <strong>{prefilledInviteEmail}</strong>. Sign in with that email to open the
+                shared project.
+              </p>
+            ) : null}
 
             <div className="mt-6 space-y-4">
               <Button
@@ -277,6 +313,14 @@ export default function LoginPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="p-6">Loading sign-in...</main>}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
 

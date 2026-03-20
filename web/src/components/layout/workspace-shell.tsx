@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 
 interface WorkspaceShellProps {
+  projectId: string;
   projectName: string;
   customer: string;
   location: string;
@@ -42,7 +43,35 @@ interface WorkspaceShellProps {
   clientContent: ReactNode;
 }
 
+function looksLikeEmail(value: string): boolean {
+  const email = value.trim().toLowerCase();
+  return /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email);
+}
+
+function buildInviteLoginLink(projectId: string, email: string): string {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!projectId.trim() || !looksLikeEmail(normalizedEmail) || typeof window === "undefined") {
+    return "";
+  }
+
+  let baseOrigin = window.location.origin;
+  const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (configuredAppUrl) {
+    try {
+      baseOrigin = new URL(configuredAppUrl).origin;
+    } catch {
+      baseOrigin = window.location.origin;
+    }
+  }
+
+  const inviteUrl = new URL("/login", baseOrigin);
+  inviteUrl.searchParams.set("email", normalizedEmail);
+  inviteUrl.searchParams.set("next", `/projects/${projectId}`);
+  return inviteUrl.toString();
+}
+
 export function WorkspaceShell({
+  projectId,
   projectName,
   customer,
   location,
@@ -72,6 +101,8 @@ export function WorkspaceShell({
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"viewer" | "editor">("viewer");
   const [isInvitingCollaborator, setIsInvitingCollaborator] = useState(false);
+  const [lastInvitedEmail, setLastInvitedEmail] = useState("");
+  const [isInviteLinkCopied, setIsInviteLinkCopied] = useState(false);
   const [isSnapshotsDialogOpen, setIsSnapshotsDialogOpen] = useState(false);
   const [snapshotNameDraft, setSnapshotNameDraft] = useState("");
   const [selectedSnapshotId, setSelectedSnapshotId] = useState("");
@@ -83,6 +114,8 @@ export function WorkspaceShell({
       setProjectNameDraft(projectName);
     }
   }, [isEditingProjectName, projectName]);
+
+  const inviteLoginLink = lastInvitedEmail ? buildInviteLoginLink(projectId, lastInvitedEmail) : "";
 
   useEffect(() => {
     if (!isSnapshotsDialogOpen) {
@@ -172,6 +205,8 @@ export function WorkspaceShell({
   function resetInviteForm() {
     setInviteEmail("");
     setInviteRole("viewer");
+    setLastInvitedEmail("");
+    setIsInviteLinkCopied(false);
   }
 
   function handleInviteDialogOpenChange(nextOpen: boolean) {
@@ -194,17 +229,33 @@ export function WorkspaceShell({
       window.alert("Collaborator email is required.");
       return;
     }
+    if (!looksLikeEmail(normalizedEmail)) {
+      window.alert("Enter a valid email address.");
+      return;
+    }
 
     setIsInvitingCollaborator(true);
     try {
       await onInviteCollaborator(normalizedEmail, inviteRole);
-      window.alert("Collaborator invited successfully.");
-      setIsInviteDialogOpen(false);
-      resetInviteForm();
+      setLastInvitedEmail(normalizedEmail);
+      setIsInviteLinkCopied(false);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to invite collaborator.");
     } finally {
       setIsInvitingCollaborator(false);
+    }
+  }
+
+  async function handleCopyInviteLink() {
+    if (!inviteLoginLink) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(inviteLoginLink);
+      setIsInviteLinkCopied(true);
+    } catch {
+      window.alert("Could not copy the invite link automatically. Please copy it manually.");
     }
   }
 
@@ -410,7 +461,8 @@ export function WorkspaceShell({
           <DialogHeader>
             <DialogTitle>Invite collaborator</DialogTitle>
             <DialogDescription>
-              Add a team member by email so they can access this project.
+              Add a team member by email so they can access this project. If this customer has never logged in before,
+              send them the login link after saving the invite.
             </DialogDescription>
           </DialogHeader>
           <div className="mt-4 space-y-4">
@@ -423,7 +475,11 @@ export function WorkspaceShell({
                 type="email"
                 placeholder="friend@example.com"
                 value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
+                onChange={(event) => {
+                  setInviteEmail(event.target.value);
+                  setLastInvitedEmail("");
+                  setIsInviteLinkCopied(false);
+                }}
                 disabled={isInvitingCollaborator}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
@@ -448,6 +504,23 @@ export function WorkspaceShell({
                 <option value="editor">Editor</option>
               </select>
             </div>
+            {lastInvitedEmail && inviteLoginLink ? (
+              <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-emerald-900">Invite saved for {lastInvitedEmail}</p>
+                  <p className="text-xs text-emerald-800">
+                    Share this first-login link with the customer. After they sign in with this email, Materia will take
+                    them directly to this project.
+                  </p>
+                </div>
+                <Input value={inviteLoginLink} readOnly />
+                <div className="flex justify-end">
+                  <Button type="button" variant="outline" onClick={() => void handleCopyInviteLink()}>
+                    {isInviteLinkCopied ? "Copied" : "Copy login link"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
