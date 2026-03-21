@@ -1,26 +1,38 @@
-# Ignore virtual environments
-venv/
-__pycache__/
-*.pyc
+# Operating system noise
 .DS_Store
+Thumbs.db
 
-# Ignore model and cache files (optional)
-# *.pkl
+# Python environments and caches
+.venv/
+venv/
+env/
+streamlit_env/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.pyc
+*.pyo
+
+# Local models and derived artifacts
+all-MiniLM-L6-v2/
+models/
 *.h5
 *.pt
 *.pth
 .~lock.*
-*.csv
 
-# Ignore Streamlit secrets and configs
-.streamlit/
+# Legacy Streamlit local runtime data
 images/
 catalog_versions/
 products.db
-# product_catalog_with_embeddings.pkl
 
-streamlit_env/
-all-MiniLM-L6-v2/
-models/
+# Local temp and working files
+tmp/*
+!tmp/README.md
+tmp_customer_*.xlsx
+
+# Secrets
+.streamlit/
 .streamlit/secrets.toml
 .env

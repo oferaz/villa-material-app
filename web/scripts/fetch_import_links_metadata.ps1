@@ -1,10 +1,20 @@
-param(
-  [string]$InputSqlPath = "c:\Workspace\Materia\villa-material-app\db\manual\20260316_import_srithanu_customer_project.sql",
-  [string]$OutputDir = "c:\Workspace\Materia\villa-material-app\tmp"
+﻿param(
+  [string]$InputSqlPath = "",
+  [string]$OutputDir = ""
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptRoot)
+
+if ([string]::IsNullOrWhiteSpace($InputSqlPath)) {
+  $InputSqlPath = Join-Path $RepoRoot "db\manual\20260316_import_srithanu_customer_project.sql"
+}
+
+if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+  $OutputDir = Join-Path $RepoRoot "tmp"
+}
 
 function Normalize-Whitespace {
   param([string]$Text)
@@ -370,3 +380,5 @@ Write-Output "Done."
 Write-Output "JSON: $jsonPath"
 Write-Output "CSV:  $csvPath"
 Write-Output "Summary: success $successCount/$($uniqueUrls.Count), with price $withPriceCount, with image $withImageCount"
+
+

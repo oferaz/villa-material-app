@@ -28,14 +28,20 @@ Read these first before making non-trivial changes:
   The active Next.js workspace for the current product direction.
 - `app.py` and Python modules in the repo root
   The legacy Streamlit surface and compatibility tooling.
+- `pages/`, `assets/`, and root Python helpers
+  Supporting files for the legacy Streamlit surface.
 - `db/migrations/`
   Database schema, RLS policies, views, triggers, and RPC functions.
 - `db/manual/`
   Manual SQL scripts for one-off or operational work.
+- `scripts/` and `web/scripts/`
+  Migration, import, and operational helper scripts.
 - `docs/`
   Architecture, decisions, workflows, and contributor guidance.
 - `tests/`
   Lightweight Python and migration contract tests.
+- `tmp/`
+  Local-only scratch space for generated import metadata, ad hoc exports, and operational working files.
 
 ## Which Surface To Use
 
@@ -78,3 +84,4 @@ The active workspace schema includes:
 - This repo intentionally contains both old and new application surfaces.
 - Not every pattern in the Python app should be copied into the Next.js workspace.
 - Treat `db/migrations/` as the source of truth for schema behavior.
+- Keep local environments, generated temp files, and machine-specific working data out of Git.

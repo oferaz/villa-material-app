@@ -1,10 +1,15 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const INPUT_SQL =
-  process.argv[2] ?? "c:/Workspace/Materia/villa-material-app/db/manual/20260316_import_srithanu_customer_project.sql";
-const OUTPUT_DIR =
-  process.argv[3] ?? "c:/Workspace/Materia/villa-material-app/tmp";
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const WEB_DIR = path.resolve(SCRIPT_DIR, "..");
+const REPO_ROOT = path.resolve(WEB_DIR, "..");
+const DEFAULT_INPUT_SQL = path.join(REPO_ROOT, "db", "manual", "20260316_import_srithanu_customer_project.sql");
+const DEFAULT_OUTPUT_DIR = path.join(REPO_ROOT, "tmp");
+
+const INPUT_SQL = path.resolve(process.argv[2] ?? DEFAULT_INPUT_SQL);
+const OUTPUT_DIR = path.resolve(process.argv[3] ?? DEFAULT_OUTPUT_DIR);
 
 const FIELDS = [
   "source_seq",
@@ -615,3 +620,4 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
+

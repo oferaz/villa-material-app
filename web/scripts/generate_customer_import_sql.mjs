@@ -1,12 +1,26 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
+import { fileURLToPath } from "node:url";
 
-const MATRIX_WORKBOOK =
-  "c:/Users/ofer.r.ARBE/OneDrive - ArbeRobotics/Documents 1/Personal/AI app/Limor data/Srithanu uper zone furnitur.xlsx";
-const STRUCTURED_WORKBOOK = "c:/Workspace/Materia/villa-material-app/tmp_customer_srithanu.xlsx";
-const OUTPUT_SQL =
-  "c:/Workspace/Materia/villa-material-app/db/manual/20260316_import_srithanu_customer_project.sql";
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const WEB_DIR = path.resolve(SCRIPT_DIR, "..");
+const REPO_ROOT = path.resolve(WEB_DIR, "..");
+const DEFAULT_STRUCTURED_WORKBOOK = path.join(REPO_ROOT, "tmp_customer_srithanu.xlsx");
+const DEFAULT_OUTPUT_SQL = path.join(REPO_ROOT, "db", "manual", "20260316_import_srithanu_customer_project.sql");
+
+const matrixWorkbookArg = process.argv[2] ?? process.env.MATERIA_MATRIX_WORKBOOK;
+const MATRIX_WORKBOOK = matrixWorkbookArg ? path.resolve(matrixWorkbookArg) : null;
+const STRUCTURED_WORKBOOK = path.resolve(
+  process.argv[3] ?? process.env.MATERIA_STRUCTURED_WORKBOOK ?? DEFAULT_STRUCTURED_WORKBOOK,
+);
+const OUTPUT_SQL = path.resolve(process.argv[4] ?? process.env.MATERIA_OUTPUT_SQL ?? DEFAULT_OUTPUT_SQL);
+
+if (!MATRIX_WORKBOOK) {
+  throw new Error(
+    "Provide the source matrix workbook path as the first argument or set MATERIA_MATRIX_WORKBOOK.",
+  );
+}
 
 const PROJECT_NAME = "Srithanu - Imported";
 const OWNER_EMAIL = "karnoni@gmail.com";
@@ -1041,6 +1055,7 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
 
 
 

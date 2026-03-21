@@ -1,4 +1,4 @@
-# Contributing
+﻿# Contributing
 
 ## Purpose
 
@@ -97,6 +97,13 @@ Update docs when you change:
 
 When making a structural decision, add or update an entry in `docs/DECISIONS.md`.
 
+## Repository Hygiene
+
+- Do not commit local virtual environments such as `.venv/` or `venv/`.
+- Treat `tmp/` as local scratch space for generated import metadata, CSV exports, and workbook intermediates.
+- Keep machine-specific paths out of scripts when a repo-relative path or CLI argument will work.
+- If an operational script writes generated output, prefer `tmp/` or another documented local-only directory over the repo root.
+
 ## Testing Expectations
 
 For most changes, run the smallest relevant verification you can:
@@ -113,4 +120,8 @@ Current coverage is lightweight, so use judgment and call out untested risk in h
 - Keep new code in the correct surface.
 - Update migrations instead of silently shifting assumptions in app code.
 - Update docs when the system contract changes.
+- Keep local-only files and generated artifacts out of commits.
 - Verify only the files intended for the task changed.
+
+
+
