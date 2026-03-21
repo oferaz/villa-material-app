@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Menu, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,15 +11,17 @@ interface AppShellProps {
   main: ReactNode;
   sidebar?: ReactNode;
   rightPanel?: ReactNode;
+  activeWorkspaceTab?: "rooms" | "materials" | "budget" | "client";
   className?: string;
 }
 
-export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppShellProps) {
+export function AppShell({ topNav, main, sidebar, rightPanel, activeWorkspaceTab, className }: AppShellProps) {
   const hasSplitLayout = Boolean(sidebar) || Boolean(rightPanel);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+  const savedPanelStateRef = useRef<{ leftCollapsed: boolean; rightCollapsed: boolean } | null>(null);
 
   useEffect(() => {
     if (!rightPanel) {
@@ -37,6 +39,49 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
       window.removeEventListener("materia:close-right-panel", closeRightPanel);
     };
   }, [rightPanel]);
+  useEffect(() => {
+    const shouldTemporarilyCollapsePanels = activeWorkspaceTab === "budget";
+
+    if (shouldTemporarilyCollapsePanels) {
+      if (!savedPanelStateRef.current) {
+        savedPanelStateRef.current = {
+          leftCollapsed: isLeftPanelCollapsed,
+          rightCollapsed: isRightPanelCollapsed,
+        };
+      }
+
+      if (sidebar) {
+        setIsLeftPanelOpen(false);
+        setIsLeftPanelCollapsed(true);
+      }
+
+      if (rightPanel) {
+        setIsRightPanelOpen(false);
+        setIsRightPanelCollapsed(true);
+      }
+
+      return;
+    }
+
+    if (!savedPanelStateRef.current) {
+      return;
+    }
+
+    if (activeWorkspaceTab !== "rooms" && activeWorkspaceTab !== "materials") {
+      return;
+    }
+
+    const previousPanelState = savedPanelStateRef.current;
+    savedPanelStateRef.current = null;
+
+    if (sidebar) {
+      setIsLeftPanelCollapsed(previousPanelState.leftCollapsed);
+    }
+
+    if (rightPanel) {
+      setIsRightPanelCollapsed(previousPanelState.rightCollapsed);
+    }
+  }, [activeWorkspaceTab, isLeftPanelCollapsed, isRightPanelCollapsed, rightPanel, sidebar]);
 
   const desktopGridCols = (() => {
     if (sidebar && rightPanel) {
@@ -206,3 +251,4 @@ export function AppShell({ topNav, main, sidebar, rightPanel, className }: AppSh
     </div>
   );
 }
+

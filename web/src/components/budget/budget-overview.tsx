@@ -257,7 +257,7 @@ function buildWorkflowBudgetBreakdown(lineItems: BudgetLineItem[]): WorkflowBudg
 
 export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }: BudgetOverviewProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [budgetView, setBudgetView] = useState<BudgetViewMode>("room");
+  const [budgetView, setBudgetView] = useState<BudgetViewMode>("category");
   const [totalBudgetInput, setTotalBudgetInput] = useState("");
   const [categoryInputs, setCategoryInputs] = useState<Record<BudgetCategoryName, string>>(
     {} as Record<BudgetCategoryName, string>
@@ -444,9 +444,9 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
           </div>
           <div className="flex flex-wrap gap-2">
             {([
+              ["category", "By material type"],
               ["room", "By room"],
               ["house", "By house"],
-              ["category", "By material type"],
               ["provider", "By provider"],
             ] as const).map(([value, label]) => (
               <Button

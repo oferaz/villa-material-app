@@ -2519,7 +2519,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     />
   );
 
-  return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} />;
+  return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} activeWorkspaceTab={activeTab} />;
 }
-
 
