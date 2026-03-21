@@ -462,7 +462,7 @@ function isLinkOption(option: ProductOption): boolean {
 
 function createInitialBudgetMap(projects: Project[] = []): Record<string, ProjectBudget> {
   return projects.reduce<Record<string, ProjectBudget>>((acc, item) => {
-    acc[item.id] = createMockProjectBudget();
+    acc[item.id] = createMockProjectBudget(item);
     return acc;
   }, {});
 }
@@ -725,9 +725,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   const baseProjectBudget = useMemo(() => {
     if (!project) {
-      return createMockProjectBudget();
+      return createMockProjectBudget(project);
     }
-    return projectBudgets[project.id] ?? createMockProjectBudget();
+    return projectBudgets[project.id] ?? createMockProjectBudget(project);
   }, [project, projectBudgets]);
 
   const calculatedProjectBudget = useMemo(() => {
@@ -2150,13 +2150,19 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }));
   }
 
-  function handleSaveBudget(payload: { totalBudget: number; categoryBudgets: Record<BudgetCategoryName, number> }) {
+  function handleSaveBudget(payload: {
+    totalBudget: number;
+    categoryBudgets: Record<BudgetCategoryName, number>;
+    houseBudgets: Record<string, number>;
+    roomBudgets: Record<string, number | null>;
+  }) {
     if (!project) {
       return;
     }
 
     setProjectBudgets((prev) => {
-      const current = prev[project.id] ?? createMockProjectBudget();
+      const current = prev[project.id] ?? createMockProjectBudget(project);
+      const nextTotalBudget = Math.max(0, Math.round(payload.totalBudget));
       const nextCategories = budgetCategoryOrder.map((categoryName) => {
         const existing = current.categories.find((item) => item.name === categoryName);
         const nextBudget = Math.max(0, Math.round(payload.categoryBudgets[categoryName] ?? 0));
@@ -2168,14 +2174,46 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
           remainingAmount: nextBudget - (existing?.allocatedAmount ?? 0),
         };
       });
+      const nextHouses = project.houses.map((house) => {
+        const existing = current.houses.find((item) => item.houseId === house.id);
+        const nextBudget = Math.max(0, Math.round(payload.houseBudgets[house.id] ?? 0));
+        return {
+          id: existing?.id ?? `house-${house.id}`,
+          houseId: house.id,
+          houseName: house.name,
+          totalBudget: nextBudget,
+          allocatedAmount: existing?.allocatedAmount ?? 0,
+          remainingAmount: nextBudget - (existing?.allocatedAmount ?? 0),
+        };
+      });
+      const nextRooms = project.houses.flatMap((house) =>
+        house.rooms.map((room) => {
+          const existing = current.rooms.find((item) => item.roomId === room.id);
+          const nextBudget = payload.roomBudgets[room.id];
+          const normalizedBudget = typeof nextBudget === "number" ? Math.max(0, Math.round(nextBudget)) : null;
+          const allocatedAmount = existing?.allocatedAmount ?? 0;
+          return {
+            id: existing?.id ?? `room-${room.id}`,
+            roomId: room.id,
+            roomName: room.name,
+            houseId: house.id,
+            houseName: house.name,
+            totalBudget: normalizedBudget,
+            allocatedAmount,
+            remainingAmount: normalizedBudget === null ? null : normalizedBudget - allocatedAmount,
+          };
+        })
+      );
 
       return {
         ...prev,
         [project.id]: {
-          totalBudget: Math.max(0, Math.round(payload.totalBudget)),
+          totalBudget: nextTotalBudget,
           allocatedAmount: current.allocatedAmount,
-          remainingAmount: Math.max(0, Math.round(payload.totalBudget)) - current.allocatedAmount,
+          remainingAmount: nextTotalBudget - current.allocatedAmount,
           categories: nextCategories,
+          houses: nextHouses,
+          rooms: nextRooms,
         },
       };
     });

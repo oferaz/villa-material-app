@@ -14,9 +14,32 @@ export interface BudgetCategory {
   remainingAmount: number;
 }
 
+export interface HouseBudget {
+  id: string;
+  houseId: string;
+  houseName: string;
+  totalBudget: number;
+  allocatedAmount: number;
+  remainingAmount: number;
+}
+
+export interface RoomBudget {
+  id: string;
+  roomId: string;
+  roomName: string;
+  houseId: string;
+  houseName: string;
+  totalBudget: number | null;
+  allocatedAmount: number;
+  remainingAmount: number | null;
+}
+
 export interface ProjectBudget {
   totalBudget: number;
   allocatedAmount: number;
   remainingAmount: number;
   categories: BudgetCategory[];
+  houses: HouseBudget[];
+  rooms: RoomBudget[];
 }
+

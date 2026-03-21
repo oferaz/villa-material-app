@@ -27,10 +27,17 @@ export type BudgetFocusSelection =
 
 type BudgetBreakdownFocusSelection = Exclude<BudgetFocusSelection, { kind: "workflow" }>;
 
+interface SaveBudgetPayload {
+  totalBudget: number;
+  categoryBudgets: Record<BudgetCategoryName, number>;
+  houseBudgets: Record<string, number>;
+  roomBudgets: Record<string, number | null>;
+}
+
 interface BudgetOverviewProps {
   project: Project;
   budget: ProjectBudget;
-  onSaveBudget: (payload: { totalBudget: number; categoryBudgets: Record<BudgetCategoryName, number> }) => void;
+  onSaveBudget: (payload: SaveBudgetPayload) => void;
   onSelectFocus?: (selection: BudgetFocusSelection) => void;
 }
 
@@ -49,6 +56,12 @@ interface BudgetLineItem {
   workflowStage: WorkflowStage;
 }
 
+interface BudgetPlanSummary {
+  plannedBudget: number | null;
+  remainingAmount: number | null;
+  varianceAmount: number | null;
+}
+
 interface BudgetBreakdownItem {
   key: string;
   label: string;
@@ -59,6 +72,7 @@ interface BudgetBreakdownItem {
   assignedCount: number;
   missingCount: number;
   focusSelection: BudgetBreakdownFocusSelection;
+  plan: BudgetPlanSummary;
 }
 
 interface WorkflowBudgetItem {
@@ -100,6 +114,15 @@ function sanitizeNumber(value: string): number {
   return Math.max(0, Math.round(parsed));
 }
 
+function sumInputValues(values: Record<string, string>): number {
+  return Object.values(values).reduce((sum, value) => {
+    if (!value.trim()) {
+      return sum;
+    }
+    return sum + sanitizeNumber(value);
+  }, 0);
+}
+
 function getSelectedProduct(roomObject: RoomObject) {
   if (!roomObject.selectedProductId) {
     return undefined;
@@ -133,9 +156,12 @@ function buildBudgetLineItems(project: Project): BudgetLineItem[] {
 function buildBudgetBreakdown(
   lineItems: BudgetLineItem[],
   mode: BudgetViewMode,
-  hasMultipleHouses: boolean
+  hasMultipleHouses: boolean,
+  categoryPlanMap: Map<string, BudgetPlanSummary>,
+  housePlanMap: Map<string, BudgetPlanSummary>,
+  roomPlanMap: Map<string, BudgetPlanSummary>
 ): BudgetBreakdownItem[] {
-  const groups = new Map<string, BudgetBreakdownItem>();
+  const groups = new Map<string, Omit<BudgetBreakdownItem, "plan">>();
 
   for (const item of lineItems) {
     let key = "";
@@ -214,15 +240,29 @@ function buildBudgetBreakdown(
     groups.set(key, current);
   }
 
-  return Array.from(groups.values()).sort((a, b) => {
-    if (b.allocatedAmount !== a.allocatedAmount) {
-      return b.allocatedAmount - a.allocatedAmount;
-    }
-    if (b.assignedCount !== a.assignedCount) {
-      return b.assignedCount - a.assignedCount;
-    }
-    return a.label.localeCompare(b.label);
-  });
+  const planMap =
+    mode === "category"
+      ? categoryPlanMap
+      : mode === "house"
+        ? housePlanMap
+        : mode === "room"
+          ? roomPlanMap
+          : new Map<string, BudgetPlanSummary>();
+
+  return Array.from(groups.values())
+    .map((item) => ({
+      ...item,
+      plan: planMap.get(item.key) ?? { plannedBudget: null, remainingAmount: null, varianceAmount: null },
+    }))
+    .sort((a, b) => {
+      if (b.allocatedAmount !== a.allocatedAmount) {
+        return b.allocatedAmount - a.allocatedAmount;
+      }
+      if (b.assignedCount !== a.assignedCount) {
+        return b.assignedCount - a.assignedCount;
+      }
+      return a.label.localeCompare(b.label);
+    });
 }
 
 function handleCardActivation(event: KeyboardEvent<HTMLDivElement>, onActivate?: () => void) {
@@ -255,6 +295,41 @@ function buildWorkflowBudgetBreakdown(lineItems: BudgetLineItem[]): WorkflowBudg
   });
 }
 
+function createBudgetPlanMap(
+  items: Array<{ key: string; totalBudget: number | null; allocatedAmount: number; remainingAmount: number | null }>
+) {
+  return new Map<string, BudgetPlanSummary>(
+    items.map((item) => [
+      item.key,
+      {
+        plannedBudget: item.totalBudget,
+        remainingAmount: item.remainingAmount,
+        varianceAmount: item.totalBudget === null ? null : item.allocatedAmount - item.totalBudget,
+      },
+    ])
+  );
+}
+
+function getPlanBadgeLabel(plan: BudgetPlanSummary): string {
+  if (plan.plannedBudget === null) {
+    return "Optional";
+  }
+  if (plan.varianceAmount !== null && plan.varianceAmount > 0) {
+    return "Over";
+  }
+  return "On plan";
+}
+
+function getPlanBadgeVariant(plan: BudgetPlanSummary): "outline" | "success" | "danger" {
+  if (plan.plannedBudget === null) {
+    return "outline";
+  }
+  if (plan.varianceAmount !== null && plan.varianceAmount > 0) {
+    return "danger";
+  }
+  return "success";
+}
+
 export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }: BudgetOverviewProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [budgetView, setBudgetView] = useState<BudgetViewMode>("category");
@@ -262,25 +337,61 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
   const [categoryInputs, setCategoryInputs] = useState<Record<BudgetCategoryName, string>>(
     {} as Record<BudgetCategoryName, string>
   );
+  const [houseInputs, setHouseInputs] = useState<Record<string, string>>({});
+  const [roomInputs, setRoomInputs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
+
     setTotalBudgetInput(String(budget.totalBudget));
-    const nextInputs = budgetCategoryOrder.reduce<Record<BudgetCategoryName, string>>((acc, categoryName) => {
+
+    const nextCategoryInputs = budgetCategoryOrder.reduce<Record<BudgetCategoryName, string>>((acc, categoryName) => {
       const category = budget.categories.find((item) => item.name === categoryName);
       acc[categoryName] = String(category?.totalBudget ?? 0);
       return acc;
     }, {} as Record<BudgetCategoryName, string>);
-    setCategoryInputs(nextInputs);
+    setCategoryInputs(nextCategoryInputs);
+
+    const nextHouseInputs = budget.houses.reduce<Record<string, string>>((acc, house) => {
+      acc[house.houseId] = String(house.totalBudget);
+      return acc;
+    }, {});
+    setHouseInputs(nextHouseInputs);
+
+    const nextRoomInputs = budget.rooms.reduce<Record<string, string>>((acc, room) => {
+      acc[room.roomId] = room.totalBudget === null ? "" : String(room.totalBudget);
+      return acc;
+    }, {});
+    setRoomInputs(nextRoomInputs);
   }, [isOpen, budget]);
 
   const categoryBudgetMap = useMemo(() => buildCategoryBudgetMap(budget.categories), [budget.categories]);
   const lineItems = useMemo(() => buildBudgetLineItems(project), [project]);
+  const categoryPlanMap = useMemo(
+    () => createBudgetPlanMap(budget.categories.map((item) => ({ key: item.name, ...item }))),
+    [budget.categories]
+  );
+  const housePlanMap = useMemo(
+    () => createBudgetPlanMap(budget.houses.map((item) => ({ key: item.houseId, ...item }))),
+    [budget.houses]
+  );
+  const roomPlanMap = useMemo(
+    () => createBudgetPlanMap(budget.rooms.map((item) => ({ key: item.roomId, ...item }))),
+    [budget.rooms]
+  );
   const breakdownItems = useMemo(
-    () => buildBudgetBreakdown(lineItems, budgetView, project.houses.length > 1),
-    [budgetView, lineItems, project.houses.length]
+    () =>
+      buildBudgetBreakdown(
+        lineItems,
+        budgetView,
+        project.houses.length > 1,
+        categoryPlanMap,
+        housePlanMap,
+        roomPlanMap
+      ),
+    [budgetView, categoryPlanMap, housePlanMap, lineItems, project.houses.length, roomPlanMap]
   );
   const workflowBreakdown = useMemo(() => buildWorkflowBudgetBreakdown(lineItems), [lineItems]);
 
@@ -301,15 +412,38 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
     };
   }, [budget.allocatedAmount, budget.totalBudget, lineItems]);
 
+  const budgetInputSummary = useMemo(() => {
+    return {
+      categoryTotal: sumInputValues(categoryInputs),
+      houseTotal: sumInputValues(houseInputs),
+      roomTotal: sumInputValues(roomInputs),
+    };
+  }, [categoryInputs, houseInputs, roomInputs]);
+
   function handleSave() {
     const categoryBudgets = budgetCategoryOrder.reduce<Record<BudgetCategoryName, number>>((acc, categoryName) => {
       acc[categoryName] = sanitizeNumber(categoryInputs[categoryName] ?? "0");
       return acc;
     }, {} as Record<BudgetCategoryName, number>);
 
+    const houseBudgets = project.houses.reduce<Record<string, number>>((acc, house) => {
+      acc[house.id] = sanitizeNumber(houseInputs[house.id] ?? "0");
+      return acc;
+    }, {});
+
+    const roomBudgets = project.houses.reduce<Record<string, number | null>>((acc, house) => {
+      house.rooms.forEach((room) => {
+        const rawValue = roomInputs[room.id] ?? "";
+        acc[room.id] = rawValue.trim() ? sanitizeNumber(rawValue) : null;
+      });
+      return acc;
+    }, {});
+
     onSaveBudget({
       totalBudget: sanitizeNumber(totalBudgetInput),
       categoryBudgets,
+      houseBudgets,
+      roomBudgets,
     });
     setIsOpen(false);
   }
@@ -321,8 +455,7 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
           <div>
             <CardTitle>Project Budget Overview</CardTitle>
             <CardDescription>
-              Track planned vs allocated budget from selected materials and products. Tiles, bathroom, and kitchen
-              selections are size-aware when room or house size is set.
+              Plan budget at project, house, material type, and optional room level, then compare it against what is already allocated.
             </CardDescription>
           </div>
           <Button type="button" variant="outline" onClick={() => setIsOpen(true)}>
@@ -426,8 +559,12 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
                     {formatInteger(item.objectCount)}
                   </Badge>
                 </div>
-                <p className="mt-3 min-w-0 text-base font-semibold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:text-lg">{formatCurrency(item.allocatedAmount)}</p>
-                <p className="mt-1 min-w-0 text-xs text-slate-500 [overflow-wrap:anywhere]">Qty {formatInteger(item.totalQuantity)}</p>
+                <p className="mt-3 min-w-0 text-base font-semibold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:text-lg">
+                  {formatCurrency(item.allocatedAmount)}
+                </p>
+                <p className="mt-1 min-w-0 text-xs text-slate-500 [overflow-wrap:anywhere]">
+                  Qty {formatInteger(item.totalQuantity)}
+                </p>
               </div>
             );
           })}
@@ -439,7 +576,7 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
           <div>
             <CardTitle>Budget breakdowns</CardTitle>
             <CardDescription>
-              Switch the lens to understand spend by room, house, material type, or provider, then click a card to focus matching objects.
+              Switch between material type, house, room, and provider. Budgeted views show planned, allocated, and remaining side by side.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -465,6 +602,7 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {breakdownItems.map((item) => {
               const share = budget.allocatedAmount > 0 ? (item.allocatedAmount / budget.allocatedAmount) * 100 : 0;
+              const hasPlannedBudget = item.plan.plannedBudget !== null;
               const handleFocus = onSelectFocus ? () => onSelectFocus(item.focusSelection) : undefined;
               return (
                 <Card
@@ -483,13 +621,47 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
                         <CardTitle className="text-base">{item.label}</CardTitle>
                         {item.secondaryLabel ? <CardDescription className="mt-1">{item.secondaryLabel}</CardDescription> : null}
                       </div>
-                      <Badge variant={item.missingCount > 0 ? "danger" : "success"}>{Math.round(share)}%</Badge>
+                      <Badge
+                        variant={
+                          budgetView === "provider"
+                            ? item.missingCount > 0
+                              ? "danger"
+                              : "success"
+                            : getPlanBadgeVariant(item.plan)
+                        }
+                      >
+                        {budgetView === "provider" ? `${Math.round(share)}%` : getPlanBadgeLabel(item.plan)}
+                      </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Allocated</p>
-                      <p className="mt-1 text-xl font-semibold text-slate-900">{formatCurrency(item.allocatedAmount)}</p>
+                    <div className={`grid gap-3 ${hasPlannedBudget ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+                      {hasPlannedBudget ? (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Planned</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-900">{formatCurrency(item.plan.plannedBudget ?? 0)}</p>
+                        </div>
+                      ) : null}
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Allocated</p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">{formatCurrency(item.allocatedAmount)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {hasPlannedBudget ? "Remaining" : "Room budget"}
+                        </p>
+                        <p
+                          className={`mt-1 text-lg font-semibold ${
+                            hasPlannedBudget && (item.plan.varianceAmount ?? 0) > 0 ? "text-red-600" : "text-slate-900"
+                          }`}
+                        >
+                          {hasPlannedBudget
+                            ? formatCurrency(item.plan.remainingAmount ?? 0)
+                            : budgetView === "room"
+                              ? "Not set"
+                              : "Actual only"}
+                        </p>
+                      </div>
                     </div>
                     <div className="space-y-1 text-sm text-slate-600">
                       <div className="flex items-center justify-between">
@@ -517,33 +689,125 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
       </Card>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit budget</DialogTitle>
-            <DialogDescription>Adjust total budget and planned amounts per category.</DialogDescription>
+            <DialogDescription>
+              Set total project budget, split it by house and material type, and optionally add room-level budgets.
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div className="space-y-1.5">
               <p className="text-sm font-medium text-slate-700">Total project budget</p>
               <Input value={totalBudgetInput} onChange={(event) => setTotalBudgetInput(event.target.value)} />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              {budgetCategoryOrder.map((categoryName) => (
-                <div key={categoryName} className="space-y-1.5">
-                  <p className="text-sm font-medium text-slate-700">{categoryName}</p>
-                  <Input
-                    value={categoryInputs[categoryName] ?? String(categoryBudgetMap[categoryName] ?? 0)}
-                    onChange={(event) =>
-                      setCategoryInputs((prev) => ({
-                        ...prev,
-                        [categoryName]: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              ))}
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">House budgets total</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatCurrency(budgetInputSummary.houseTotal)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Category budgets total</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatCurrency(budgetInputSummary.categoryTotal)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Optional room budgets total</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{formatCurrency(budgetInputSummary.roomTotal)}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Budget by house</p>
+                <p className="text-xs text-slate-500">Set a planned budget for each house. These budgets are part of the main plan.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {budget.houses.map((house) => (
+                  <div key={house.houseId} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <p className="font-medium text-slate-700">{house.houseName}</p>
+                      <span className="text-xs text-slate-500">Allocated {formatCurrency(house.allocatedAmount)}</span>
+                    </div>
+                    <Input
+                      value={houseInputs[house.houseId] ?? String(house.totalBudget)}
+                      onChange={(event) =>
+                        setHouseInputs((prev) => ({
+                          ...prev,
+                          [house.houseId]: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Budget by material type</p>
+                <p className="text-xs text-slate-500">These category budgets stay project-wide and work alongside house budgets.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {budgetCategoryOrder.map((categoryName) => {
+                  const category = budget.categories.find((item) => item.name === categoryName);
+                  return (
+                    <div key={categoryName} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <p className="font-medium text-slate-700">{categoryName}</p>
+                        <span className="text-xs text-slate-500">Allocated {formatCurrency(category?.allocatedAmount ?? 0)}</span>
+                      </div>
+                      <Input
+                        value={categoryInputs[categoryName] ?? String(categoryBudgetMap[categoryName] ?? 0)}
+                        onChange={(event) =>
+                          setCategoryInputs((prev) => ({
+                            ...prev,
+                            [categoryName]: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Room budgets (optional)</p>
+                <p className="text-xs text-slate-500">Leave a room blank to rely on the project, house, and material-type budgets instead.</p>
+              </div>
+              <div className="space-y-4">
+                {project.houses.map((house) => (
+                  <div key={house.id} className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-semibold text-slate-800">{house.name}</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {house.rooms.map((room) => {
+                        const roomBudget = budget.rooms.find((item) => item.roomId === room.id);
+                        return (
+                          <div key={room.id} className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                              <p className="font-medium text-slate-700">{room.name}</p>
+                              <span className="text-xs text-slate-500">Allocated {formatCurrency(roomBudget?.allocatedAmount ?? 0)}</span>
+                            </div>
+                            <Input
+                              placeholder="Optional"
+                              value={roomInputs[room.id] ?? ""}
+                              onChange={(event) =>
+                                setRoomInputs((prev) => ({
+                                  ...prev,
+                                  [room.id]: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 

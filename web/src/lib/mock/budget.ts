@@ -1,4 +1,4 @@
-import { BudgetCategory, BudgetCategoryName, Project, ProjectBudget } from "@/types";
+import { BudgetCategory, BudgetCategoryName, HouseBudget, Project, ProjectBudget, RoomBudget } from "@/types";
 
 export const budgetCategoryOrder: BudgetCategoryName[] = [
   "Furniture",
@@ -19,23 +19,6 @@ export const defaultCategoryBudgets: Record<BudgetCategoryName, number> = {
 };
 
 export const defaultProjectBudgetTotal = 200000;
-
-export function createMockProjectBudget(): ProjectBudget {
-  const categories: BudgetCategory[] = budgetCategoryOrder.map((name) => ({
-    id: name.toLowerCase(),
-    name,
-    totalBudget: defaultCategoryBudgets[name],
-    allocatedAmount: 0,
-    remainingAmount: defaultCategoryBudgets[name],
-  }));
-
-  return {
-    totalBudget: defaultProjectBudgetTotal,
-    allocatedAmount: 0,
-    remainingAmount: defaultProjectBudgetTotal,
-    categories,
-  };
-}
 
 function clampMoney(value: number): number {
   if (!Number.isFinite(value)) {
@@ -70,10 +53,84 @@ function isSizeSensitiveCategory(category: BudgetCategoryName): boolean {
 }
 
 function getObjectGroupKey(objectName: string, objectCategory?: string): string {
-  // Treat "Chair 1", "Chair 2", etc. as the same group for quantity rollup.
   const normalizedName = objectName.trim().toLowerCase().replace(/\s+\d+$/, "");
   const normalizedCategory = (objectCategory ?? "").trim().toLowerCase();
   return `${normalizedName}::${normalizedCategory}`;
+}
+
+function getHouseWeight(house: Project["houses"][number]): number {
+  return Math.max(1, house.rooms.length);
+}
+
+function buildDefaultHouseBudgets(project: Project | undefined, totalBudget: number): HouseBudget[] {
+  if (!project) {
+    return [];
+  }
+
+  const houses = project.houses;
+  if (houses.length === 0) {
+    return [];
+  }
+
+  const normalizedTotal = clampMoney(totalBudget);
+  const totalWeight = houses.reduce((sum, house) => sum + getHouseWeight(house), 0);
+  let allocatedSoFar = 0;
+
+  return houses.map((house, index) => {
+    const isLastHouse = index === houses.length - 1;
+    const proportionalBudget = isLastHouse
+      ? normalizedTotal - allocatedSoFar
+      : Math.round((normalizedTotal * getHouseWeight(house)) / Math.max(1, totalWeight));
+    const nextBudget = clampMoney(proportionalBudget);
+    allocatedSoFar += nextBudget;
+
+    return {
+      id: `house-${house.id}`,
+      houseId: house.id,
+      houseName: house.name,
+      totalBudget: nextBudget,
+      allocatedAmount: 0,
+      remainingAmount: nextBudget,
+    };
+  });
+}
+
+function buildDefaultRoomBudgets(project: Project | undefined): RoomBudget[] {
+  if (!project) {
+    return [];
+  }
+
+  return project.houses.flatMap((house) =>
+    house.rooms.map((room) => ({
+      id: `room-${room.id}`,
+      roomId: room.id,
+      roomName: room.name,
+      houseId: house.id,
+      houseName: house.name,
+      totalBudget: null,
+      allocatedAmount: 0,
+      remainingAmount: null,
+    }))
+  );
+}
+
+export function createMockProjectBudget(project?: Project): ProjectBudget {
+  const categories: BudgetCategory[] = budgetCategoryOrder.map((name) => ({
+    id: name.toLowerCase(),
+    name,
+    totalBudget: defaultCategoryBudgets[name],
+    allocatedAmount: 0,
+    remainingAmount: defaultCategoryBudgets[name],
+  }));
+
+  return {
+    totalBudget: defaultProjectBudgetTotal,
+    allocatedAmount: 0,
+    remainingAmount: defaultProjectBudgetTotal,
+    categories,
+    houses: buildDefaultHouseBudgets(project, defaultProjectBudgetTotal),
+    rooms: buildDefaultRoomBudgets(project),
+  };
 }
 
 export function resolveBudgetCategory(objectName: string, objectCategory?: string): BudgetCategoryName {
@@ -102,6 +159,8 @@ export function calculateProjectBudget(baseBudget: ProjectBudget, project?: Proj
     acc[category] = 0;
     return acc;
   }, {} as Record<BudgetCategoryName, number>);
+  const houseAllocationMap = new Map<string, number>();
+  const roomAllocationMap = new Map<string, number>();
 
   if (project) {
     for (const house of project.houses) {
@@ -140,8 +199,11 @@ export function calculateProjectBudget(baseBudget: ProjectBudget, project?: Proj
           const effectiveUnits = shouldFanOutToGroup ? group.totalUnits : normalizedQuantity;
           const areaMultiplier =
             isSizeSensitiveCategory(selectedOption.budgetCategory) && roomAreaSqm ? roomAreaSqm : 1;
-          const estimatedCost = selectedOption.price * effectiveUnits * areaMultiplier;
-          allocationMap[selectedOption.budgetCategory] += clampMoney(estimatedCost);
+          const estimatedCost = clampMoney(selectedOption.price * effectiveUnits * areaMultiplier);
+
+          allocationMap[selectedOption.budgetCategory] += estimatedCost;
+          houseAllocationMap.set(house.id, (houseAllocationMap.get(house.id) ?? 0) + estimatedCost);
+          roomAllocationMap.set(room.id, (roomAllocationMap.get(room.id) ?? 0) + estimatedCost);
         }
       }
     }
@@ -160,14 +222,64 @@ export function calculateProjectBudget(baseBudget: ProjectBudget, project?: Proj
     };
   });
 
-  const allocatedAmount = categories.reduce((acc, item) => acc + item.allocatedAmount, 0);
   const totalBudget = clampMoney(baseBudget.totalBudget);
+  const defaultHouseBudgets = buildDefaultHouseBudgets(project, totalBudget);
+  const houses = project
+    ? project.houses.map((house) => {
+        const sourceHouse = baseBudget.houses.find((item) => item.houseId === house.id);
+        const defaultHouse = defaultHouseBudgets.find((item) => item.houseId === house.id);
+        const plannedBudget = clampMoney(sourceHouse?.totalBudget ?? defaultHouse?.totalBudget ?? 0);
+        const allocatedAmount = clampMoney(houseAllocationMap.get(house.id) ?? 0);
+        return {
+          id: sourceHouse?.id ?? defaultHouse?.id ?? `house-${house.id}`,
+          houseId: house.id,
+          houseName: house.name,
+          totalBudget: plannedBudget,
+          allocatedAmount,
+          remainingAmount: plannedBudget - allocatedAmount,
+        };
+      })
+    : baseBudget.houses.map((house) => ({
+        ...house,
+        totalBudget: clampMoney(house.totalBudget),
+        allocatedAmount: 0,
+        remainingAmount: clampMoney(house.totalBudget),
+      }));
+
+  const rooms = project
+    ? project.houses.flatMap((house) =>
+        house.rooms.map((room) => {
+          const sourceRoom = baseBudget.rooms.find((item) => item.roomId === room.id);
+          const totalBudget = sourceRoom ? (sourceRoom.totalBudget === null ? null : clampMoney(sourceRoom.totalBudget)) : null;
+          const allocatedAmount = clampMoney(roomAllocationMap.get(room.id) ?? 0);
+          return {
+            id: sourceRoom?.id ?? `room-${room.id}`,
+            roomId: room.id,
+            roomName: room.name,
+            houseId: house.id,
+            houseName: house.name,
+            totalBudget,
+            allocatedAmount,
+            remainingAmount: totalBudget === null ? null : totalBudget - allocatedAmount,
+          };
+        })
+      )
+    : baseBudget.rooms.map((room) => ({
+        ...room,
+        totalBudget: room.totalBudget === null ? null : clampMoney(room.totalBudget),
+        allocatedAmount: 0,
+        remainingAmount: room.totalBudget === null ? null : clampMoney(room.totalBudget),
+      }));
+
+  const allocatedAmount = categories.reduce((acc, item) => acc + item.allocatedAmount, 0);
 
   return {
     totalBudget,
     allocatedAmount,
     remainingAmount: totalBudget - allocatedAmount,
     categories,
+    houses,
+    rooms,
   };
 }
 
@@ -178,3 +290,4 @@ export function buildCategoryBudgetMap(categories: BudgetCategory[]): Record<Bud
     return acc;
   }, {} as Record<BudgetCategoryName, number>);
 }
+
