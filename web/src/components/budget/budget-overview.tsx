@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import {
   BudgetCategoryName,
   Project,
@@ -18,10 +18,20 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { buildCategoryBudgetMap, budgetCategoryOrder } from "@/lib/mock/budget";
 
+export type BudgetFocusSelection =
+  | { kind: "room"; label: string; roomId: string; houseId: string }
+  | { kind: "house"; label: string; houseId: string }
+  | { kind: "category"; label: string; category: string }
+  | { kind: "provider"; label: string; provider: string }
+  | { kind: "workflow"; label: string; stage: WorkflowStage };
+
+type BudgetBreakdownFocusSelection = Exclude<BudgetFocusSelection, { kind: "workflow" }>;
+
 interface BudgetOverviewProps {
   project: Project;
   budget: ProjectBudget;
   onSaveBudget: (payload: { totalBudget: number; categoryBudgets: Record<BudgetCategoryName, number> }) => void;
+  onSelectFocus?: (selection: BudgetFocusSelection) => void;
 }
 
 type BudgetViewMode = "room" | "house" | "category" | "provider";
@@ -48,6 +58,7 @@ interface BudgetBreakdownItem {
   totalQuantity: number;
   assignedCount: number;
   missingCount: number;
+  focusSelection: BudgetBreakdownFocusSelection;
 }
 
 interface WorkflowBudgetItem {
@@ -56,6 +67,7 @@ interface WorkflowBudgetItem {
   allocatedAmount: number;
   objectCount: number;
   totalQuantity: number;
+  focusSelection: Extract<BudgetFocusSelection, { kind: "workflow" }>;
 }
 
 const workflowStageOrder: WorkflowStage[] = [
@@ -129,28 +141,56 @@ function buildBudgetBreakdown(
     let key = "";
     let label = "";
     let secondaryLabel: string | undefined;
+    let focusSelection: BudgetBreakdownFocusSelection;
 
     switch (mode) {
       case "room":
         key = item.roomId;
         label = item.roomName;
         secondaryLabel = hasMultipleHouses ? item.houseName : undefined;
+        focusSelection = {
+          kind: "room",
+          label: hasMultipleHouses ? `${item.roomName} (${item.houseName})` : item.roomName,
+          roomId: item.roomId,
+          houseId: item.houseId,
+        };
         break;
       case "house":
         key = item.houseId;
         label = item.houseName;
+        focusSelection = {
+          kind: "house",
+          label: item.houseName,
+          houseId: item.houseId,
+        };
         break;
       case "category":
         key = item.budgetCategory;
         label = item.budgetCategory;
+        focusSelection = {
+          kind: "category",
+          label: item.budgetCategory,
+          category: item.budgetCategory,
+        };
         break;
       case "provider":
         key = item.provider;
         label = item.provider;
+        focusSelection = {
+          kind: "provider",
+          label: item.provider,
+          provider: item.provider,
+        };
         break;
       default:
         key = item.roomId;
         label = item.roomName;
+        focusSelection = {
+          kind: "room",
+          label: item.roomName,
+          roomId: item.roomId,
+          houseId: item.houseId,
+        };
     }
 
     const current = groups.get(key) ?? {
@@ -162,6 +202,7 @@ function buildBudgetBreakdown(
       totalQuantity: 0,
       assignedCount: 0,
       missingCount: 0,
+      focusSelection,
     };
 
     current.allocatedAmount += item.allocatedAmount;
@@ -184,20 +225,37 @@ function buildBudgetBreakdown(
   });
 }
 
+function handleCardActivation(event: KeyboardEvent<HTMLDivElement>, onActivate?: () => void) {
+  if (!onActivate) {
+    return;
+  }
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  onActivate();
+}
+
 function buildWorkflowBudgetBreakdown(lineItems: BudgetLineItem[]): WorkflowBudgetItem[] {
   return workflowStageOrder.map((stage) => {
+    const label = getWorkflowStageLabel(stage);
     const matchingItems = lineItems.filter((item) => item.workflowStage === stage);
     return {
       stage,
-      label: getWorkflowStageLabel(stage),
+      label,
       allocatedAmount: matchingItems.reduce((sum, item) => sum + item.allocatedAmount, 0),
       objectCount: matchingItems.length,
       totalQuantity: matchingItems.reduce((sum, item) => sum + item.quantity, 0),
+      focusSelection: {
+        kind: "workflow",
+        label,
+        stage,
+      },
     };
   });
 }
 
-export function BudgetOverview({ project, budget, onSaveBudget }: BudgetOverviewProps) {
+export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }: BudgetOverviewProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [budgetView, setBudgetView] = useState<BudgetViewMode>("room");
   const [totalBudgetInput, setTotalBudgetInput] = useState("");
@@ -343,21 +401,36 @@ export function BudgetOverview({ project, budget, onSaveBudget }: BudgetOverview
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle>Execution status</CardTitle>
-          <CardDescription>See how much budget is sitting in each workflow stage right now.</CardDescription>
+          <CardDescription>
+            See how much budget is sitting in each workflow stage right now, then click a stage to focus those
+            objects in Rooms.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {workflowBreakdown.map((item) => (
-            <div key={item.stage} className="rounded-lg border border-slate-200 bg-white p-3">
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-900">{item.label}</p>
-                <Badge variant={item.stage === "material_missing" ? "danger" : "outline"}>
-                  {formatInteger(item.objectCount)}
-                </Badge>
+          {workflowBreakdown.map((item) => {
+            const handleFocus = onSelectFocus ? () => onSelectFocus(item.focusSelection) : undefined;
+            return (
+              <div
+                key={item.stage}
+                role={handleFocus ? "button" : undefined}
+                tabIndex={handleFocus ? 0 : undefined}
+                className={`rounded-lg border border-slate-200 bg-white p-3 ${
+                  handleFocus ? "cursor-pointer transition hover:border-slate-300 hover:shadow-sm" : ""
+                }`}
+                onClick={handleFocus}
+                onKeyDown={handleFocus ? (event) => handleCardActivation(event, handleFocus) : undefined}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                  <Badge variant={item.stage === "material_missing" ? "danger" : "outline"}>
+                    {formatInteger(item.objectCount)}
+                  </Badge>
+                </div>
+                <p className="mt-3 text-lg font-semibold text-slate-900">{formatCurrency(item.allocatedAmount)}</p>
+                <p className="mt-1 text-xs text-slate-500">Qty {formatInteger(item.totalQuantity)}</p>
               </div>
-              <p className="mt-3 text-lg font-semibold text-slate-900">{formatCurrency(item.allocatedAmount)}</p>
-              <p className="mt-1 text-xs text-slate-500">Qty {formatInteger(item.totalQuantity)}</p>
-            </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -366,7 +439,7 @@ export function BudgetOverview({ project, budget, onSaveBudget }: BudgetOverview
           <div>
             <CardTitle>Budget breakdowns</CardTitle>
             <CardDescription>
-              Switch the lens to understand spend by room, house, material type, or provider.
+              Switch the lens to understand spend by room, house, material type, or provider, then click a card to focus matching objects.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -392,8 +465,18 @@ export function BudgetOverview({ project, budget, onSaveBudget }: BudgetOverview
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {breakdownItems.map((item) => {
               const share = budget.allocatedAmount > 0 ? (item.allocatedAmount / budget.allocatedAmount) * 100 : 0;
+              const handleFocus = onSelectFocus ? () => onSelectFocus(item.focusSelection) : undefined;
               return (
-                <Card key={item.key} className="border-slate-200 shadow-none">
+                <Card
+                  key={item.key}
+                  role={handleFocus ? "button" : undefined}
+                  tabIndex={handleFocus ? 0 : undefined}
+                  className={`border-slate-200 shadow-none ${
+                    handleFocus ? "cursor-pointer transition hover:border-slate-300 hover:shadow-sm" : ""
+                  }`}
+                  onClick={handleFocus}
+                  onKeyDown={handleFocus ? (event) => handleCardActivation(event, handleFocus) : undefined}
+                >
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -513,3 +596,5 @@ export function BudgetOverview({ project, budget, onSaveBudget }: BudgetOverview
     </div>
   );
 }
+
+

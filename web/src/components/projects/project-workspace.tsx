@@ -11,7 +11,7 @@ import {
   TopNavSearchResultItem,
 } from "@/components/layout/top-nav";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
-import { BudgetOverview } from "@/components/budget/budget-overview";
+import { BudgetOverview, type BudgetFocusSelection } from "@/components/budget/budget-overview";
 import { MaterialsGallery } from "@/components/materials/materials-gallery";
 import { HouseRoomTree } from "@/components/rooms/house-room-tree";
 import { ProjectRoomsStack } from "@/components/rooms/project-rooms-stack";
@@ -53,6 +53,7 @@ import { defaultUserPreferences, loadUserPreferences, USER_PREFERENCES_EVENT } f
 import {
   BudgetCategoryName,
   getObjectWorkflowStage,
+  getWorkflowStageLabel,
   ProductOption,
   Project,
   ProjectBudget,
@@ -108,6 +109,96 @@ function matchesSearchTerm(query: string, values: Array<string | number | null |
   return tokens.every((token) => haystack.includes(token));
 }
 
+function getSelectedProductForObject(roomObject: RoomObject): ProductOption | undefined {
+  if (!roomObject.selectedProductId) {
+    return undefined;
+  }
+
+  return roomObject.productOptions.find((option) => option.id === roomObject.selectedProductId);
+}
+
+function matchesBudgetFocusSelection(
+  house: Project["houses"][number],
+  room: Room,
+  objectItem: RoomObject,
+  selection: BudgetFocusSelection
+): boolean {
+  const selectedProduct = getSelectedProductForObject(objectItem);
+  const provider = selectedProduct?.supplier?.trim() || "Unassigned";
+  const category = selectedProduct?.budgetCategory ?? "Unassigned";
+
+  switch (selection.kind) {
+    case "room":
+      return house.id === selection.houseId && room.id === selection.roomId;
+    case "house":
+      return house.id === selection.houseId;
+    case "provider":
+      return provider === selection.provider;
+    case "category":
+      return category === selection.category;
+    case "workflow":
+      return getObjectWorkflowStage(objectItem) === selection.stage;
+    default:
+      return false;
+  }
+}
+
+function findFirstBudgetFocusMatch(project: Project, selection: BudgetFocusSelection) {
+  for (const house of project.houses) {
+    for (const room of house.rooms) {
+      const matchingObject = room.objects.find((objectItem) =>
+        matchesBudgetFocusSelection(house, room, objectItem, selection)
+      );
+      if (matchingObject) {
+        return {
+          houseId: house.id,
+          roomId: room.id,
+          objectId: matchingObject.id,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function getBudgetFocusLabel(selection: BudgetFocusSelection): string {
+  switch (selection.kind) {
+    case "room":
+      return `Room: ${selection.label}`;
+    case "house":
+      return `House: ${selection.label}`;
+    case "provider":
+      return `Provider: ${selection.label}`;
+    case "category":
+      return `Category: ${selection.label}`;
+    case "workflow":
+      return `Status: ${selection.label}`;
+  }
+
+  return "";
+}
+
+function isSameBudgetFocusSelection(a: BudgetFocusSelection | null, b: BudgetFocusSelection): boolean {
+  if (!a || a.kind !== b.kind) {
+    return false;
+  }
+
+  switch (a.kind) {
+    case "room":
+      return b.kind === "room" && a.houseId === b.houseId && a.roomId === b.roomId;
+    case "house":
+      return b.kind === "house" && a.houseId === b.houseId;
+    case "provider":
+      return b.kind === "provider" && a.provider === b.provider;
+    case "category":
+      return b.kind === "category" && a.category === b.category;
+    case "workflow":
+      return b.kind === "workflow" && a.stage === b.stage;
+    default:
+      return false;
+  }
+}
 function PlaceholderTab({
   title,
   description,
@@ -405,6 +496,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [showDefaultStructureNotice, setShowDefaultStructureNotice] = useState(false);
   const [preferences, setPreferences] = useState(defaultUserPreferences);
   const [workflowStageFilters, setWorkflowStageFilters] = useState<WorkflowStage[]>([]);
+  const [budgetFocusSelection, setBudgetFocusSelection] = useState<BudgetFocusSelection | null>(null);
   const [projectSnapshots, setProjectSnapshots] = useState<ProjectSnapshotSummary[]>([]);
   const [materialSearchResults, setMaterialSearchResults] = useState<ProductOption[]>([]);
   const [pendingMaterialAssignment, setPendingMaterialAssignment] = useState<ProductOption | null>(null);
@@ -798,9 +890,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     if (!project) {
       return [];
     }
-    if (workflowStageFilters.length === 0) {
-      return project.houses;
-    }
 
     const selectedStageSet = new Set(workflowStageFilters);
     return project.houses
@@ -809,12 +898,22 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         rooms: house.rooms
           .map((room) => ({
             ...room,
-            objects: room.objects.filter((objectItem) => selectedStageSet.has(getObjectWorkflowStage(objectItem))),
+            objects: room.objects.filter((objectItem) => {
+              const matchesWorkflow =
+                selectedStageSet.size === 0 || selectedStageSet.has(getObjectWorkflowStage(objectItem));
+              if (!matchesWorkflow) {
+                return false;
+              }
+              if (!budgetFocusSelection) {
+                return true;
+              }
+              return matchesBudgetFocusSelection(house, room, objectItem, budgetFocusSelection);
+            }),
           }))
           .filter((room) => room.objects.length > 0),
       }))
       .filter((house) => house.rooms.length > 0);
-  }, [project, workflowStageFilters]);
+  }, [budgetFocusSelection, project, workflowStageFilters]);
 
   const visibleSelectedHouse = useMemo(() => {
     return filteredHousesForRooms.find((house) => house.id === selectedHouseId) ?? filteredHousesForRooms[0];
@@ -828,6 +927,13 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     return visibleSelectedRoom?.objects.find((obj) => obj.id === selectedObjectId) ?? visibleSelectedRoom?.objects[0];
   }, [visibleSelectedRoom, selectedObjectId]);
 
+  const activeRoomFilters = useMemo(() => {
+    return [
+      ...(budgetFocusSelection ? [getBudgetFocusLabel(budgetFocusSelection)] : []),
+      ...workflowStageFilters.map((stage) => `Status: ${getWorkflowStageLabel(stage)}`),
+    ];
+  }, [budgetFocusSelection, workflowStageFilters]);
+
   function handleToggleWorkflowStageFilter(stage: WorkflowStage) {
     setWorkflowStageFilters((prev) =>
       prev.includes(stage) ? prev.filter((existingStage) => existingStage !== stage) : [...prev, stage]
@@ -836,6 +942,56 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   function handleClearWorkflowStageFilters() {
     setWorkflowStageFilters([]);
+  }
+
+  function handleClearRoomsFilters() {
+    setWorkflowStageFilters([]);
+    setBudgetFocusSelection(null);
+  }
+
+  function handleBudgetFocusSelection(selection: BudgetFocusSelection) {
+    if (!project) {
+      return;
+    }
+
+    const isDuplicateWorkflowSelection =
+      selection.kind === "workflow" &&
+      budgetFocusSelection === null &&
+      workflowStageFilters.length === 1 &&
+      workflowStageFilters[0] === selection.stage;
+
+    const isDuplicateBudgetSelection =
+      selection.kind !== "workflow" &&
+      workflowStageFilters.length === 0 &&
+      isSameBudgetFocusSelection(budgetFocusSelection, selection);
+
+    if (isDuplicateWorkflowSelection || isDuplicateBudgetSelection) {
+      handleClearRoomsFilters();
+      return;
+    }
+
+    setActiveTab("rooms");
+    if (selection.kind === "workflow") {
+      setBudgetFocusSelection(null);
+      setWorkflowStageFilters([selection.stage]);
+    } else {
+      setBudgetFocusSelection(selection);
+      setWorkflowStageFilters([]);
+    }
+
+    const match = findFirstBudgetFocusMatch(project, selection);
+    if (!match) {
+      return;
+    }
+
+    setSelectedHouseId(match.houseId);
+    setSelectedRoomId(match.roomId);
+    setSelectedObjectId(match.objectId);
+    setPendingScrollRoomId(match.roomId);
+
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      window.dispatchEvent(new Event("materia:open-right-panel"));
+    }
   }
 
   useEffect(() => {
@@ -2177,12 +2333,31 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onToggleStage={handleToggleWorkflowStageFilter}
         onClearStageFilter={handleClearWorkflowStageFilters}
       />
-      {workflowStageFilters.length > 0 && filteredHousesForRooms.length === 0 ? (
+      {activeRoomFilters.length > 0 ? (
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-800">Filtered object focus</p>
+              <div className="flex flex-wrap gap-2">
+                {activeRoomFilters.map((filterLabel) => (
+                  <Badge key={filterLabel} variant="outline">
+                    {filterLabel}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <Button type="button" variant="outline" onClick={handleClearRoomsFilters}>
+              Clear filters
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+      {activeRoomFilters.length > 0 && filteredHousesForRooms.length === 0 ? (
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="flex items-center justify-between gap-3 py-4">
-            <p className="text-sm text-slate-600">No objects match the selected statuses.</p>
-            <Button type="button" variant="outline" onClick={handleClearWorkflowStageFilters}>
-              Clear filter
+            <p className="text-sm text-slate-600">No objects match the current budget/workflow filters.</p>
+            <Button type="button" variant="outline" onClick={handleClearRoomsFilters}>
+              Clear filters
             </Button>
           </CardContent>
         </Card>
@@ -2247,7 +2422,14 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     />
   );
 
-  const budgetContent = <BudgetOverview project={project} budget={calculatedProjectBudget} onSaveBudget={handleSaveBudget} />;
+  const budgetContent = (
+    <BudgetOverview
+      project={project}
+      budget={calculatedProjectBudget}
+      onSaveBudget={handleSaveBudget}
+      onSelectFocus={handleBudgetFocusSelection}
+    />
+  );
 
   const clientContent = (
     <PlaceholderTab
@@ -2339,3 +2521,5 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} />;
 }
+
+
