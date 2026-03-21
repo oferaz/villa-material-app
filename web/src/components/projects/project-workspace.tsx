@@ -2247,7 +2247,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     />
   );
 
-  const budgetContent = <BudgetOverview budget={calculatedProjectBudget} onSaveBudget={handleSaveBudget} />;
+  const budgetContent = <BudgetOverview project={project} budget={calculatedProjectBudget} onSaveBudget={handleSaveBudget} />;
 
   const clientContent = (
     <PlaceholderTab
