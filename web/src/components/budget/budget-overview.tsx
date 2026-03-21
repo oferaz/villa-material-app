@@ -406,7 +406,7 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
             objects in Rooms.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
           {workflowBreakdown.map((item) => {
             const handleFocus = onSelectFocus ? () => onSelectFocus(item.focusSelection) : undefined;
             return (
@@ -414,20 +414,20 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
                 key={item.stage}
                 role={handleFocus ? "button" : undefined}
                 tabIndex={handleFocus ? 0 : undefined}
-                className={`rounded-lg border border-slate-200 bg-white p-3 ${
+                className={`min-w-0 rounded-lg border border-slate-200 bg-white p-3 ${
                   handleFocus ? "cursor-pointer transition hover:border-slate-300 hover:shadow-sm" : ""
                 }`}
                 onClick={handleFocus}
                 onKeyDown={handleFocus ? (event) => handleCardActivation(event, handleFocus) : undefined}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                  <p className="min-w-0 text-sm font-semibold text-slate-900">{item.label}</p>
                   <Badge variant={item.stage === "material_missing" ? "danger" : "outline"}>
                     {formatInteger(item.objectCount)}
                   </Badge>
                 </div>
-                <p className="mt-3 text-lg font-semibold text-slate-900">{formatCurrency(item.allocatedAmount)}</p>
-                <p className="mt-1 text-xs text-slate-500">Qty {formatInteger(item.totalQuantity)}</p>
+                <p className="mt-3 min-w-0 text-base font-semibold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:text-lg">{formatCurrency(item.allocatedAmount)}</p>
+                <p className="mt-1 min-w-0 text-xs text-slate-500 [overflow-wrap:anywhere]">Qty {formatInteger(item.totalQuantity)}</p>
               </div>
             );
           })}
@@ -516,42 +516,6 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
         </CardContent>
       </Card>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {budget.categories.map((category) => {
-          const percent = category.totalBudget > 0 ? (category.allocatedAmount / category.totalBudget) * 100 : 0;
-          const isOver = category.remainingAmount < 0;
-          return (
-            <Card key={category.id} className="border-slate-200 shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{category.name}</CardTitle>
-                  <Badge variant={isOver ? "danger" : "success"}>{Math.round(percent)}%</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-1 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Budget</span>
-                    <span className="font-medium text-slate-800">{formatCurrency(category.totalBudget)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Allocated</span>
-                    <span className="font-medium text-slate-800">{formatCurrency(category.allocatedAmount)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Remaining</span>
-                    <span className={`font-medium ${isOver ? "text-red-600" : "text-slate-800"}`}>
-                      {formatCurrency(category.remainingAmount)}
-                    </span>
-                  </div>
-                </div>
-                <Progress value={percent} indicatorClassName={isOver ? "bg-red-500" : "bg-emerald-500"} />
-              </CardContent>
-            </Card>
-          );
-        })}
-      </section>
-
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -596,5 +560,4 @@ export function BudgetOverview({ project, budget, onSaveBudget, onSelectFocus }:
     </div>
   );
 }
-
 
