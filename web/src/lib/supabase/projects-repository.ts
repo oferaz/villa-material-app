@@ -1,6 +1,6 @@
-import { resolveBudgetCategory } from "@/lib/mock/budget";
+import { budgetCategoryOrder, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
-import { BudgetCategoryName, House, ProductOption, Project, Room, RoomObject, RoomType } from "@/types";
+import { BudgetCategoryName, House, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
 
 interface ProjectRow {
   id: string;
@@ -97,6 +97,33 @@ interface MaterialRow {
   source_url: string | null;
 }
 
+interface ProjectBudgetRow {
+  project_id: string;
+  total_budget: number | null;
+  currency: string | null;
+}
+
+interface ProjectBudgetCategoryRow {
+  id: string;
+  project_id: string;
+  category_name: string;
+  total_budget: number | null;
+}
+
+interface ProjectHouseBudgetRow {
+  id: string;
+  project_id: string;
+  house_id: string;
+  total_budget: number | null;
+}
+
+interface ProjectRoomBudgetRow {
+  id: string;
+  project_id: string;
+  room_id: string;
+  total_budget: number | null;
+}
+
 const roomTypeSet = new Set<RoomType>([
   "living_room",
   "kitchen",
@@ -190,6 +217,19 @@ function hasMissingSnapshotsSchemaError(code?: string, message?: string): boolea
   return normalizedMessage.includes("project_snapshots");
 }
 
+function hasMissingBudgetPlanningSchemaError(code?: string, message?: string): boolean {
+  if (code === "42P01" || code === "PGRST205" || code === "PGRST204") {
+    return true;
+  }
+  const normalizedMessage = (message ?? "").toLowerCase();
+  return (
+    normalizedMessage.includes("project_house_budgets") ||
+    normalizedMessage.includes("project_room_budgets") ||
+    normalizedMessage.includes("project_budget_categories") ||
+    normalizedMessage.includes("project_budgets")
+  );
+}
+
 function toProductOptionFromMaterial(material: MaterialRow, objectName: string, objectCategory: string): ProductOption {
   return {
     id: material.id,
@@ -202,6 +242,205 @@ function toProductOptionFromMaterial(material: MaterialRow, objectName: string, 
     sourceType: material.source_type === "link" ? "link" : "catalog",
     sourceUrl: material.source_url ?? undefined,
   };
+}
+
+export async function loadProjectBudgetsByProjectIds(projects: Project[]): Promise<Record<string, ProjectBudget>> {
+  if (!isSupabaseConfigured || projects.length === 0) {
+    return {};
+  }
+
+  const projectIds = projects.map((project) => project.id);
+
+  try {
+    const [projectBudgetResult, categoryBudgetResult, houseBudgetResult, roomBudgetResult] = await Promise.all([
+      supabase.from("project_budgets").select("project_id,total_budget,currency").in("project_id", projectIds),
+      supabase.from("project_budget_categories").select("id,project_id,category_name,total_budget").in("project_id", projectIds),
+      supabase.from("project_house_budgets").select("id,project_id,house_id,total_budget").in("project_id", projectIds),
+      supabase.from("project_room_budgets").select("id,project_id,room_id,total_budget").in("project_id", projectIds),
+    ]);
+
+    const possibleErrors = [
+      projectBudgetResult.error,
+      categoryBudgetResult.error,
+      houseBudgetResult.error,
+      roomBudgetResult.error,
+    ].filter(Boolean);
+    const schemaError = possibleErrors.find((error) =>
+      hasMissingBudgetPlanningSchemaError(error?.code, error?.message)
+    );
+    if (schemaError) {
+      return {};
+    }
+    const firstError = possibleErrors[0];
+    if (firstError) {
+      throw firstError;
+    }
+
+    const projectBudgetRows = (projectBudgetResult.data ?? []) as ProjectBudgetRow[];
+    const categoryBudgetRows = (categoryBudgetResult.data ?? []) as ProjectBudgetCategoryRow[];
+    const houseBudgetRows = (houseBudgetResult.data ?? []) as ProjectHouseBudgetRow[];
+    const roomBudgetRows = (roomBudgetResult.data ?? []) as ProjectRoomBudgetRow[];
+
+    return projects.reduce<Record<string, ProjectBudget>>((acc, project) => {
+      const baseBudget = createMockProjectBudget(project);
+      const projectBudgetRow = projectBudgetRows.find((row) => row.project_id === project.id);
+      const categoryRows = categoryBudgetRows.filter((row) => row.project_id === project.id);
+      const houseRows = houseBudgetRows.filter((row) => row.project_id === project.id);
+      const roomRows = roomBudgetRows.filter((row) => row.project_id === project.id);
+
+      acc[project.id] = {
+        ...baseBudget,
+        totalBudget: Math.max(0, Math.round(projectBudgetRow?.total_budget ?? baseBudget.totalBudget)),
+        remainingAmount: Math.max(0, Math.round(projectBudgetRow?.total_budget ?? baseBudget.totalBudget)),
+        categories: budgetCategoryOrder.map((categoryName) => {
+          const existing = baseBudget.categories.find((item) => item.name === categoryName);
+          const row = categoryRows.find((item) => item.category_name === categoryName);
+          const totalBudget = Math.max(0, Math.round(row?.total_budget ?? existing?.totalBudget ?? 0));
+          return {
+            id: row?.id ?? existing?.id ?? categoryName.toLowerCase(),
+            name: categoryName,
+            totalBudget,
+            allocatedAmount: 0,
+            remainingAmount: totalBudget,
+          };
+        }),
+        houses: baseBudget.houses.map((house) => {
+          const row = houseRows.find((item) => item.house_id === house.houseId);
+          const totalBudget = Math.max(0, Math.round(row?.total_budget ?? house.totalBudget));
+          return {
+            ...house,
+            id: row?.id ?? house.id,
+            totalBudget,
+            allocatedAmount: 0,
+            remainingAmount: totalBudget,
+          };
+        }),
+        rooms: baseBudget.rooms.map((room) => {
+          const row = roomRows.find((item) => item.room_id === room.roomId);
+          const totalBudget = typeof row?.total_budget === "number" ? Math.max(0, Math.round(row.total_budget)) : null;
+          return {
+            ...room,
+            id: row?.id ?? room.id,
+            totalBudget,
+            allocatedAmount: 0,
+            remainingAmount: totalBudget,
+          };
+        }),
+      };
+      return acc;
+    }, {});
+  } catch (error) {
+    console.warn("Failed to load project budgets from Supabase.", error);
+    return {};
+  }
+}
+
+export async function saveProjectBudgetByProjectId(
+  project: Project,
+  payload: {
+    totalBudget: number;
+    categoryBudgets: Record<BudgetCategoryName, number>;
+    houseBudgets: Record<string, number>;
+    roomBudgets: Record<string, number | null>;
+  }
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    return;
+  }
+
+  const projectId = project.id.trim();
+  if (!projectId) {
+    throw new Error("Project ID is required.");
+  }
+
+  const normalizedTotalBudget = Math.max(0, Math.round(payload.totalBudget));
+  const categoryRows = budgetCategoryOrder.map((categoryName) => ({
+    project_id: projectId,
+    category_name: categoryName,
+    total_budget: Math.max(0, Math.round(payload.categoryBudgets[categoryName] ?? 0)),
+  }));
+  const houseRows = project.houses.map((house) => ({
+    project_id: projectId,
+    house_id: house.id,
+    total_budget: Math.max(0, Math.round(payload.houseBudgets[house.id] ?? 0)),
+  }));
+  const roomRows = project.houses.flatMap((house) =>
+    house.rooms
+      .map((room) => {
+        const totalBudget = payload.roomBudgets[room.id];
+        if (typeof totalBudget !== "number") {
+          return null;
+        }
+        return {
+          project_id: projectId,
+          room_id: room.id,
+          total_budget: Math.max(0, Math.round(totalBudget)),
+        };
+      })
+      .filter((row): row is { project_id: string; room_id: string; total_budget: number } => Boolean(row))
+  );
+
+  const { error: projectBudgetError } = await supabase.from("project_budgets").upsert(
+    {
+      project_id: projectId,
+      total_budget: normalizedTotalBudget,
+      currency: "USD",
+    },
+    { onConflict: "project_id" }
+  );
+  if (projectBudgetError) {
+    if (hasMissingBudgetPlanningSchemaError(projectBudgetError.code, projectBudgetError.message)) {
+      throw new Error("Budget persistence tables are missing in DB. Apply the latest migrations and retry.");
+    }
+    throw new Error(projectBudgetError.message);
+  }
+
+  const { error: categoryError } = await supabase
+    .from("project_budget_categories")
+    .upsert(categoryRows, { onConflict: "project_id,category_name" });
+  if (categoryError) {
+    if (hasMissingBudgetPlanningSchemaError(categoryError.code, categoryError.message)) {
+      throw new Error("Budget persistence tables are missing in DB. Apply the latest migrations and retry.");
+    }
+    throw new Error(categoryError.message);
+  }
+
+  const { error: houseError } = await supabase
+    .from("project_house_budgets")
+    .upsert(houseRows, { onConflict: "project_id,house_id" });
+  if (houseError) {
+    if (hasMissingBudgetPlanningSchemaError(houseError.code, houseError.message)) {
+      throw new Error("Budget persistence tables are missing in DB. Apply the latest migrations and retry.");
+    }
+    throw new Error(houseError.message);
+  }
+
+  const currentRoomIds = project.houses.flatMap((house) => house.rooms.map((room) => room.id));
+  if (currentRoomIds.length > 0) {
+    const { error: deleteRoomError } = await supabase
+      .from("project_room_budgets")
+      .delete()
+      .eq("project_id", projectId)
+      .in("room_id", currentRoomIds);
+    if (deleteRoomError) {
+      if (hasMissingBudgetPlanningSchemaError(deleteRoomError.code, deleteRoomError.message)) {
+        throw new Error("Budget persistence tables are missing in DB. Apply the latest migrations and retry.");
+      }
+      throw new Error(deleteRoomError.message);
+    }
+  }
+
+  if (roomRows.length > 0) {
+    const { error: roomError } = await supabase
+      .from("project_room_budgets")
+      .insert(roomRows);
+    if (roomError) {
+      if (hasMissingBudgetPlanningSchemaError(roomError.code, roomError.message)) {
+        throw new Error("Budget persistence tables are missing in DB. Apply the latest migrations and retry.");
+      }
+      throw new Error(roomError.message);
+    }
+  }
 }
 
 export async function loadProjectsForWorkspace(): Promise<Project[]> {
@@ -1174,3 +1413,7 @@ export async function deleteRoomObjectById(roomObjectId: string): Promise<void> 
     throw new Error(error.message);
   }
 }
+
+
+
+

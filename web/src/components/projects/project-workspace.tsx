@@ -36,10 +36,12 @@ import {
   duplicateHouseWithContents,
   inviteProjectCollaboratorByEmail,
   listProjectSnapshotsByProjectId,
+  loadProjectBudgetsByProjectIds,
   loadProjectsForWorkspace,
   renameHouseById,
   renameProjectById,
   renameRoomById,
+  saveProjectBudgetByProjectId,
   restoreProjectSnapshotById,
   updateRoomObjectQuantityById,
   updateRoomObjectSelectedMaterialById,
@@ -534,14 +536,16 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   useEffect(() => {
     let isCancelled = false;
 
-    const applyLoadedProjects = (loadedProjects: Project[]) => {
+    const applyLoadedProjects = async (loadedProjects: Project[]) => {
       setProjects(loadedProjects);
+      const persistedBudgets = isSupabaseConfigured ? await loadProjectBudgetsByProjectIds(loadedProjects) : {};
+      if (isCancelled) {
+        return;
+      }
       setProjectBudgets((prev) => {
         const next = createInitialBudgetMap(loadedProjects);
-        for (const [projectId, budget] of Object.entries(prev)) {
-          if (next[projectId]) {
-            next[projectId] = budget;
-          }
+        for (const projectId of Object.keys(next)) {
+          next[projectId] = persistedBudgets[projectId] ?? prev[projectId] ?? next[projectId];
         }
         return next;
       });
@@ -554,7 +558,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       }
 
       if (loadedProjects.length > 0 || !isSupabaseConfigured) {
-        applyLoadedProjects(loadedProjects);
+        await applyLoadedProjects(loadedProjects);
         return;
       }
 
@@ -570,7 +574,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       if (isCancelled) {
         return;
       }
-      applyLoadedProjects(retriedProjects);
+      await applyLoadedProjects(retriedProjects);
     }
 
     async function loadProjects() {
@@ -1139,8 +1143,16 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
     // Keep the local project list warm, but never block the create flow on this refresh.
     void loadProjectsForWorkspace()
-      .then((loadedProjects) => {
+      .then(async (loadedProjects) => {
         setProjects(loadedProjects);
+        const persistedBudgets = isSupabaseConfigured ? await loadProjectBudgetsByProjectIds(loadedProjects) : {};
+        setProjectBudgets((prev) => {
+          const next = createInitialBudgetMap(loadedProjects);
+          for (const projectId of Object.keys(next)) {
+            next[projectId] = persistedBudgets[projectId] ?? prev[projectId] ?? next[projectId];
+          }
+          return next;
+        });
       })
       .catch((error) => {
         console.warn("Failed to refresh projects after create.", error);
@@ -1167,6 +1179,14 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     await deleteProjectById(projectId);
     const loadedProjects = await loadProjectsForWorkspace();
     setProjects(loadedProjects);
+    const persistedBudgets = isSupabaseConfigured ? await loadProjectBudgetsByProjectIds(loadedProjects) : {};
+    setProjectBudgets((prev) => {
+      const next = createInitialBudgetMap(loadedProjects);
+      for (const projectId of Object.keys(next)) {
+        next[projectId] = persistedBudgets[projectId] ?? prev[projectId] ?? next[projectId];
+      }
+      return next;
+    });
 
     if (loadedProjects.length === 0) {
       router.push("/dashboard");
@@ -1197,6 +1217,14 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
     const loadedProjects = await loadProjectsForWorkspace();
     setProjects(loadedProjects);
+    const persistedBudgets = isSupabaseConfigured ? await loadProjectBudgetsByProjectIds(loadedProjects) : {};
+    setProjectBudgets((prev) => {
+      const next = createInitialBudgetMap(loadedProjects);
+      for (const projectId of Object.keys(next)) {
+        next[projectId] = persistedBudgets[projectId] ?? prev[projectId] ?? next[projectId];
+      }
+      return next;
+    });
 
     const snapshots = await listProjectSnapshotsByProjectId(project.id);
     setProjectSnapshots(snapshots);
@@ -2217,6 +2245,12 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         },
       };
     });
+
+    if (isSupabaseConfigured) {
+      void saveProjectBudgetByProjectId(project, payload).catch((error) => {
+        window.alert(error instanceof Error ? error.message : "Failed to save budget.");
+      });
+    }
   }
 
   if (isSupabaseConfigured && !isAuthChecked) {
@@ -2559,4 +2593,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} activeWorkspaceTab={activeTab} />;
 }
+
+
+
+
 
