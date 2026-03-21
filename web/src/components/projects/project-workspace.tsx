@@ -21,7 +21,13 @@ import { WorkflowOverview } from "@/components/workflow/workflow-overview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { budgetCategoryOrder, calculateProjectBudget, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
+import {
+  budgetCategoryOrder,
+  calculateProductOptionBudgetImpact,
+  calculateProjectBudget,
+  createMockProjectBudget,
+  resolveBudgetCategory,
+} from "@/lib/mock/budget";
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
 import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
@@ -57,6 +63,8 @@ import {
   getObjectWorkflowStage,
   getWorkflowStageLabel,
   ProductOption,
+  ProductOptionBudgetImpact,
+  ProductSelectionBudgetSummary,
   Project,
   ProjectBudget,
   Room,
@@ -930,6 +938,63 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const visibleSelectedObject = useMemo(() => {
     return visibleSelectedRoom?.objects.find((obj) => obj.id === selectedObjectId) ?? visibleSelectedRoom?.objects[0];
   }, [visibleSelectedRoom, selectedObjectId]);
+
+  const { budgetSelectionSummary, budgetImpactByOptionId } = useMemo(() => {
+    const emptyImpactMap: Record<string, ProductOptionBudgetImpact> = {};
+    if (!project || !visibleSelectedObject) {
+      return {
+        budgetSelectionSummary: undefined as ProductSelectionBudgetSummary | undefined,
+        budgetImpactByOptionId: emptyImpactMap,
+      };
+    }
+
+    const context = findObjectInProject(project, visibleSelectedObject.id);
+    if (!context) {
+      return {
+        budgetSelectionSummary: undefined as ProductSelectionBudgetSummary | undefined,
+        budgetImpactByOptionId: emptyImpactMap,
+      };
+    }
+
+    const normalizedQuantity = Math.max(1, Math.round(context.objectItem.quantity || 1));
+    const currentSelectedOption = context.objectItem.selectedProductId
+      ? context.objectItem.productOptions.find((option) => option.id === context.objectItem.selectedProductId)
+      : undefined;
+    const currentCategoryBudget = currentSelectedOption
+      ? calculatedProjectBudget.categories.find((item) => item.name === currentSelectedOption.budgetCategory)
+      : undefined;
+
+    const nextSummary: ProductSelectionBudgetSummary = {
+      quantity: normalizedQuantity,
+      currentSelectedTotal: Math.max(0, (currentSelectedOption?.price ?? 0) * normalizedQuantity),
+      currentProjectRemaining: calculatedProjectBudget.remainingAmount,
+      currentHouseRemaining:
+        calculatedProjectBudget.houses.find((item) => item.houseId === context.house.id)?.remainingAmount ?? null,
+      currentRoomRemaining:
+        calculatedProjectBudget.rooms.find((item) => item.roomId === context.room.id)?.remainingAmount ?? null,
+      currentCategoryName: currentSelectedOption?.budgetCategory ?? null,
+      currentCategoryRemaining: currentCategoryBudget?.remainingAmount ?? null,
+    };
+
+    const nextImpactMap = context.objectItem.productOptions.reduce<Record<string, ProductOptionBudgetImpact>>((acc, option) => {
+      const impact = calculateProductOptionBudgetImpact(
+        baseProjectBudget,
+        calculatedProjectBudget,
+        project,
+        context.objectItem.id,
+        option.id
+      );
+      if (impact) {
+        acc[option.id] = impact;
+      }
+      return acc;
+    }, {});
+
+    return {
+      budgetSelectionSummary: nextSummary,
+      budgetImpactByOptionId: nextImpactMap,
+    };
+  }, [baseProjectBudget, calculatedProjectBudget, project, visibleSelectedObject]);
 
   const activeRoomFilters = useMemo(() => {
     return [
@@ -2517,6 +2582,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       <ProductOptionsPanel
         roomObject={visibleSelectedObject}
         globalSearchQuery={searchQuery}
+        budgetSelectionSummary={budgetSelectionSummary}
+        budgetImpactByOptionId={budgetImpactByOptionId}
         onSelectProduct={handleSelectProduct}
         onSearchCatalog={handleSearchCatalog}
         onAddFromLink={handleAddFromLink}
@@ -2593,8 +2660,4 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} activeWorkspaceTab={activeTab} />;
 }
-
-
-
-
 

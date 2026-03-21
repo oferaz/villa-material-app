@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Link as LinkIcon } from "lucide-react";
-import { RoomObject, getObjectStatus } from "@/types";
+import { ProductOptionBudgetImpact, ProductSelectionBudgetSummary, RoomObject, getObjectStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,14 +31,25 @@ interface LinkPreviewResult {
 interface ProductOptionsPanelProps {
   roomObject: RoomObject | undefined;
   globalSearchQuery: string;
+  budgetSelectionSummary?: ProductSelectionBudgetSummary;
+  budgetImpactByOptionId?: Record<string, ProductOptionBudgetImpact>;
   onSelectProduct: (productId: string) => void;
   onSearchCatalog: (objectId: string, query: string) => void;
   onAddFromLink: (objectId: string, payload: AddFromLinkPayload) => void;
 }
 
+function formatMoney(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "Not set";
+  }
+  return `${Math.round(value).toLocaleString()} THB`;
+}
+
 export function ProductOptionsPanel({
   roomObject,
   globalSearchQuery,
+  budgetSelectionSummary,
+  budgetImpactByOptionId,
   onSelectProduct,
   onSearchCatalog,
   onAddFromLink,
@@ -274,6 +285,45 @@ export function ProductOptionsPanel({
         </div>
       </CardHeader>
       <CardContent className="flex-1 space-y-4 overflow-y-auto pb-5">
+        {budgetSelectionSummary ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Budget impact</p>
+                <p className="text-sm font-semibold text-slate-900">Qty {budgetSelectionSummary.quantity}</p>
+              </div>
+              {budgetSelectionSummary.currentCategoryName ? (
+                <Badge variant="outline">{budgetSelectionSummary.currentCategoryName}</Badge>
+              ) : null}
+            </div>
+            <div className="mt-3 space-y-1 text-xs text-slate-600">
+              <p>
+                Current selection total:{" "}
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentSelectedTotal)}</span>
+              </p>
+              <p>
+                Room remaining:{" "}
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentRoomRemaining)}</span>
+              </p>
+              <p>
+                House remaining:{" "}
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentHouseRemaining)}</span>
+              </p>
+              {budgetSelectionSummary.currentCategoryName ? (
+                <p>
+                  {budgetSelectionSummary.currentCategoryName} remaining:{" "}
+                  <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentCategoryRemaining)}</span>
+                </p>
+              ) : null}
+              <p>
+                Project remaining:{" "}
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentProjectRemaining)}</span>
+              </p>
+            </div>
+            <p className="mt-3 text-[11px] text-slate-500">Each option below shows the after-selection budget effect.</p>
+          </div>
+        ) : null}
+
         {selectedOption ? (
           <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 shadow-sm">
             <div className="flex items-start justify-between gap-2">
@@ -282,7 +332,12 @@ export function ProductOptionsPanel({
                 Search alternatives
               </Button>
             </div>
-            <ProductOptionCard option={selectedOption} isSelected onSelect={() => onSelectProduct(selectedOption.id)} />
+            <ProductOptionCard
+              option={selectedOption}
+              isSelected
+              onSelect={() => onSelectProduct(selectedOption.id)}
+              budgetImpact={budgetImpactByOptionId?.[selectedOption.id]}
+            />
           </div>
         ) : null}
 
@@ -390,6 +445,7 @@ export function ProductOptionsPanel({
                   option={option}
                   isSelected={roomObject.selectedProductId === option.id}
                   onSelect={() => handleSelectProductOption(option.id)}
+                  budgetImpact={budgetImpactByOptionId?.[option.id]}
                 />
               ))}
             </div>

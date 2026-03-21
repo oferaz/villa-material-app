@@ -43,3 +43,32 @@ export interface ProjectBudget {
   rooms: RoomBudget[];
 }
 
+export type BudgetFitTone = "good" | "warn" | "danger" | "neutral";
+
+export interface ProductOptionBudgetImpact {
+  optionId: string;
+  candidateCategory: BudgetCategoryName;
+  candidateTotal: number;
+  currentSelectedTotal: number;
+  deltaAmount: number;
+  fitLabel: string;
+  fitTone: BudgetFitTone;
+  currentProjectRemaining: number;
+  nextProjectRemaining: number;
+  currentHouseRemaining: number | null;
+  nextHouseRemaining: number | null;
+  currentRoomRemaining: number | null;
+  nextRoomRemaining: number | null;
+  currentCategoryRemaining: number;
+  nextCategoryRemaining: number;
+}
+
+export interface ProductSelectionBudgetSummary {
+  quantity: number;
+  currentSelectedTotal: number;
+  currentProjectRemaining: number;
+  currentHouseRemaining: number | null;
+  currentRoomRemaining: number | null;
+  currentCategoryName: BudgetCategoryName | null;
+  currentCategoryRemaining: number | null;
+}

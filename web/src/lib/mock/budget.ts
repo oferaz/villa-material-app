@@ -1,4 +1,12 @@
-import { BudgetCategory, BudgetCategoryName, HouseBudget, Project, ProjectBudget, RoomBudget } from "@/types";
+import {
+  BudgetCategory,
+  BudgetCategoryName,
+  HouseBudget,
+  ProductOptionBudgetImpact,
+  Project,
+  ProjectBudget,
+  RoomBudget,
+} from "@/types";
 
 export const budgetCategoryOrder: BudgetCategoryName[] = [
   "Furniture",
@@ -112,6 +120,151 @@ function buildDefaultRoomBudgets(project: Project | undefined): RoomBudget[] {
       remainingAmount: null,
     }))
   );
+}
+
+function findObjectContext(project: Project, roomObjectId: string) {
+  for (const house of project.houses) {
+    for (const room of house.rooms) {
+      const roomObject = room.objects.find((item) => item.id === roomObjectId);
+      if (roomObject) {
+        return { house, room, roomObject };
+      }
+    }
+  }
+
+  return null;
+}
+
+function replaceObjectSelection(project: Project, roomObjectId: string, optionId: string): Project {
+  return {
+    ...project,
+    houses: project.houses.map((house) => ({
+      ...house,
+      rooms: house.rooms.map((room) => ({
+        ...room,
+        objects: room.objects.map((roomObject) =>
+          roomObject.id === roomObjectId
+            ? {
+                ...roomObject,
+                selectedProductId: optionId,
+              }
+            : roomObject
+        ),
+      })),
+    })),
+  };
+}
+
+function resolveBudgetFit(params: {
+  isCurrentSelection: boolean;
+  nextProjectRemaining: number;
+  nextProjectTotal: number;
+  nextHouseRemaining: number | null;
+  nextHouseTotal: number | null;
+  nextRoomRemaining: number | null;
+  nextRoomTotal: number | null;
+  nextCategoryRemaining: number;
+  nextCategoryTotal: number;
+  deltaAmount: number;
+}): Pick<ProductOptionBudgetImpact, "fitLabel" | "fitTone"> {
+  const {
+    isCurrentSelection,
+    nextProjectRemaining,
+    nextProjectTotal,
+    nextHouseRemaining,
+    nextHouseTotal,
+    nextRoomRemaining,
+    nextRoomTotal,
+    nextCategoryRemaining,
+    nextCategoryTotal,
+    deltaAmount,
+  } = params;
+
+  if (isCurrentSelection) {
+    return {
+      fitLabel: "Current selection",
+      fitTone: "neutral",
+    };
+  }
+
+  if (nextRoomRemaining !== null && nextRoomRemaining < 0) {
+    return {
+      fitLabel: "Over room budget",
+      fitTone: "danger",
+    };
+  }
+
+  if (nextHouseRemaining !== null && nextHouseRemaining < 0) {
+    return {
+      fitLabel: "Over house budget",
+      fitTone: "danger",
+    };
+  }
+
+  if (nextCategoryRemaining < 0) {
+    return {
+      fitLabel: "Over material budget",
+      fitTone: "danger",
+    };
+  }
+
+  if (nextProjectRemaining < 0) {
+    return {
+      fitLabel: "Over project budget",
+      fitTone: "danger",
+    };
+  }
+
+  const isNearRoomLimit =
+    nextRoomRemaining !== null && nextRoomTotal !== null && nextRoomTotal > 0 && nextRoomRemaining <= nextRoomTotal * 0.1;
+  if (isNearRoomLimit) {
+    return {
+      fitLabel: "Near room limit",
+      fitTone: "warn",
+    };
+  }
+
+  const isNearHouseLimit =
+    nextHouseRemaining !== null && nextHouseTotal !== null && nextHouseTotal > 0 && nextHouseRemaining <= nextHouseTotal * 0.1;
+  if (isNearHouseLimit) {
+    return {
+      fitLabel: "Near house limit",
+      fitTone: "warn",
+    };
+  }
+
+  if (nextCategoryTotal > 0 && nextCategoryRemaining <= nextCategoryTotal * 0.1) {
+    return {
+      fitLabel: "Near material limit",
+      fitTone: "warn",
+    };
+  }
+
+  if (nextProjectTotal > 0 && nextProjectRemaining <= nextProjectTotal * 0.1) {
+    return {
+      fitLabel: "Near project limit",
+      fitTone: "warn",
+    };
+  }
+
+  if (deltaAmount < 0) {
+    return {
+      fitLabel: "Budget-friendly",
+      fitTone: "good",
+    };
+  }
+
+  if (deltaAmount === 0) {
+    return {
+      fitLabel: "Budget-neutral",
+      fitTone: "neutral",
+    };
+  }
+
+  return {
+    fitLabel: "Within budget",
+    fitTone: "good",
+  };
 }
 
 export function createMockProjectBudget(project?: Project): ProjectBudget {
@@ -283,6 +436,77 @@ export function calculateProjectBudget(baseBudget: ProjectBudget, project?: Proj
   };
 }
 
+export function calculateProductOptionBudgetImpact(
+  baseBudget: ProjectBudget,
+  currentBudget: ProjectBudget,
+  project: Project | undefined,
+  roomObjectId: string,
+  optionId: string
+): ProductOptionBudgetImpact | null {
+  if (!project) {
+    return null;
+  }
+
+  const context = findObjectContext(project, roomObjectId);
+  if (!context) {
+    return null;
+  }
+
+  const { house, room, roomObject } = context;
+  const candidateOption = roomObject.productOptions.find((option) => option.id === optionId);
+  if (!candidateOption) {
+    return null;
+  }
+
+  const currentSelectedOption = roomObject.selectedProductId
+    ? roomObject.productOptions.find((option) => option.id === roomObject.selectedProductId)
+    : undefined;
+  const quantity = Math.max(1, Math.round(roomObject.quantity || 1));
+  const currentSelectedTotal = clampMoney((currentSelectedOption?.price ?? 0) * quantity);
+  const candidateTotal = clampMoney(candidateOption.price * quantity);
+  const nextProject = replaceObjectSelection(project, roomObjectId, optionId);
+  const nextBudget = calculateProjectBudget(baseBudget, nextProject);
+
+  const currentHouseBudget = currentBudget.houses.find((item) => item.houseId === house.id);
+  const nextHouseBudget = nextBudget.houses.find((item) => item.houseId === house.id);
+  const currentRoomBudget = currentBudget.rooms.find((item) => item.roomId === room.id);
+  const nextRoomBudget = nextBudget.rooms.find((item) => item.roomId === room.id);
+  const currentCategoryBudget = currentBudget.categories.find((item) => item.name === candidateOption.budgetCategory);
+  const nextCategoryBudget = nextBudget.categories.find((item) => item.name === candidateOption.budgetCategory);
+
+  const deltaAmount = nextBudget.allocatedAmount - currentBudget.allocatedAmount;
+  const fit = resolveBudgetFit({
+    isCurrentSelection: roomObject.selectedProductId === optionId,
+    nextProjectRemaining: nextBudget.remainingAmount,
+    nextProjectTotal: nextBudget.totalBudget,
+    nextHouseRemaining: nextHouseBudget?.remainingAmount ?? null,
+    nextHouseTotal: nextHouseBudget?.totalBudget ?? null,
+    nextRoomRemaining: nextRoomBudget?.remainingAmount ?? null,
+    nextRoomTotal: nextRoomBudget?.totalBudget ?? null,
+    nextCategoryRemaining: nextCategoryBudget?.remainingAmount ?? 0,
+    nextCategoryTotal: nextCategoryBudget?.totalBudget ?? 0,
+    deltaAmount,
+  });
+
+  return {
+    optionId,
+    candidateCategory: candidateOption.budgetCategory,
+    candidateTotal,
+    currentSelectedTotal,
+    deltaAmount,
+    fitLabel: fit.fitLabel,
+    fitTone: fit.fitTone,
+    currentProjectRemaining: currentBudget.remainingAmount,
+    nextProjectRemaining: nextBudget.remainingAmount,
+    currentHouseRemaining: currentHouseBudget?.remainingAmount ?? null,
+    nextHouseRemaining: nextHouseBudget?.remainingAmount ?? null,
+    currentRoomRemaining: currentRoomBudget?.remainingAmount ?? null,
+    nextRoomRemaining: nextRoomBudget?.remainingAmount ?? null,
+    currentCategoryRemaining: currentCategoryBudget?.remainingAmount ?? 0,
+    nextCategoryRemaining: nextCategoryBudget?.remainingAmount ?? 0,
+  };
+}
+
 export function buildCategoryBudgetMap(categories: BudgetCategory[]): Record<BudgetCategoryName, number> {
   return budgetCategoryOrder.reduce<Record<BudgetCategoryName, number>>((acc, categoryName) => {
     const category = categories.find((item) => item.name === categoryName);
@@ -290,4 +514,3 @@ export function buildCategoryBudgetMap(categories: BudgetCategory[]): Record<Bud
     return acc;
   }, {} as Record<BudgetCategoryName, number>);
 }
-
