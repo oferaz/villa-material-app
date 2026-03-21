@@ -78,6 +78,7 @@ interface RoomObjectRow {
   name: string;
   category: string;
   quantity?: number | null;
+  budget_allowance?: number | null;
   selected_material_id: string | null;
   po_approved?: boolean | null;
   is_ordered?: boolean | null;
@@ -175,6 +176,16 @@ function normalizeSizeSqm(value: number | null): number | undefined {
   return Number(value);
 }
 
+function normalizeBudgetAllowance(value: number | null | undefined): number | null | undefined {
+  if (value == null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.round(value);
+}
+
 function hasMissingWorkflowColumnsError(code?: string, message?: string): boolean {
   if (code === "42703" || code === "PGRST204") {
     return true;
@@ -193,6 +204,14 @@ function hasMissingQuantityColumnError(code?: string, message?: string): boolean
   }
   const normalizedMessage = (message ?? "").toLowerCase();
   return normalizedMessage.includes("quantity");
+}
+
+function hasMissingBudgetAllowanceColumnError(code?: string, message?: string): boolean {
+  if (code === "42703" || code === "PGRST204") {
+    return true;
+  }
+  const normalizedMessage = (message ?? "").toLowerCase();
+  return normalizedMessage.includes("budget_allowance");
 }
 
 function hasMissingRpcFunctionError(code?: string, message?: string, functionName?: string): boolean {
@@ -515,48 +534,62 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
     const legacyRoomObjectSelect = "id,room_id,name,category,selected_material_id,sort_order";
     const roomObjectSelectWithQuantity = `${legacyRoomObjectSelect},quantity`;
     const workflowRoomObjectSelect = `${roomObjectSelectWithQuantity},po_approved,is_ordered,is_installed`;
+    const allowanceRoomObjectSelect = `${workflowRoomObjectSelect},budget_allowance`;
 
     let roomObjects: RoomObjectRow[] = [];
     if (roomIds.length > 0) {
-      const withWorkflowQuery = supabase
+      const withAllowanceQuery = supabase
         .from("room_objects")
-        .select(workflowRoomObjectSelect)
+        .select(allowanceRoomObjectSelect)
         .in("room_id", roomIds)
         .order("sort_order", { ascending: true });
-      const { data: roomObjectRows, error: roomObjectError } = await withWorkflowQuery;
+      const { data: allowanceRows, error: allowanceError } = await withAllowanceQuery;
 
-      if (
-        roomObjectError &&
-        (hasMissingWorkflowColumnsError(roomObjectError.code, roomObjectError.message) ||
-          hasMissingQuantityColumnError(roomObjectError.code, roomObjectError.message))
-      ) {
-        const quantityQuery = supabase
+      if (allowanceError && hasMissingBudgetAllowanceColumnError(allowanceError.code, allowanceError.message)) {
+        const withWorkflowQuery = supabase
           .from("room_objects")
-          .select(roomObjectSelectWithQuantity)
+          .select(workflowRoomObjectSelect)
           .in("room_id", roomIds)
           .order("sort_order", { ascending: true });
-        const { data: quantityRows, error: quantityError } = await quantityQuery;
+        const { data: roomObjectRows, error: roomObjectError } = await withWorkflowQuery;
 
-        if (quantityError && hasMissingQuantityColumnError(quantityError.code, quantityError.message)) {
-          const legacyQuery = supabase
+        if (
+          roomObjectError &&
+          (hasMissingWorkflowColumnsError(roomObjectError.code, roomObjectError.message) ||
+            hasMissingQuantityColumnError(roomObjectError.code, roomObjectError.message))
+        ) {
+          const quantityQuery = supabase
             .from("room_objects")
-            .select(legacyRoomObjectSelect)
+            .select(roomObjectSelectWithQuantity)
             .in("room_id", roomIds)
             .order("sort_order", { ascending: true });
-          const { data: legacyRows, error: legacyError } = await legacyQuery;
-          if (legacyError) {
-            throw legacyError;
+          const { data: quantityRows, error: quantityError } = await quantityQuery;
+
+          if (quantityError && hasMissingQuantityColumnError(quantityError.code, quantityError.message)) {
+            const legacyQuery = supabase
+              .from("room_objects")
+              .select(legacyRoomObjectSelect)
+              .in("room_id", roomIds)
+              .order("sort_order", { ascending: true });
+            const { data: legacyRows, error: legacyError } = await legacyQuery;
+            if (legacyError) {
+              throw legacyError;
+            }
+            roomObjects = (legacyRows ?? []) as RoomObjectRow[];
+          } else if (quantityError) {
+            throw quantityError;
+          } else {
+            roomObjects = (quantityRows ?? []) as RoomObjectRow[];
           }
-          roomObjects = (legacyRows ?? []) as RoomObjectRow[];
-        } else if (quantityError) {
-          throw quantityError;
+        } else if (roomObjectError) {
+          throw roomObjectError;
         } else {
-          roomObjects = (quantityRows ?? []) as RoomObjectRow[];
+          roomObjects = (roomObjectRows ?? []) as RoomObjectRow[];
         }
-      } else if (roomObjectError) {
-        throw roomObjectError;
+      } else if (allowanceError) {
+        throw allowanceError;
       } else {
-        roomObjects = (roomObjectRows ?? []) as RoomObjectRow[];
+        roomObjects = (allowanceRows ?? []) as RoomObjectRow[];
       }
     }
     const selectedMaterialIds = roomObjects
@@ -621,6 +654,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
                     name: roomObject.name,
                     category: roomObject.category,
                     quantity: Math.max(1, Math.round(roomObject.quantity ?? 1)),
+                    budgetAllowance: normalizeBudgetAllowance(roomObject.budget_allowance) ?? null,
                     selectedProductId: selectedOption?.id,
                     poApproved: Boolean(roomObject.po_approved),
                     ordered: Boolean(roomObject.is_ordered),
@@ -949,6 +983,7 @@ function buildRoomObjectFromSource(
   name: string;
   category: string;
   quantity: number;
+  budget_allowance: number | null;
   selected_material_id: string | null;
   po_approved: boolean;
   is_ordered: boolean;
@@ -963,6 +998,7 @@ function buildRoomObjectFromSource(
     name: sourceObject.name.trim() || "Object",
     category: sourceObject.category.trim() || "Custom",
     quantity: Math.max(1, Math.round(sourceObject.quantity || 1)),
+    budget_allowance: normalizeBudgetAllowance(sourceObject.budgetAllowance) ?? null,
     selected_material_id: sourceObject.selectedProductId ?? null,
     po_approved: poApproved,
     is_ordered: ordered,
@@ -1133,7 +1169,8 @@ export async function duplicateHouseWithContents({
     let { error: createObjectsError } = await supabase.from("room_objects").insert(objectInsertPayload);
     if (
       createObjectsError &&
-      (hasMissingWorkflowColumnsError(createObjectsError.code, createObjectsError.message) ||
+      (hasMissingBudgetAllowanceColumnError(createObjectsError.code, createObjectsError.message) ||
+        hasMissingWorkflowColumnsError(createObjectsError.code, createObjectsError.message) ||
         hasMissingQuantityColumnError(createObjectsError.code, createObjectsError.message))
     ) {
       const fallbackPayload = objectInsertPayload.map((item) => ({
@@ -1191,6 +1228,7 @@ export async function duplicateHouseWithContents({
       id: `${duplicatedRoom.id}-object-${objectIndex}-${Date.now()}`,
       roomId: duplicatedRoom.id,
       quantity: Math.max(1, sourceObject.quantity),
+      budgetAllowance: normalizeBudgetAllowance(sourceObject.budgetAllowance) ?? null,
       selectedProductId: sourceObject.selectedProductId,
       poApproved: Boolean(sourceObject.poApproved),
       ordered: Boolean(sourceObject.ordered),
@@ -1364,6 +1402,7 @@ export async function createRoomObjectForRoom({
     name: row.name,
     category: row.category,
     quantity: Math.max(1, Math.round(row.quantity ?? normalizedQuantity)),
+    budgetAllowance: normalizeBudgetAllowance(row.budget_allowance) ?? null,
     selectedProductId: row.selected_material_id ?? undefined,
     poApproved: Boolean(row.po_approved),
     ordered: Boolean(row.is_ordered),
@@ -1398,6 +1437,36 @@ export async function updateRoomObjectQuantityById(roomObjectId: string, quantit
   }
 }
 
+export async function updateRoomObjectBudgetAllowanceById(
+  roomObjectId: string,
+  budgetAllowance: number | null
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedObjectId = roomObjectId.trim();
+  if (!normalizedObjectId) {
+    throw new Error("Room object ID is required.");
+  }
+
+  const normalizedAllowance = normalizeBudgetAllowance(budgetAllowance) ?? null;
+
+  const { error } = await supabase
+    .from("room_objects")
+    .update({
+      budget_allowance: normalizedAllowance,
+    })
+    .eq("id", normalizedObjectId);
+
+  if (error) {
+    if (hasMissingBudgetAllowanceColumnError(error.code, error.message)) {
+      throw new Error("Room object allowance column is missing in DB. Apply latest migrations and retry.");
+    }
+    throw new Error(error.message);
+  }
+}
+
 export async function deleteRoomObjectById(roomObjectId: string): Promise<void> {
   if (!isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
@@ -1413,7 +1482,4 @@ export async function deleteRoomObjectById(roomObjectId: string): Promise<void> 
     throw new Error(error.message);
   }
 }
-
-
-
 

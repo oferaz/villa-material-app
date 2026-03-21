@@ -36,6 +36,7 @@ interface ProductOptionsPanelProps {
   onSelectProduct: (productId: string) => void;
   onSearchCatalog: (objectId: string, query: string) => void;
   onAddFromLink: (objectId: string, payload: AddFromLinkPayload) => void;
+  onUpdateBudgetAllowance: (objectId: string, budgetAllowance: number | null) => void;
 }
 
 function formatMoney(value: number | null | undefined): string {
@@ -43,6 +44,48 @@ function formatMoney(value: number | null | undefined): string {
     return "Not set";
   }
   return `${Math.round(value).toLocaleString()} THB`;
+}
+
+function formatAllowanceDelta(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "No target set";
+  }
+  const rounded = Math.round(value);
+  if (rounded === 0) {
+    return "On target";
+  }
+  if (rounded > 0) {
+    return `${rounded.toLocaleString()} THB over target`;
+  }
+  return `${Math.abs(rounded).toLocaleString()} THB under target`;
+}
+
+function getAllowanceBadgeVariant(value: number | null | undefined): "success" | "danger" | "outline" {
+  if (value === null || value === undefined) {
+    return "outline";
+  }
+  if (value > 0) {
+    return "danger";
+  }
+  if (value < 0) {
+    return "success";
+  }
+  return "outline";
+}
+
+function parseBudgetAllowanceInput(value: string): number | null | "invalid" {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = Number(trimmed.replace(/,/g, ""));
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return "invalid";
+  }
+
+  const normalized = Math.round(parsed);
+  return normalized > 0 ? normalized : null;
 }
 
 export function ProductOptionsPanel({
@@ -53,6 +96,7 @@ export function ProductOptionsPanel({
   onSelectProduct,
   onSearchCatalog,
   onAddFromLink,
+  onUpdateBudgetAllowance,
 }: ProductOptionsPanelProps) {
   const [catalogQuery, setCatalogQuery] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
@@ -64,6 +108,8 @@ export function ProductOptionsPanel({
   const [isFetchingLinkPreview, setIsFetchingLinkPreview] = useState(false);
   const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
   const [showSearchTools, setShowSearchTools] = useState(true);
+  const [budgetAllowanceInput, setBudgetAllowanceInput] = useState("");
+  const [budgetAllowanceError, setBudgetAllowanceError] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -95,6 +141,15 @@ export function ProductOptionsPanel({
     setIsFetchingLinkPreview(false);
     setLinkPreviewMessage("");
   }, [roomObject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const nextAllowance =
+      typeof roomObject?.budgetAllowance === "number" && Number.isFinite(roomObject.budgetAllowance) && roomObject.budgetAllowance > 0
+        ? Math.round(roomObject.budgetAllowance)
+        : null;
+    setBudgetAllowanceInput(nextAllowance === null ? "" : String(nextAllowance));
+    setBudgetAllowanceError("");
+  }, [roomObject?.id, roomObject?.budgetAllowance]);
 
   const visibleOptions = useMemo(() => {
     if (!roomObject) {
@@ -129,6 +184,10 @@ export function ProductOptionsPanel({
 
   const objectStatus = getObjectStatus(roomObject);
   const showLinkOptionalFields = linkUrl.trim().length > 0;
+  const currentObjectAllowance = budgetSelectionSummary?.objectAllowance ?? null;
+  const parsedBudgetAllowance = parseBudgetAllowanceInput(budgetAllowanceInput);
+  const isBudgetAllowanceDirty =
+    parsedBudgetAllowance !== "invalid" && parsedBudgetAllowance !== currentObjectAllowance;
 
   function handleSearchSubmit(event?: FormEvent) {
     event?.preventDefault();
@@ -159,6 +218,31 @@ export function ProductOptionsPanel({
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
     });
+  }
+
+  function handleBudgetAllowanceSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!roomObject) {
+      return;
+    }
+
+    if (parsedBudgetAllowance === "invalid") {
+      setBudgetAllowanceError("Enter a valid non-negative number.");
+      return;
+    }
+
+    setBudgetAllowanceError("");
+    onUpdateBudgetAllowance(roomObject.id, parsedBudgetAllowance);
+  }
+
+  function handleClearBudgetAllowance() {
+    if (!roomObject) {
+      return;
+    }
+
+    setBudgetAllowanceInput("");
+    setBudgetAllowanceError("");
+    onUpdateBudgetAllowance(roomObject.id, null);
   }
 
   async function fetchLinkDetails() {
@@ -292,11 +376,31 @@ export function ProductOptionsPanel({
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Budget impact</p>
                 <p className="text-sm font-semibold text-slate-900">Qty {budgetSelectionSummary.quantity}</p>
               </div>
-              {budgetSelectionSummary.currentCategoryName ? (
-                <Badge variant="outline">{budgetSelectionSummary.currentCategoryName}</Badge>
-              ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {budgetSelectionSummary.currentCategoryName ? (
+                  <Badge variant="outline">{budgetSelectionSummary.currentCategoryName}</Badge>
+                ) : null}
+                {budgetSelectionSummary.objectAllowance !== null ? (
+                  <Badge variant={getAllowanceBadgeVariant(budgetSelectionSummary.currentAllowanceDelta)}>
+                    {formatAllowanceDelta(budgetSelectionSummary.currentAllowanceDelta)}
+                  </Badge>
+                ) : null}
+              </div>
             </div>
             <div className="mt-3 space-y-1 text-xs text-slate-600">
+              {budgetSelectionSummary.objectAllowance !== null ? (
+                <>
+                  <p>
+                    Target allowance: <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.objectAllowance)}</span>
+                  </p>
+                  <p>
+                    Current target status:{" "}
+                    <span className="font-medium text-slate-800">
+                      {formatAllowanceDelta(budgetSelectionSummary.currentAllowanceDelta)}
+                    </span>
+                  </p>
+                </>
+              ) : null}
               <p>
                 Current selection total:{" "}
                 <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentSelectedTotal)}</span>
@@ -320,6 +424,40 @@ export function ProductOptionsPanel({
                 <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentProjectRemaining)}</span>
               </p>
             </div>
+            <form onSubmit={handleBudgetAllowanceSubmit} className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Per-object allowance</p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={budgetAllowanceInput}
+                  onChange={(event) => {
+                    setBudgetAllowanceInput(event.target.value);
+                    setBudgetAllowanceError("");
+                  }}
+                  placeholder="Set target allowance in THB"
+                  inputMode="numeric"
+                  className="sm:flex-1"
+                />
+                <Button type="submit" size="sm" variant="outline" disabled={parsedBudgetAllowance === "invalid" || !isBudgetAllowanceDirty}>
+                  Save target
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleClearBudgetAllowance}
+                  disabled={currentObjectAllowance === null && !budgetAllowanceInput.trim()}
+                >
+                  Clear
+                </Button>
+              </div>
+              {budgetAllowanceError ? (
+                <p className="mt-2 text-xs text-red-600">{budgetAllowanceError}</p>
+              ) : (
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Set a target so each option can show whether it lands under, on, or over budget.
+                </p>
+              )}
+            </form>
             <p className="mt-3 text-[11px] text-slate-500">Each option below shows the after-selection budget effect.</p>
           </div>
         ) : null}

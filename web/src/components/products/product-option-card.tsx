@@ -28,7 +28,34 @@ function formatDelta(value: number): string {
   return `${prefix}${Math.abs(rounded).toLocaleString()} THB`;
 }
 
+function formatAllowanceDelta(value: number | null): string {
+  if (value === null) {
+    return "No target set";
+  }
+  const rounded = Math.round(value);
+  if (rounded === 0) {
+    return "On target";
+  }
+  if (rounded > 0) {
+    return `${rounded.toLocaleString()} THB over target`;
+  }
+  return `${Math.abs(rounded).toLocaleString()} THB under target`;
+}
+
 function getBudgetBadgeVariant(tone: ProductOptionBudgetImpact["fitTone"]): "success" | "secondary" | "danger" | "outline" {
+  switch (tone) {
+    case "good":
+      return "success";
+    case "warn":
+      return "secondary";
+    case "danger":
+      return "danger";
+    default:
+      return "outline";
+  }
+}
+
+function getAllowanceBadgeVariant(tone: ProductOptionBudgetImpact["allowanceTone"]): "success" | "secondary" | "danger" | "outline" {
   switch (tone) {
     case "good":
       return "success";
@@ -64,6 +91,9 @@ export function ProductOptionCard({ option, isSelected, onSelect, budgetImpact }
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm font-semibold text-slate-800">{option.name}</p>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {budgetImpact?.allowanceLabel ? (
+              <Badge variant={getAllowanceBadgeVariant(budgetImpact.allowanceTone)}>{budgetImpact.allowanceLabel}</Badge>
+            ) : null}
             {budgetImpact ? <Badge variant={getBudgetBadgeVariant(budgetImpact.fitTone)}>{budgetImpact.fitLabel}</Badge> : null}
             {isSelected ? <Badge variant="success">Selected</Badge> : null}
           </div>
@@ -92,6 +122,16 @@ export function ProductOptionCard({ option, isSelected, onSelect, budgetImpact }
             <span>{formatMoney(budgetImpact.candidateTotal)} total</span>
           </div>
           <div className="mt-2 space-y-1">
+            {budgetImpact.objectAllowance !== null ? (
+              <>
+                <p>
+                  Target allowance: <span className="font-medium text-slate-800">{formatMoney(budgetImpact.objectAllowance)}</span>
+                </p>
+                <p>
+                  Target status: <span className="font-medium text-slate-800">{formatAllowanceDelta(budgetImpact.allowanceDelta)}</span>
+                </p>
+              </>
+            ) : null}
             <p>
               Change vs current: <span className="font-medium text-slate-800">{formatDelta(budgetImpact.deltaAmount)}</span>
             </p>

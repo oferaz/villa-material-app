@@ -53,6 +53,10 @@ export interface ProductOptionBudgetImpact {
   deltaAmount: number;
   fitLabel: string;
   fitTone: BudgetFitTone;
+  objectAllowance: number | null;
+  allowanceDelta: number | null;
+  allowanceLabel: string | null;
+  allowanceTone: BudgetFitTone | null;
   currentProjectRemaining: number;
   nextProjectRemaining: number;
   currentHouseRemaining: number | null;
@@ -65,7 +69,9 @@ export interface ProductOptionBudgetImpact {
 
 export interface ProductSelectionBudgetSummary {
   quantity: number;
+  objectAllowance: number | null;
   currentSelectedTotal: number;
+  currentAllowanceDelta: number | null;
   currentProjectRemaining: number;
   currentHouseRemaining: number | null;
   currentRoomRemaining: number | null;

@@ -34,6 +34,7 @@ export interface RoomObject {
   name: string;
   category: string;
   quantity: number;
+  budgetAllowance?: number | null;
   selectedProductId?: UUID;
   poApproved?: boolean;
   ordered?: boolean;
@@ -126,4 +127,3 @@ export function getWorkflowStageStep(stage: WorkflowStage): number {
       return 0;
   }
 }
-

@@ -1,4 +1,4 @@
-import { House, WorkflowStage, getObjectStatus } from "@/types";
+import { House, RoomBudget, WorkflowStage, getObjectStatus } from "@/types";
 import { RoomHeader } from "@/components/rooms/room-header";
 import { SuggestedObjects } from "@/components/rooms/suggested-objects";
 import { RoomObjectsList } from "@/components/rooms/room-objects-list";
@@ -22,6 +22,8 @@ interface ProjectRoomsStackProps {
     objectId: string,
     patch: { poApproved?: boolean; ordered?: boolean; installed?: boolean }
   ) => void;
+  overBudgetObjectIdsByRoomId: Record<string, string[]>;
+  roomBudgetByRoomId: RoomBudget[];
   onOpenAddCustomObject: (roomId: string) => void;
 }
 
@@ -37,6 +39,8 @@ export function ProjectRoomsStack({
   onSelectObject,
   onDeleteObject,
   onUpdateWorkflow,
+  overBudgetObjectIdsByRoomId,
+  roomBudgetByRoomId,
   onOpenAddCustomObject,
 }: ProjectRoomsStackProps) {
   return (
@@ -104,6 +108,8 @@ export function ProjectRoomsStack({
                     room={room}
                     selectedObjectId={selectedObjectId}
                     showWorkflowHints={showWorkflowHints}
+                    overBudgetObjectIds={overBudgetObjectIdsByRoomId[room.id] ?? []}
+                    roomBudget={roomBudgetByRoomId.find((item) => item.roomId === room.id)}
                     onSelectObject={(objectId) => onSelectObject(house.id, room.id, objectId)}
                     onDeleteObject={(objectId) => onDeleteObject(room.id, objectId)}
                     onUpdateWorkflow={onUpdateWorkflow}
@@ -117,3 +123,4 @@ export function ProjectRoomsStack({
     </div>
   );
 }
+

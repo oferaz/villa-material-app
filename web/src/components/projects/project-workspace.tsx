@@ -25,6 +25,7 @@ import {
   budgetCategoryOrder,
   calculateProductOptionBudgetImpact,
   calculateProjectBudget,
+  calculateRoomObjectBudgetContributionMap,
   createMockProjectBudget,
   resolveBudgetCategory,
 } from "@/lib/mock/budget";
@@ -49,6 +50,7 @@ import {
   renameRoomById,
   saveProjectBudgetByProjectId,
   restoreProjectSnapshotById,
+  updateRoomObjectBudgetAllowanceById,
   updateRoomObjectQuantityById,
   updateRoomObjectSelectedMaterialById,
   updateRoomObjectWorkflowById,
@@ -964,9 +966,19 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       ? calculatedProjectBudget.categories.find((item) => item.name === currentSelectedOption.budgetCategory)
       : undefined;
 
+    const objectAllowance =
+      typeof context.objectItem.budgetAllowance === "number" &&
+      Number.isFinite(context.objectItem.budgetAllowance) &&
+      context.objectItem.budgetAllowance > 0
+        ? Math.round(context.objectItem.budgetAllowance)
+        : null;
+    const currentSelectedTotal = Math.max(0, Math.round((currentSelectedOption?.price ?? 0) * normalizedQuantity));
+
     const nextSummary: ProductSelectionBudgetSummary = {
       quantity: normalizedQuantity,
-      currentSelectedTotal: Math.max(0, (currentSelectedOption?.price ?? 0) * normalizedQuantity),
+      objectAllowance,
+      currentSelectedTotal,
+      currentAllowanceDelta: objectAllowance === null ? null : currentSelectedTotal - objectAllowance,
       currentProjectRemaining: calculatedProjectBudget.remainingAmount,
       currentHouseRemaining:
         calculatedProjectBudget.houses.find((item) => item.houseId === context.house.id)?.remainingAmount ?? null,
@@ -995,6 +1007,46 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       budgetImpactByOptionId: nextImpactMap,
     };
   }, [baseProjectBudget, calculatedProjectBudget, project, visibleSelectedObject]);
+
+  const overBudgetObjectIdsByRoomId = useMemo(() => {
+    if (!project) {
+      return {} as Record<string, string[]>;
+    }
+
+    return project.houses.reduce<Record<string, string[]>>((acc, house) => {
+      for (const room of house.rooms) {
+        const roomBudget = calculatedProjectBudget.rooms.find((item) => item.roomId === room.id);
+        if (roomBudget?.totalBudget === null || roomBudget?.totalBudget === undefined) {
+          acc[room.id] = [];
+          continue;
+        }
+
+        const contributionMap = calculateRoomObjectBudgetContributionMap({
+          room,
+          houseSizeSqm: house.sizeSqm,
+          houseRoomCount: house.rooms.length,
+        });
+        let runningTotal = 0;
+        const overBudgetObjectIds: string[] = [];
+
+        for (const objectItem of room.objects) {
+          const contribution = contributionMap.get(objectItem.id) ?? 0;
+          if (contribution <= 0) {
+            continue;
+          }
+
+          runningTotal += contribution;
+          if (runningTotal > roomBudget.totalBudget) {
+            overBudgetObjectIds.push(objectItem.id);
+          }
+        }
+
+        acc[room.id] = overBudgetObjectIds;
+      }
+
+      return acc;
+    }, {});
+  }, [calculatedProjectBudget.rooms, project]);
 
   const activeRoomFilters = useMemo(() => {
     return [
@@ -1987,6 +2039,29 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }));
   }
 
+  function handleUpdateBudgetAllowance(objectId: string, budgetAllowance: number | null) {
+    const located = findObjectInProject(project, objectId);
+    if (!located) {
+      return;
+    }
+
+    const previousBudgetAllowance = located.objectItem.budgetAllowance ?? null;
+    updateObjectById(objectId, (objectItem) => ({
+      ...objectItem,
+      budgetAllowance,
+    }));
+
+    if (isSupabaseConfigured) {
+      void updateRoomObjectBudgetAllowanceById(objectId, budgetAllowance).catch((error) => {
+        updateObjectById(objectId, (objectItem) => ({
+          ...objectItem,
+          budgetAllowance: previousBudgetAllowance,
+        }));
+        window.alert(error instanceof Error ? error.message : "Failed to save object allowance.");
+      });
+    }
+  }
+
   function handleSelectProduct(productId: string) {
     if (!selectedObject) {
       return;
@@ -2513,6 +2588,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onSelectObject={handleSelectObject}
         onDeleteObject={handleDeleteObject}
         onUpdateWorkflow={handleUpdateObjectWorkflow}
+        overBudgetObjectIdsByRoomId={overBudgetObjectIdsByRoomId}
+        roomBudgetByRoomId={calculatedProjectBudget.rooms}
         onOpenAddCustomObject={(roomId) => setAddObjectRoomId(roomId)}
       />
       <AddObjectDialog
@@ -2587,6 +2664,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onSelectProduct={handleSelectProduct}
         onSearchCatalog={handleSearchCatalog}
         onAddFromLink={handleAddFromLink}
+        onUpdateBudgetAllowance={handleUpdateBudgetAllowance}
       />
     ) : activeTab === "materials" ? (
       pendingMaterialAssignment ? (

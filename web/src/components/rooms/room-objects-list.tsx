@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react";
-import { Room, getObjectWorkflowStage, getWorkflowStageLabel } from "@/types";
+import { Room, RoomBudget, getObjectWorkflowStage, getWorkflowStageLabel } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,8 @@ interface RoomObjectsListProps {
   room?: Room;
   selectedObjectId: string;
   showWorkflowHints: boolean;
+  overBudgetObjectIds?: string[];
+  roomBudget?: RoomBudget;
   onSelectObject: (objectId: string) => void;
   onDeleteObject: (objectId: string) => void;
   onUpdateWorkflow: (
@@ -17,10 +19,19 @@ interface RoomObjectsListProps {
   ) => void;
 }
 
+function formatMoney(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "Not set";
+  }
+  return `${Math.round(value).toLocaleString()} THB`;
+}
+
 export function RoomObjectsList({
   room,
   selectedObjectId,
   showWorkflowHints,
+  overBudgetObjectIds = [],
+  roomBudget,
   onSelectObject,
   onDeleteObject,
   onUpdateWorkflow,
@@ -36,6 +47,9 @@ export function RoomObjectsList({
     );
   }
 
+  const overBudgetObjectIdSet = new Set(overBudgetObjectIds);
+  const isRoomOverBudget = typeof roomBudget?.remainingAmount === "number" && roomBudget.remainingAmount < 0;
+
   return (
     <Card className="border-slate-200 shadow-sm">
       <CardHeader className="pb-3">
@@ -44,6 +58,16 @@ export function RoomObjectsList({
           <CardDescription>
             {room.objects.reduce((acc, objectItem) => acc + Math.max(1, objectItem.quantity), 0)} total items
           </CardDescription>
+          {typeof roomBudget?.totalBudget === "number" ? (
+            <p className={cn("mt-2 text-xs", isRoomOverBudget ? "font-medium text-red-700" : "text-slate-500")}>
+              Room budget: {formatMoney(roomBudget.totalBudget)}
+              {typeof roomBudget.remainingAmount === "number"
+                ? isRoomOverBudget
+                  ? `, over by ${formatMoney(Math.abs(roomBudget.remainingAmount))}`
+                  : `, ${formatMoney(roomBudget.remainingAmount)} remaining`
+                : ""}
+            </p>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent>
@@ -52,6 +76,7 @@ export function RoomObjectsList({
             const workflowStage = getObjectWorkflowStage(objectItem);
             const isSelected = selectedObjectId === objectItem.id;
             const hasMaterial = Boolean(objectItem.selectedProductId);
+            const isPushingRoomOverBudget = overBudgetObjectIdSet.has(objectItem.id);
             const selectedMaterialName =
               objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId)?.name ?? "";
             const showWorkflowActions = showWorkflowHints || isSelected;
@@ -61,8 +86,15 @@ export function RoomObjectsList({
                 <div
                   className={cn(
                     "flex items-start gap-2 rounded-lg border px-3 py-2 transition",
-                    hasMaterial ? "border-emerald-200 bg-emerald-50/40" : "border-rose-200 bg-rose-50/40",
-                    isSelected && "border-primary bg-blue-50 ring-2 ring-blue-200 shadow-sm"
+                    isPushingRoomOverBudget
+                      ? "border-red-300 bg-red-50/70"
+                      : hasMaterial
+                        ? "border-emerald-200 bg-emerald-50/40"
+                        : "border-rose-200 bg-rose-50/40",
+                    isSelected &&
+                      (isPushingRoomOverBudget
+                        ? "border-red-400 bg-red-50 ring-2 ring-red-200 shadow-sm"
+                        : "border-primary bg-blue-50 ring-2 ring-blue-200 shadow-sm")
                   )}
                 >
                   <div className="min-w-0 flex-1">
@@ -77,13 +109,24 @@ export function RoomObjectsList({
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <Badge variant="outline">{getWorkflowStageLabel(workflowStage)}</Badge>
                       {hasMaterial ? <Badge variant="success">Assigned</Badge> : <Badge variant="danger">Missing</Badge>}
+                      {isPushingRoomOverBudget ? <Badge variant="danger">Over room target</Badge> : null}
                     </div>
 
-                    <p className={cn("mt-1 text-xs", hasMaterial ? "text-emerald-700" : "text-rose-700")}>
+                    <p
+                      className={cn(
+                        "mt-1 text-xs",
+                        isPushingRoomOverBudget ? "text-red-700" : hasMaterial ? "text-emerald-700" : "text-rose-700"
+                      )}
+                    >
                       {hasMaterial
                         ? `Selected material: ${selectedMaterialName || "Assigned material"}`
                         : "No material selected yet. Tap to assign."}
                     </p>
+                    {isPushingRoomOverBudget ? (
+                      <p className="mt-1 text-xs font-medium text-red-700">
+                        This object is contributing to the room going over budget.
+                      </p>
+                    ) : null}
 
                     {showWorkflowActions ? (
                       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -152,3 +195,4 @@ export function RoomObjectsList({
     </Card>
   );
 }
+

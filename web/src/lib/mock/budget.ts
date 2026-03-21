@@ -1,11 +1,14 @@
 import {
   BudgetCategory,
   BudgetCategoryName,
+  BudgetFitTone,
   HouseBudget,
   ProductOptionBudgetImpact,
   Project,
   ProjectBudget,
+  Room,
   RoomBudget,
+  RoomObject,
 } from "@/types";
 
 export const budgetCategoryOrder: BudgetCategoryName[] = [
@@ -40,6 +43,13 @@ function normalizePositiveNumber(value: number | undefined): number | undefined 
     return undefined;
   }
   return value;
+}
+
+function normalizeAllowance(value: number | null | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return clampMoney(value);
 }
 
 function resolveRoomAreaSqm(roomSizeSqm: number | undefined, houseSizeSqm: number | undefined, roomCount: number): number | undefined {
@@ -267,6 +277,103 @@ function resolveBudgetFit(params: {
   };
 }
 
+function resolveAllowanceStatus(candidateTotal: number, objectAllowance: number | null): {
+  allowanceDelta: number | null;
+  allowanceLabel: string | null;
+  allowanceTone: BudgetFitTone | null;
+} {
+  if (objectAllowance === null) {
+    return {
+      allowanceDelta: null,
+      allowanceLabel: null,
+      allowanceTone: null,
+    };
+  }
+
+  const allowanceDelta = clampMoney(candidateTotal) - objectAllowance;
+  if (allowanceDelta < 0) {
+    return {
+      allowanceDelta,
+      allowanceLabel: "Under target",
+      allowanceTone: "good",
+    };
+  }
+  if (allowanceDelta > 0) {
+    return {
+      allowanceDelta,
+      allowanceLabel: "Over target",
+      allowanceTone: "danger",
+    };
+  }
+
+  return {
+    allowanceDelta,
+    allowanceLabel: "On target",
+    allowanceTone: "neutral",
+  };
+}
+
+export function calculateRoomObjectBudgetContributionMap(params: {
+  room: Room;
+  houseSizeSqm?: number;
+  houseRoomCount?: number;
+}): Map<string, number> {
+  const { room, houseSizeSqm, houseRoomCount = 1 } = params;
+  const roomAreaSqm = resolveRoomAreaSqm(room.sizeSqm, houseSizeSqm, houseRoomCount);
+
+  const groupStats = room.objects.reduce<Record<string, { totalUnits: number; selectedUnits: number }>>(
+    (acc, objectItem) => {
+      const groupKey = getObjectGroupKey(objectItem.name, objectItem.category);
+      const normalizedUnits = Math.max(1, Math.round(objectItem.quantity || 1));
+      const current = acc[groupKey] ?? { totalUnits: 0, selectedUnits: 0 };
+      current.totalUnits += normalizedUnits;
+      if (objectItem.selectedProductId) {
+        current.selectedUnits += normalizedUnits;
+      }
+      acc[groupKey] = current;
+      return acc;
+    },
+    {}
+  );
+
+  const contributionMap = new Map<string, number>();
+  for (const objectItem of room.objects) {
+    if (!objectItem.selectedProductId) {
+      continue;
+    }
+
+    const selectedOption = objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId);
+    if (!selectedOption) {
+      continue;
+    }
+
+    const normalizedQuantity = Math.max(1, Math.round(objectItem.quantity || 1));
+    const groupKey = getObjectGroupKey(objectItem.name, objectItem.category);
+    const group = groupStats[groupKey];
+    const shouldFanOutToGroup =
+      Boolean(group) && group.selectedUnits === normalizedQuantity && group.totalUnits > normalizedQuantity;
+    const effectiveUnits = shouldFanOutToGroup ? group.totalUnits : normalizedQuantity;
+    const areaMultiplier = isSizeSensitiveCategory(selectedOption.budgetCategory) && roomAreaSqm ? roomAreaSqm : 1;
+
+    contributionMap.set(objectItem.id, clampMoney(selectedOption.price * effectiveUnits * areaMultiplier));
+  }
+
+  return contributionMap;
+}
+
+function getSelectedProduct(roomObject: RoomObject) {
+  if (!roomObject.selectedProductId) {
+    return undefined;
+  }
+  return roomObject.productOptions.find((option) => option.id === roomObject.selectedProductId);
+}
+
+export function getRoomObjectSelectedLineCost(roomObject: RoomObject): number {
+  const selectedProduct = getSelectedProduct(roomObject);
+  const quantity = Math.max(1, Math.round(roomObject.quantity || 1));
+  return clampMoney((selectedProduct?.price ?? 0) * quantity);
+}
+
 export function createMockProjectBudget(project?: Project): ProjectBudget {
   const categories: BudgetCategory[] = budgetCategoryOrder.map((name) => ({
     id: name.toLowerCase(),
@@ -318,22 +425,11 @@ export function calculateProjectBudget(baseBudget: ProjectBudget, project?: Proj
   if (project) {
     for (const house of project.houses) {
       for (const room of house.rooms) {
-        const roomAreaSqm = resolveRoomAreaSqm(room.sizeSqm, house.sizeSqm, house.rooms.length);
-
-        const groupStats = room.objects.reduce<Record<string, { totalUnits: number; selectedUnits: number }>>(
-          (acc, objectItem) => {
-            const groupKey = getObjectGroupKey(objectItem.name, objectItem.category);
-            const normalizedUnits = Math.max(1, Math.round(objectItem.quantity || 1));
-            const current = acc[groupKey] ?? { totalUnits: 0, selectedUnits: 0 };
-            current.totalUnits += normalizedUnits;
-            if (objectItem.selectedProductId) {
-              current.selectedUnits += normalizedUnits;
-            }
-            acc[groupKey] = current;
-            return acc;
-          },
-          {}
-        );
+        const contributionMap = calculateRoomObjectBudgetContributionMap({
+          room,
+          houseSizeSqm: house.sizeSqm,
+          houseRoomCount: house.rooms.length,
+        });
 
         for (const objectItem of room.objects) {
           if (!objectItem.selectedProductId) {
@@ -344,15 +440,10 @@ export function calculateProjectBudget(baseBudget: ProjectBudget, project?: Proj
             continue;
           }
 
-          const normalizedQuantity = Math.max(1, Math.round(objectItem.quantity || 1));
-          const groupKey = getObjectGroupKey(objectItem.name, objectItem.category);
-          const group = groupStats[groupKey];
-          const shouldFanOutToGroup =
-            Boolean(group) && group.selectedUnits === normalizedQuantity && group.totalUnits > normalizedQuantity;
-          const effectiveUnits = shouldFanOutToGroup ? group.totalUnits : normalizedQuantity;
-          const areaMultiplier =
-            isSizeSensitiveCategory(selectedOption.budgetCategory) && roomAreaSqm ? roomAreaSqm : 1;
-          const estimatedCost = clampMoney(selectedOption.price * effectiveUnits * areaMultiplier);
+          const estimatedCost = contributionMap.get(objectItem.id) ?? 0;
+          if (estimatedCost <= 0) {
+            continue;
+          }
 
           allocationMap[selectedOption.budgetCategory] += estimatedCost;
           houseAllocationMap.set(house.id, (houseAllocationMap.get(house.id) ?? 0) + estimatedCost);
@@ -488,6 +579,9 @@ export function calculateProductOptionBudgetImpact(
     deltaAmount,
   });
 
+  const objectAllowance = normalizeAllowance(roomObject.budgetAllowance ?? null);
+  const allowanceStatus = resolveAllowanceStatus(candidateTotal, objectAllowance);
+
   return {
     optionId,
     candidateCategory: candidateOption.budgetCategory,
@@ -496,6 +590,10 @@ export function calculateProductOptionBudgetImpact(
     deltaAmount,
     fitLabel: fit.fitLabel,
     fitTone: fit.fitTone,
+    objectAllowance,
+    allowanceDelta: allowanceStatus.allowanceDelta,
+    allowanceLabel: allowanceStatus.allowanceLabel,
+    allowanceTone: allowanceStatus.allowanceTone,
     currentProjectRemaining: currentBudget.remainingAmount,
     nextProjectRemaining: nextBudget.remainingAmount,
     currentHouseRemaining: currentHouseBudget?.remainingAmount ?? null,
@@ -514,3 +612,4 @@ export function buildCategoryBudgetMap(categories: BudgetCategory[]): Record<Bud
     return acc;
   }, {} as Record<BudgetCategoryName, number>);
 }
+
