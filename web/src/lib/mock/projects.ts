@@ -294,6 +294,7 @@ function buildProjects(): Project[] {
       name: projectSeed.name,
       customer: projectSeed.customer,
       location: projectSeed.location,
+      currency: "USD",
       houses: projectSeed.houses.map((houseSeed, houseIndex) => {
         const houseId = `${projectId}-house-${houseIndex + 1}`;
         return {
@@ -345,3 +346,4 @@ export const mockProjects: Project[] = buildProjects();
 export function getProjectById(projectId: string): Project | undefined {
   return mockProjects.find((project) => project.id === projectId);
 }
+

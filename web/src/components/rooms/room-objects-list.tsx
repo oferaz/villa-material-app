@@ -3,6 +3,16 @@ import { Room, RoomBudget, getObjectWorkflowStage, getWorkflowStageLabel } from 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCurrencyAmount } from "@/lib/currency";
+import {
+  getBudgetHealthLabel,
+  getBudgetHealthStatus,
+  getBudgetHealthVariant,
+  getObjectBudgetFitLabel,
+  getObjectBudgetFitStatus,
+  getObjectBudgetFitVariant,
+  getRoomObjectSelectedLineCost,
+} from "@/lib/mock/budget";
 import { cn } from "@/lib/utils";
 
 interface RoomObjectsListProps {
@@ -11,6 +21,7 @@ interface RoomObjectsListProps {
   showWorkflowHints: boolean;
   overBudgetObjectIds?: string[];
   roomBudget?: RoomBudget;
+  projectCurrency: string;
   onSelectObject: (objectId: string) => void;
   onDeleteObject: (objectId: string) => void;
   onUpdateWorkflow: (
@@ -19,11 +30,40 @@ interface RoomObjectsListProps {
   ) => void;
 }
 
-function formatMoney(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
-    return "Not set";
+function resolveBudgetBadge(
+  objectItem: Room["objects"][number],
+  roomBudget: RoomBudget | undefined
+): { label: string; variant: "success" | "secondary" | "danger" | "outline" } {
+  const roomHealth = getBudgetHealthStatus(roomBudget?.totalBudget, roomBudget?.remainingAmount);
+  const hasObjectBudget = typeof objectItem.budgetAllowance === "number" && objectItem.budgetAllowance > 0;
+  const hasMaterial = Boolean(objectItem.selectedProductId);
+
+  if (hasMaterial && hasObjectBudget) {
+    const objectBudgetStatus = getObjectBudgetFitStatus(getRoomObjectSelectedLineCost(objectItem), objectItem.budgetAllowance ?? null);
+    return {
+      label: `Budget: ${getObjectBudgetFitLabel(objectBudgetStatus)}`,
+      variant: getObjectBudgetFitVariant(objectBudgetStatus),
+    };
   }
-  return `${Math.round(value).toLocaleString()} THB`;
+
+  if (roomHealth !== "not_planned") {
+    return {
+      label: `Budget: ${getBudgetHealthLabel(roomHealth)}`,
+      variant: getBudgetHealthVariant(roomHealth),
+    };
+  }
+
+  if (hasObjectBudget) {
+    return {
+      label: "Budget: Object budget set",
+      variant: "outline",
+    };
+  }
+
+  return {
+    label: "Budget: No object budget",
+    variant: "outline",
+  };
 }
 
 export function RoomObjectsList({
@@ -32,6 +72,7 @@ export function RoomObjectsList({
   showWorkflowHints,
   overBudgetObjectIds = [],
   roomBudget,
+  projectCurrency,
   onSelectObject,
   onDeleteObject,
   onUpdateWorkflow,
@@ -48,7 +89,6 @@ export function RoomObjectsList({
   }
 
   const overBudgetObjectIdSet = new Set(overBudgetObjectIds);
-  const isRoomOverBudget = typeof roomBudget?.remainingAmount === "number" && roomBudget.remainingAmount < 0;
 
   return (
     <Card className="border-slate-200 shadow-sm">
@@ -58,16 +98,6 @@ export function RoomObjectsList({
           <CardDescription>
             {room.objects.reduce((acc, objectItem) => acc + Math.max(1, objectItem.quantity), 0)} total items
           </CardDescription>
-          {typeof roomBudget?.totalBudget === "number" ? (
-            <p className={cn("mt-2 text-xs", isRoomOverBudget ? "font-medium text-red-700" : "text-slate-500")}>
-              Room budget: {formatMoney(roomBudget.totalBudget)}
-              {typeof roomBudget.remainingAmount === "number"
-                ? isRoomOverBudget
-                  ? `, over by ${formatMoney(Math.abs(roomBudget.remainingAmount))}`
-                  : `, ${formatMoney(roomBudget.remainingAmount)} remaining`
-                : ""}
-            </p>
-          ) : null}
         </div>
       </CardHeader>
       <CardContent>
@@ -80,6 +110,11 @@ export function RoomObjectsList({
             const selectedMaterialName =
               objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId)?.name ?? "";
             const showWorkflowActions = showWorkflowHints || isSelected;
+            const budgetBadge = resolveBudgetBadge(objectItem, roomBudget);
+            const objectBudget =
+              typeof objectItem.budgetAllowance === "number" && Number.isFinite(objectItem.budgetAllowance) && objectItem.budgetAllowance > 0
+                ? Math.round(objectItem.budgetAllowance)
+                : null;
 
             return (
               <li key={objectItem.id} data-room-object-id={objectItem.id}>
@@ -90,7 +125,7 @@ export function RoomObjectsList({
                       ? "border-red-300 bg-red-50/70"
                       : hasMaterial
                         ? "border-emerald-200 bg-emerald-50/40"
-                        : "border-rose-200 bg-rose-50/40",
+                        : "border-amber-200 bg-amber-50/40",
                     isSelected &&
                       (isPushingRoomOverBudget
                         ? "border-red-400 bg-red-50 ring-2 ring-red-200 shadow-sm"
@@ -107,24 +142,26 @@ export function RoomObjectsList({
                     </button>
 
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <Badge variant="outline">{getWorkflowStageLabel(workflowStage)}</Badge>
-                      {hasMaterial ? <Badge variant="success">Assigned</Badge> : <Badge variant="danger">Missing</Badge>}
-                      {isPushingRoomOverBudget ? <Badge variant="danger">Over room target</Badge> : null}
+                      <Badge variant="outline">{`Workflow: ${getWorkflowStageLabel(workflowStage)}`}</Badge>
+                      <Badge variant={budgetBadge.variant}>{budgetBadge.label}</Badge>
                     </div>
 
                     <p
                       className={cn(
                         "mt-1 text-xs",
-                        isPushingRoomOverBudget ? "text-red-700" : hasMaterial ? "text-emerald-700" : "text-rose-700"
+                        isPushingRoomOverBudget ? "text-red-700" : hasMaterial ? "text-emerald-700" : "text-amber-700"
                       )}
                     >
                       {hasMaterial
                         ? `Selected material: ${selectedMaterialName || "Assigned material"}`
                         : "No material selected yet. Tap to assign."}
                     </p>
+                    {objectBudget !== null ? (
+                      <p className="mt-1 text-xs text-slate-500">Object budget: {formatCurrencyAmount(objectBudget, projectCurrency)}</p>
+                    ) : null}
                     {isPushingRoomOverBudget ? (
                       <p className="mt-1 text-xs font-medium text-red-700">
-                        This object is contributing to the room going over budget.
+                        This object contributes to the room going over plan.
                       </p>
                     ) : null}
 
@@ -195,4 +232,3 @@ export function RoomObjectsList({
     </Card>
   );
 }
-

@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Link as LinkIcon } from "lucide-react";
 import { ProductOptionBudgetImpact, ProductSelectionBudgetSummary, RoomObject, getObjectStatus } from "@/types";
+import { formatCurrencyAmount } from "@/lib/currency";
+import { getBudgetHealthLabel, getBudgetHealthVariant, getObjectBudgetFitLabel, getObjectBudgetFitVariant } from "@/lib/mock/budget";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,8 +30,11 @@ interface LinkPreviewResult {
   warning?: string;
 }
 
+type BudgetFilter = "recommended" | "object_budget" | "room_plan" | "all";
+
 interface ProductOptionsPanelProps {
   roomObject: RoomObject | undefined;
+  projectCurrency: string;
   globalSearchQuery: string;
   budgetSelectionSummary?: ProductSelectionBudgetSummary;
   budgetImpactByOptionId?: Record<string, ProductOptionBudgetImpact>;
@@ -39,38 +44,22 @@ interface ProductOptionsPanelProps {
   onUpdateBudgetAllowance: (objectId: string, budgetAllowance: number | null) => void;
 }
 
-function formatMoney(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
-    return "Not set";
-  }
-  return `${Math.round(value).toLocaleString()} THB`;
+function formatMoney(value: number | null | undefined, currency: string): string {
+  return formatCurrencyAmount(value, currency);
 }
 
-function formatAllowanceDelta(value: number | null | undefined): string {
+function formatObjectBudgetDelta(value: number | null | undefined, currency: string): string {
   if (value === null || value === undefined) {
-    return "No target set";
+    return "No object budget";
   }
   const rounded = Math.round(value);
   if (rounded === 0) {
-    return "On target";
+    return "On object budget";
   }
   if (rounded > 0) {
-    return `${rounded.toLocaleString()} THB over target`;
+    return `${formatCurrencyAmount(rounded, currency)} over object budget`;
   }
-  return `${Math.abs(rounded).toLocaleString()} THB under target`;
-}
-
-function getAllowanceBadgeVariant(value: number | null | undefined): "success" | "danger" | "outline" {
-  if (value === null || value === undefined) {
-    return "outline";
-  }
-  if (value > 0) {
-    return "danger";
-  }
-  if (value < 0) {
-    return "success";
-  }
-  return "outline";
+  return `${formatCurrencyAmount(Math.abs(rounded), currency)} under object budget`;
 }
 
 function parseBudgetAllowanceInput(value: string): number | null | "invalid" {
@@ -88,8 +77,44 @@ function parseBudgetAllowanceInput(value: string): number | null | "invalid" {
   return normalized > 0 ? normalized : null;
 }
 
+function matchesBudgetFilter(
+  filter: BudgetFilter,
+  impact: ProductOptionBudgetImpact | undefined,
+  summary: ProductSelectionBudgetSummary | undefined
+): boolean {
+  if (!impact || filter === "all") {
+    return true;
+  }
+
+  switch (filter) {
+    case "recommended":
+      return (
+        impact.isCurrentSelection ||
+        (impact.keepsRoomOnPlan &&
+          impact.keepsHouseOnPlan &&
+          impact.keepsCategoryOnPlan &&
+          impact.keepsProjectOnPlan &&
+          !impact.priceMissing &&
+          (summary?.objectBudget === null || summary?.objectBudget === undefined || impact.objectBudgetStatus !== "over_object_budget"))
+      );
+    case "object_budget":
+      if (summary?.objectBudget === null || summary?.objectBudget === undefined) {
+        return true;
+      }
+      return impact.objectBudgetStatus === "under_object_budget" || impact.objectBudgetStatus === "on_object_budget";
+    case "room_plan":
+      if (summary?.currentRoomHealth === "not_planned") {
+        return true;
+      }
+      return impact.keepsRoomOnPlan;
+    default:
+      return true;
+  }
+}
+
 export function ProductOptionsPanel({
   roomObject,
+  projectCurrency,
   globalSearchQuery,
   budgetSelectionSummary,
   budgetImpactByOptionId,
@@ -108,6 +133,7 @@ export function ProductOptionsPanel({
   const [isFetchingLinkPreview, setIsFetchingLinkPreview] = useState(false);
   const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
   const [showSearchTools, setShowSearchTools] = useState(true);
+  const [budgetFilter, setBudgetFilter] = useState<BudgetFilter>("recommended");
   const [budgetAllowanceInput, setBudgetAllowanceInput] = useState("");
   const [budgetAllowanceError, setBudgetAllowanceError] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -122,6 +148,7 @@ export function ProductOptionsPanel({
         roomObject.productOptions.some((option) => option.id === roomObject.selectedProductId)
     );
     setShowSearchTools(!hasSelectedMaterial);
+    setBudgetFilter("recommended");
 
     const defaultQuery = roomObject.name;
     setCatalogQuery(defaultQuery);
@@ -151,18 +178,44 @@ export function ProductOptionsPanel({
     setBudgetAllowanceError("");
   }, [roomObject?.id, roomObject?.budgetAllowance]);
 
-  const visibleOptions = useMemo(() => {
+  const rankedOptions = useMemo(() => {
     if (!roomObject) {
       return [];
     }
-    const q = (globalSearchQuery ?? "").trim().toLowerCase();
-    if (!q) {
-      return roomObject.productOptions;
-    }
-    return roomObject.productOptions.filter((option) => {
-      return option.name.toLowerCase().includes(q) || option.supplier.toLowerCase().includes(q);
+
+    return [...roomObject.productOptions].sort((a, b) => {
+      const impactA = budgetImpactByOptionId?.[a.id];
+      const impactB = budgetImpactByOptionId?.[b.id];
+      const scoreA = impactA?.recommendationScore ?? Number.MIN_SAFE_INTEGER;
+      const scoreB = impactB?.recommendationScore ?? Number.MIN_SAFE_INTEGER;
+      if (scoreB !== scoreA) {
+        return scoreB - scoreA;
+      }
+      if (a.price !== b.price) {
+        const aMissing = a.price <= 0 ? 1 : 0;
+        const bMissing = b.price <= 0 ? 1 : 0;
+        if (aMissing !== bMissing) {
+          return aMissing - bMissing;
+        }
+      }
+      if (a.leadTimeDays !== b.leadTimeDays) {
+        return a.leadTimeDays - b.leadTimeDays;
+      }
+      return a.name.localeCompare(b.name);
     });
-  }, [roomObject, globalSearchQuery]);
+  }, [budgetImpactByOptionId, roomObject]);
+
+  const visibleOptions = useMemo(() => {
+    const q = (globalSearchQuery ?? "").trim().toLowerCase();
+    return rankedOptions.filter((option) => {
+      const matchesSearch =
+        !q || option.name.toLowerCase().includes(q) || option.supplier.toLowerCase().includes(q);
+      if (!matchesSearch) {
+        return false;
+      }
+      return matchesBudgetFilter(budgetFilter, budgetImpactByOptionId?.[option.id], budgetSelectionSummary);
+    });
+  }, [budgetFilter, budgetImpactByOptionId, budgetSelectionSummary, globalSearchQuery, rankedOptions]);
 
   const selectedOption = useMemo(() => {
     if (!roomObject?.selectedProductId) {
@@ -184,10 +237,10 @@ export function ProductOptionsPanel({
 
   const objectStatus = getObjectStatus(roomObject);
   const showLinkOptionalFields = linkUrl.trim().length > 0;
-  const currentObjectAllowance = budgetSelectionSummary?.objectAllowance ?? null;
+  const currentObjectBudget = budgetSelectionSummary?.objectBudget ?? null;
   const parsedBudgetAllowance = parseBudgetAllowanceInput(budgetAllowanceInput);
   const isBudgetAllowanceDirty =
-    parsedBudgetAllowance !== "invalid" && parsedBudgetAllowance !== currentObjectAllowance;
+    parsedBudgetAllowance !== "invalid" && parsedBudgetAllowance !== currentObjectBudget;
 
   function handleSearchSubmit(event?: FormEvent) {
     event?.preventDefault();
@@ -373,59 +426,51 @@ export function ProductOptionsPanel({
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Budget impact</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Object budget and impact</p>
                 <p className="text-sm font-semibold text-slate-900">Qty {budgetSelectionSummary.quantity}</p>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-1.5">
                 {budgetSelectionSummary.currentCategoryName ? (
-                  <Badge variant="outline">{budgetSelectionSummary.currentCategoryName}</Badge>
+                  <Badge variant="outline">{`Budget category: ${budgetSelectionSummary.currentCategoryName}`}</Badge>
                 ) : null}
-                {budgetSelectionSummary.objectAllowance !== null ? (
-                  <Badge variant={getAllowanceBadgeVariant(budgetSelectionSummary.currentAllowanceDelta)}>
-                    {formatAllowanceDelta(budgetSelectionSummary.currentAllowanceDelta)}
-                  </Badge>
-                ) : null}
+                <Badge variant={getObjectBudgetFitVariant(budgetSelectionSummary.objectBudgetStatus)}>
+                  {getObjectBudgetFitLabel(budgetSelectionSummary.objectBudgetStatus)}
+                </Badge>
+                <Badge variant={getBudgetHealthVariant(budgetSelectionSummary.currentRoomHealth)}>
+                  {`Room: ${getBudgetHealthLabel(budgetSelectionSummary.currentRoomHealth)}`}
+                </Badge>
               </div>
             </div>
-            <div className="mt-3 space-y-1 text-xs text-slate-600">
-              {budgetSelectionSummary.objectAllowance !== null ? (
-                <>
-                  <p>
-                    Target allowance: <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.objectAllowance)}</span>
-                  </p>
-                  <p>
-                    Current target status:{" "}
-                    <span className="font-medium text-slate-800">
-                      {formatAllowanceDelta(budgetSelectionSummary.currentAllowanceDelta)}
-                    </span>
-                  </p>
-                </>
-              ) : null}
+            <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
               <p>
-                Current selection total:{" "}
-                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentSelectedTotal)}</span>
+                Object budget:{" "}
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.objectBudget, projectCurrency)}</span>
+              </p>
+              <p>
+                Current selection:{" "}
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentSelectedTotal, projectCurrency)}</span>
+              </p>
+              <p>
+                Object budget status:{" "}
+                <span className="font-medium text-slate-800">
+                  {formatObjectBudgetDelta(budgetSelectionSummary.currentObjectBudgetDelta, projectCurrency)}
+                </span>
               </p>
               <p>
                 Room remaining:{" "}
-                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentRoomRemaining)}</span>
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentRoomRemaining, projectCurrency)}</span>
               </p>
               <p>
                 House remaining:{" "}
-                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentHouseRemaining)}</span>
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentHouseRemaining, projectCurrency)}</span>
               </p>
-              {budgetSelectionSummary.currentCategoryName ? (
-                <p>
-                  {budgetSelectionSummary.currentCategoryName} remaining:{" "}
-                  <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentCategoryRemaining)}</span>
-                </p>
-              ) : null}
               <p>
                 Project remaining:{" "}
-                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentProjectRemaining)}</span>
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentProjectRemaining, projectCurrency)}</span>
               </p>
             </div>
             <form onSubmit={handleBudgetAllowanceSubmit} className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Per-object allowance</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Object budget</p>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <Input
                   value={budgetAllowanceInput}
@@ -433,19 +478,19 @@ export function ProductOptionsPanel({
                     setBudgetAllowanceInput(event.target.value);
                     setBudgetAllowanceError("");
                   }}
-                  placeholder="Set target allowance in THB"
+                  placeholder={`Set object budget in ${projectCurrency}`}
                   inputMode="numeric"
                   className="sm:flex-1"
                 />
                 <Button type="submit" size="sm" variant="outline" disabled={parsedBudgetAllowance === "invalid" || !isBudgetAllowanceDirty}>
-                  Save target
+                  Save object budget
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
                   onClick={handleClearBudgetAllowance}
-                  disabled={currentObjectAllowance === null && !budgetAllowanceInput.trim()}
+                  disabled={currentObjectBudget === null && !budgetAllowanceInput.trim()}
                 >
                   Clear
                 </Button>
@@ -454,11 +499,35 @@ export function ProductOptionsPanel({
                 <p className="mt-2 text-xs text-red-600">{budgetAllowanceError}</p>
               ) : (
                 <p className="mt-2 text-[11px] text-slate-500">
-                  Set a target so each option can show whether it lands under, on, or over budget.
+                  Set an object budget so each option can show whether it lands under, on, or over budget.
                 </p>
               )}
             </form>
-            <p className="mt-3 text-[11px] text-slate-500">Each option below shows the after-selection budget effect.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {([
+                ["recommended", "Recommended"],
+                ["object_budget", "Within object budget"],
+                ["room_plan", "Within room plan"],
+                ["all", "All"],
+              ] as const).map(([value, label]) => {
+                const disabled =
+                  (value === "object_budget" && budgetSelectionSummary.objectBudget === null) ||
+                  (value === "room_plan" && budgetSelectionSummary.currentRoomHealth === "not_planned");
+                return (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={budgetFilter === value ? "default" : "outline"}
+                    disabled={disabled}
+                    onClick={() => setBudgetFilter(value)}
+                  >
+                    {label}
+                  </Button>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-[11px] text-slate-500">Options are ranked by plan safety, object-budget fit, delta, lead time, and missing-price penalty.</p>
           </div>
         ) : null}
 
@@ -474,6 +543,7 @@ export function ProductOptionsPanel({
               option={selectedOption}
               isSelected
               onSelect={() => onSelectProduct(selectedOption.id)}
+              projectCurrency={projectCurrency}
               budgetImpact={budgetImpactByOptionId?.[selectedOption.id]}
             />
           </div>
@@ -583,6 +653,7 @@ export function ProductOptionsPanel({
                   option={option}
                   isSelected={roomObject.selectedProductId === option.id}
                   onSelect={() => handleSelectProductOption(option.id)}
+                  projectCurrency={projectCurrency}
                   budgetImpact={budgetImpactByOptionId?.[option.id]}
                 />
               ))}
@@ -593,4 +664,3 @@ export function ProductOptionsPanel({
     </Card>
   );
 }
-

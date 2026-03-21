@@ -2,7 +2,9 @@ import {
   BudgetCategory,
   BudgetCategoryName,
   BudgetFitTone,
+  BudgetHealthStatus,
   HouseBudget,
+  ObjectBudgetFitStatus,
   ProductOptionBudgetImpact,
   Project,
   ProjectBudget,
@@ -50,6 +52,108 @@ function normalizeAllowance(value: number | null | undefined): number | null {
     return null;
   }
   return clampMoney(value);
+}
+
+export function getBudgetHealthStatus(
+  totalBudget: number | null | undefined,
+  remainingAmount: number | null | undefined
+): BudgetHealthStatus {
+  if (totalBudget === null || totalBudget === undefined || remainingAmount === null || remainingAmount === undefined) {
+    return "not_planned";
+  }
+  if (remainingAmount < 0) {
+    return "over_budget";
+  }
+  if (totalBudget <= 0) {
+    return "at_risk";
+  }
+  return remainingAmount <= totalBudget * 0.1 ? "at_risk" : "healthy";
+}
+
+export function getBudgetHealthLabel(status: BudgetHealthStatus): string {
+  switch (status) {
+    case "healthy":
+      return "Healthy";
+    case "at_risk":
+      return "At risk";
+    case "over_budget":
+      return "Over budget";
+    case "not_planned":
+      return "Not planned";
+    default:
+      return "Unknown";
+  }
+}
+
+export function getBudgetHealthVariant(status: BudgetHealthStatus): "success" | "secondary" | "danger" | "outline" {
+  switch (status) {
+    case "healthy":
+      return "success";
+    case "at_risk":
+      return "secondary";
+    case "over_budget":
+      return "danger";
+    case "not_planned":
+      return "outline";
+    default:
+      return "outline";
+  }
+}
+
+export function getObjectBudgetFitStatus(
+  candidateTotal: number,
+  objectBudget: number | null | undefined
+): ObjectBudgetFitStatus {
+  if (objectBudget === null || objectBudget === undefined) {
+    return "no_object_budget";
+  }
+  const delta = clampMoney(candidateTotal) - objectBudget;
+  if (delta < 0) {
+    return "under_object_budget";
+  }
+  if (delta > 0) {
+    return "over_object_budget";
+  }
+  return "on_object_budget";
+}
+
+export function getObjectBudgetFitLabel(status: ObjectBudgetFitStatus): string {
+  switch (status) {
+    case "no_object_budget":
+      return "No object budget";
+    case "under_object_budget":
+      return "Under object budget";
+    case "on_object_budget":
+      return "On object budget";
+    case "over_object_budget":
+      return "Over object budget";
+    default:
+      return "Unknown";
+  }
+}
+
+export function getObjectBudgetFitVariant(
+  status: ObjectBudgetFitStatus
+): "success" | "secondary" | "danger" | "outline" {
+  switch (status) {
+    case "under_object_budget":
+      return "success";
+    case "on_object_budget":
+      return "outline";
+    case "over_object_budget":
+      return "danger";
+    case "no_object_budget":
+      return "outline";
+    default:
+      return "outline";
+  }
+}
+
+function isPlanKept(totalBudget: number | null | undefined, remainingAmount: number | null | undefined): boolean {
+  if (totalBudget === null || totalBudget === undefined || remainingAmount === null || remainingAmount === undefined) {
+    return true;
+  }
+  return remainingAmount >= 0;
 }
 
 function resolveRoomAreaSqm(roomSizeSqm: number | undefined, houseSizeSqm: number | undefined, roomCount: number): number | undefined {
@@ -277,40 +381,44 @@ function resolveBudgetFit(params: {
   };
 }
 
-function resolveAllowanceStatus(candidateTotal: number, objectAllowance: number | null): {
-  allowanceDelta: number | null;
-  allowanceLabel: string | null;
-  allowanceTone: BudgetFitTone | null;
+function resolveObjectBudgetInfo(candidateTotal: number, objectBudget: number | null): {
+  objectBudgetDelta: number | null;
+  objectBudgetLabel: string | null;
+  objectBudgetTone: BudgetFitTone | null;
+  objectBudgetStatus: ObjectBudgetFitStatus;
 } {
-  if (objectAllowance === null) {
-    return {
-      allowanceDelta: null,
-      allowanceLabel: null,
-      allowanceTone: null,
-    };
+  const objectBudgetStatus = getObjectBudgetFitStatus(candidateTotal, objectBudget);
+  switch (objectBudgetStatus) {
+    case "no_object_budget":
+      return {
+        objectBudgetDelta: null,
+        objectBudgetLabel: null,
+        objectBudgetTone: null,
+        objectBudgetStatus,
+      };
+    case "under_object_budget":
+      return {
+        objectBudgetDelta: clampMoney(candidateTotal) - (objectBudget ?? 0),
+        objectBudgetLabel: getObjectBudgetFitLabel(objectBudgetStatus),
+        objectBudgetTone: "good",
+        objectBudgetStatus,
+      };
+    case "over_object_budget":
+      return {
+        objectBudgetDelta: clampMoney(candidateTotal) - (objectBudget ?? 0),
+        objectBudgetLabel: getObjectBudgetFitLabel(objectBudgetStatus),
+        objectBudgetTone: "danger",
+        objectBudgetStatus,
+      };
+    case "on_object_budget":
+    default:
+      return {
+        objectBudgetDelta: clampMoney(candidateTotal) - (objectBudget ?? 0),
+        objectBudgetLabel: getObjectBudgetFitLabel(objectBudgetStatus),
+        objectBudgetTone: "neutral",
+        objectBudgetStatus,
+      };
   }
-
-  const allowanceDelta = clampMoney(candidateTotal) - objectAllowance;
-  if (allowanceDelta < 0) {
-    return {
-      allowanceDelta,
-      allowanceLabel: "Under target",
-      allowanceTone: "good",
-    };
-  }
-  if (allowanceDelta > 0) {
-    return {
-      allowanceDelta,
-      allowanceLabel: "Over target",
-      allowanceTone: "danger",
-    };
-  }
-
-  return {
-    allowanceDelta,
-    allowanceLabel: "On target",
-    allowanceTone: "neutral",
-  };
 }
 
 export function calculateRoomObjectBudgetContributionMap(params: {
@@ -579,21 +687,32 @@ export function calculateProductOptionBudgetImpact(
     deltaAmount,
   });
 
-  const objectAllowance = normalizeAllowance(roomObject.budgetAllowance ?? null);
-  const allowanceStatus = resolveAllowanceStatus(candidateTotal, objectAllowance);
+  const objectBudget = normalizeAllowance(roomObject.budgetAllowance ?? null);
+  const objectBudgetInfo = resolveObjectBudgetInfo(candidateTotal, objectBudget);
+  const keepsProjectOnPlan = isPlanKept(nextBudget.totalBudget, nextBudget.remainingAmount);
+  const keepsHouseOnPlan = isPlanKept(nextHouseBudget?.totalBudget ?? null, nextHouseBudget?.remainingAmount ?? null);
+  const keepsRoomOnPlan = isPlanKept(nextRoomBudget?.totalBudget ?? null, nextRoomBudget?.remainingAmount ?? null);
+  const keepsCategoryOnPlan = isPlanKept(
+    nextCategoryBudget?.totalBudget ?? null,
+    nextCategoryBudget?.remainingAmount ?? null
+  );
 
   return {
     optionId,
     candidateCategory: candidateOption.budgetCategory,
     candidateTotal,
+    candidateLeadTimeDays: Math.max(0, candidateOption.leadTimeDays || 0),
+    priceMissing: candidateOption.price <= 0,
+    isCurrentSelection: roomObject.selectedProductId === optionId,
     currentSelectedTotal,
     deltaAmount,
     fitLabel: fit.fitLabel,
     fitTone: fit.fitTone,
-    objectAllowance,
-    allowanceDelta: allowanceStatus.allowanceDelta,
-    allowanceLabel: allowanceStatus.allowanceLabel,
-    allowanceTone: allowanceStatus.allowanceTone,
+    objectBudget,
+    objectBudgetDelta: objectBudgetInfo.objectBudgetDelta,
+    objectBudgetLabel: objectBudgetInfo.objectBudgetLabel,
+    objectBudgetTone: objectBudgetInfo.objectBudgetTone,
+    objectBudgetStatus: objectBudgetInfo.objectBudgetStatus,
     currentProjectRemaining: currentBudget.remainingAmount,
     nextProjectRemaining: nextBudget.remainingAmount,
     currentHouseRemaining: currentHouseBudget?.remainingAmount ?? null,
@@ -602,7 +721,190 @@ export function calculateProductOptionBudgetImpact(
     nextRoomRemaining: nextRoomBudget?.remainingAmount ?? null,
     currentCategoryRemaining: currentCategoryBudget?.remainingAmount ?? 0,
     nextCategoryRemaining: nextCategoryBudget?.remainingAmount ?? 0,
+    keepsProjectOnPlan,
+    keepsHouseOnPlan,
+    keepsRoomOnPlan,
+    keepsCategoryOnPlan,
+    recommendationScore: 0,
+    primaryReasonLabel: fit.fitLabel,
+    secondaryReasonLabel: objectBudgetInfo.objectBudgetLabel,
   };
+}
+
+function compareNullableDistance(a: number | null, b: number | null): number {
+  if (a === null && b === null) {
+    return 0;
+  }
+  if (a === null) {
+    return 1;
+  }
+  if (b === null) {
+    return -1;
+  }
+  return Math.abs(a) - Math.abs(b);
+}
+
+function getClosestObjectBudgetOptionId(impacts: ProductOptionBudgetImpact[]): string | null {
+  const candidates = impacts.filter((impact) => impact.objectBudget !== null && impact.objectBudgetDelta !== null && !impact.priceMissing);
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  candidates.sort((a, b) => compareNullableDistance(a.objectBudgetDelta, b.objectBudgetDelta));
+  return candidates[0]?.optionId ?? null;
+}
+
+function buildRecommendationScore(
+  impact: ProductOptionBudgetImpact,
+  isClosestObjectBudgetOption: boolean
+): number {
+  let score = 0;
+
+  if (impact.isCurrentSelection) {
+    score += 1000000;
+  }
+
+  const keptPlansCount =
+    Number(impact.keepsRoomOnPlan) +
+    Number(impact.keepsHouseOnPlan) +
+    Number(impact.keepsCategoryOnPlan) +
+    Number(impact.keepsProjectOnPlan);
+  score += keptPlansCount * 10000;
+
+  if (impact.keepsRoomOnPlan && impact.keepsHouseOnPlan && impact.keepsCategoryOnPlan && impact.keepsProjectOnPlan) {
+    score += 50000;
+  }
+
+  if (impact.objectBudget !== null) {
+    if (impact.objectBudgetStatus === "on_object_budget") {
+      score += 4000;
+    } else if (impact.objectBudgetStatus === "under_object_budget") {
+      score += 2500;
+    } else if (impact.objectBudgetStatus === "over_object_budget") {
+      score -= 2500;
+    }
+
+    if (isClosestObjectBudgetOption) {
+      score += 3000;
+    }
+
+    score -= Math.abs(impact.objectBudgetDelta ?? 0);
+  }
+
+  if (impact.deltaAmount < 0) {
+    score += 1000;
+  }
+  score -= Math.abs(impact.deltaAmount);
+  score -= impact.candidateLeadTimeDays * 10;
+
+  if (impact.priceMissing) {
+    score -= 250000;
+  }
+
+  return score;
+}
+
+function buildPrimaryReasonLabel(
+  impact: ProductOptionBudgetImpact,
+  isClosestObjectBudgetOption: boolean
+): string {
+  const keepsAllPlans =
+    impact.keepsRoomOnPlan &&
+    impact.keepsHouseOnPlan &&
+    impact.keepsCategoryOnPlan &&
+    impact.keepsProjectOnPlan;
+
+  if (impact.isCurrentSelection) {
+    return "Current selection";
+  }
+  if (!impact.keepsRoomOnPlan) {
+    return "Pushes room over plan";
+  }
+  if (!impact.keepsHouseOnPlan) {
+    return "Pushes house over plan";
+  }
+  if (!impact.keepsCategoryOnPlan) {
+    return "Pushes category over plan";
+  }
+  if (!impact.keepsProjectOnPlan) {
+    return "Pushes project over plan";
+  }
+  if (impact.priceMissing) {
+    return "Price missing";
+  }
+  if (keepsAllPlans && impact.objectBudget !== null && impact.objectBudgetStatus !== "over_object_budget") {
+    return "Best fit";
+  }
+  if (isClosestObjectBudgetOption && impact.objectBudget !== null) {
+    return "Closest to object budget";
+  }
+  if (impact.objectBudgetStatus === "over_object_budget") {
+    return "Over object budget";
+  }
+  if (impact.objectBudgetStatus === "under_object_budget" || impact.objectBudgetStatus === "on_object_budget") {
+    return "Within object budget";
+  }
+  return "Keeps room on plan";
+}
+
+function buildSecondaryReasonLabel(
+  impact: ProductOptionBudgetImpact,
+  isClosestObjectBudgetOption: boolean,
+  primaryReasonLabel: string
+): string | null {
+  const keepsAllPlans =
+    impact.keepsRoomOnPlan &&
+    impact.keepsHouseOnPlan &&
+    impact.keepsCategoryOnPlan &&
+    impact.keepsProjectOnPlan;
+
+  if (impact.priceMissing && primaryReasonLabel !== "Price missing") {
+    return "Price missing";
+  }
+  if (isClosestObjectBudgetOption && impact.objectBudget !== null && primaryReasonLabel !== "Closest to object budget") {
+    return "Closest to object budget";
+  }
+  if (keepsAllPlans && primaryReasonLabel !== "Best fit") {
+    return "Keeps all plans";
+  }
+  if (impact.objectBudgetLabel && impact.objectBudgetLabel !== primaryReasonLabel) {
+    return impact.objectBudgetLabel;
+  }
+  if (impact.keepsRoomOnPlan && primaryReasonLabel !== "Keeps room on plan") {
+    return "Keeps room on plan";
+  }
+  return null;
+}
+
+export function annotateProductOptionBudgetImpacts(
+  impacts: ProductOptionBudgetImpact[]
+): ProductOptionBudgetImpact[] {
+  const closestObjectBudgetOptionId = getClosestObjectBudgetOptionId(impacts);
+
+  return impacts
+    .map((impact) => {
+      const isClosestObjectBudgetOption = closestObjectBudgetOptionId === impact.optionId;
+      const recommendationScore = buildRecommendationScore(impact, isClosestObjectBudgetOption);
+      const primaryReasonLabel = buildPrimaryReasonLabel(impact, isClosestObjectBudgetOption);
+      const secondaryReasonLabel = buildSecondaryReasonLabel(
+        impact,
+        isClosestObjectBudgetOption,
+        primaryReasonLabel
+      );
+
+      return {
+        ...impact,
+        recommendationScore,
+        primaryReasonLabel,
+        secondaryReasonLabel,
+      };
+    })
+    .sort((a, b) => {
+      if (b.recommendationScore !== a.recommendationScore) {
+        return b.recommendationScore - a.recommendationScore;
+      }
+      return a.optionId.localeCompare(b.optionId);
+    });
 }
 
 export function buildCategoryBudgetMap(categories: BudgetCategory[]): Record<BudgetCategoryName, number> {
@@ -612,4 +914,7 @@ export function buildCategoryBudgetMap(categories: BudgetCategory[]): Record<Bud
     return acc;
   }, {} as Record<BudgetCategoryName, number>);
 }
+
+
+
 

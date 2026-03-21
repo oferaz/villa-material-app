@@ -13,6 +13,7 @@ interface ProjectRoomsStackProps {
   selectedObjectId: string;
   showWorkflowHints: boolean;
   selectedStages: WorkflowStage[];
+  projectCurrency: string;
   onToggleStageFilter: (stage: WorkflowStage) => void;
   onAddSuggestion: (roomId: string, objectName: string, category: string, basePrice: number, quantity?: number) => void;
   onDecreaseSuggestion: (roomId: string, objectName: string, category: string) => void;
@@ -33,6 +34,7 @@ export function ProjectRoomsStack({
   selectedObjectId,
   showWorkflowHints,
   selectedStages,
+  projectCurrency,
   onToggleStageFilter,
   onAddSuggestion,
   onDecreaseSuggestion,
@@ -69,6 +71,7 @@ export function ProjectRoomsStack({
               const missingCount = missingObjects.reduce((acc, obj) => acc + Math.max(1, obj.quantity), 0);
 
               const isRoomSelected = room.id === selectedRoomId;
+              const roomBudget = roomBudgetByRoomId.find((item) => item.roomId === room.id);
 
               return (
                 <div
@@ -86,6 +89,8 @@ export function ProjectRoomsStack({
                   <RoomHeader
                     house={house}
                     room={room}
+                    roomBudget={roomBudget}
+                    projectCurrency={projectCurrency}
                     selectedCount={selectedCount}
                     missingCount={missingCount}
                     isAssignedFilterActive={selectedStages.includes("material_assigned")}
@@ -109,7 +114,8 @@ export function ProjectRoomsStack({
                     selectedObjectId={selectedObjectId}
                     showWorkflowHints={showWorkflowHints}
                     overBudgetObjectIds={overBudgetObjectIdsByRoomId[room.id] ?? []}
-                    roomBudget={roomBudgetByRoomId.find((item) => item.roomId === room.id)}
+                    roomBudget={roomBudget}
+                    projectCurrency={projectCurrency}
                     onSelectObject={(objectId) => onSelectObject(house.id, room.id, objectId)}
                     onDeleteObject={(objectId) => onDeleteObject(room.id, objectId)}
                     onUpdateWorkflow={onUpdateWorkflow}
@@ -123,4 +129,3 @@ export function ProjectRoomsStack({
     </div>
   );
 }
-

@@ -22,11 +22,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  annotateProductOptionBudgetImpacts,
   budgetCategoryOrder,
   calculateProductOptionBudgetImpact,
   calculateProjectBudget,
   calculateRoomObjectBudgetContributionMap,
   createMockProjectBudget,
+  getBudgetHealthStatus,
+  getObjectBudgetFitStatus,
   resolveBudgetCategory,
 } from "@/lib/mock/budget";
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
@@ -755,6 +758,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         name: "",
         customer: "",
         location: "",
+        currency: "USD",
         houses: [],
       });
     }
@@ -965,8 +969,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     const currentCategoryBudget = currentSelectedOption
       ? calculatedProjectBudget.categories.find((item) => item.name === currentSelectedOption.budgetCategory)
       : undefined;
+    const currentHouseBudget = calculatedProjectBudget.houses.find((item) => item.houseId === context.house.id);
+    const currentRoomBudget = calculatedProjectBudget.rooms.find((item) => item.roomId === context.room.id);
 
-    const objectAllowance =
+    const objectBudget =
       typeof context.objectItem.budgetAllowance === "number" &&
       Number.isFinite(context.objectItem.budgetAllowance) &&
       context.objectItem.budgetAllowance > 0
@@ -976,19 +982,34 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
     const nextSummary: ProductSelectionBudgetSummary = {
       quantity: normalizedQuantity,
-      objectAllowance,
+      objectBudget,
       currentSelectedTotal,
-      currentAllowanceDelta: objectAllowance === null ? null : currentSelectedTotal - objectAllowance,
+      currentObjectBudgetDelta: objectBudget === null ? null : currentSelectedTotal - objectBudget,
+      objectBudgetStatus: getObjectBudgetFitStatus(currentSelectedTotal, objectBudget),
       currentProjectRemaining: calculatedProjectBudget.remainingAmount,
-      currentHouseRemaining:
-        calculatedProjectBudget.houses.find((item) => item.houseId === context.house.id)?.remainingAmount ?? null,
-      currentRoomRemaining:
-        calculatedProjectBudget.rooms.find((item) => item.roomId === context.room.id)?.remainingAmount ?? null,
+      currentHouseRemaining: currentHouseBudget?.remainingAmount ?? null,
+      currentRoomRemaining: currentRoomBudget?.remainingAmount ?? null,
       currentCategoryName: currentSelectedOption?.budgetCategory ?? null,
       currentCategoryRemaining: currentCategoryBudget?.remainingAmount ?? null,
+      currentProjectHealth: getBudgetHealthStatus(
+        calculatedProjectBudget.totalBudget,
+        calculatedProjectBudget.remainingAmount
+      ),
+      currentHouseHealth: getBudgetHealthStatus(
+        currentHouseBudget?.totalBudget ?? null,
+        currentHouseBudget?.remainingAmount ?? null
+      ),
+      currentRoomHealth: getBudgetHealthStatus(
+        currentRoomBudget?.totalBudget ?? null,
+        currentRoomBudget?.remainingAmount ?? null
+      ),
+      currentCategoryHealth: getBudgetHealthStatus(
+        currentCategoryBudget?.totalBudget ?? null,
+        currentCategoryBudget?.remainingAmount ?? null
+      ),
     };
 
-    const nextImpactMap = context.objectItem.productOptions.reduce<Record<string, ProductOptionBudgetImpact>>((acc, option) => {
+    const rawImpacts = context.objectItem.productOptions.reduce<ProductOptionBudgetImpact[]>((acc, option) => {
       const impact = calculateProductOptionBudgetImpact(
         baseProjectBudget,
         calculatedProjectBudget,
@@ -997,8 +1018,14 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         option.id
       );
       if (impact) {
-        acc[option.id] = impact;
+        acc.push(impact);
       }
+      return acc;
+    }, []);
+
+    const annotatedImpacts = annotateProductOptionBudgetImpacts(rawImpacts);
+    const nextImpactMap = annotatedImpacts.reduce<Record<string, ProductOptionBudgetImpact>>((acc, impact) => {
+      acc[impact.optionId] = impact;
       return acc;
     }, {});
 
@@ -2057,7 +2084,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
           ...objectItem,
           budgetAllowance: previousBudgetAllowance,
         }));
-        window.alert(error instanceof Error ? error.message : "Failed to save object allowance.");
+        window.alert(error instanceof Error ? error.message : "Failed to save object budget.");
       });
     }
   }
@@ -2580,6 +2607,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         selectedObjectId={visibleSelectedObject?.id ?? ""}
         showWorkflowHints={preferences.showWorkflowHints}
         selectedStages={workflowStageFilters}
+        projectCurrency={project.currency}
         onToggleStageFilter={handleToggleWorkflowStageFilter}
         onAddSuggestion={(roomId, objectName, category, basePrice, quantity = 1) =>
           handleAddObject(roomId, objectName, category, basePrice, quantity)
@@ -2658,6 +2686,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     activeTab === "rooms" ? (
       <ProductOptionsPanel
         roomObject={visibleSelectedObject}
+        projectCurrency={project.currency}
         globalSearchQuery={searchQuery}
         budgetSelectionSummary={budgetSelectionSummary}
         budgetImpactByOptionId={budgetImpactByOptionId}
@@ -2738,4 +2767,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} activeWorkspaceTab={activeTab} />;
 }
+
+
+
+
+
 

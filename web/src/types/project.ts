@@ -64,6 +64,7 @@ export interface Project {
   name: string;
   customer: string;
   location: string;
+  currency: string;
   houses: House[];
 }
 
@@ -127,3 +128,4 @@ export function getWorkflowStageStep(stage: WorkflowStage): number {
       return 0;
   }
 }
+

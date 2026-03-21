@@ -1,3 +1,4 @@
+import { normalizeCurrencyCode } from "@/lib/currency";
 import { budgetCategoryOrder, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { BudgetCategoryName, House, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
@@ -7,6 +8,7 @@ interface ProjectRow {
   name: string;
   client_name: string | null;
   location: string | null;
+  currency: string | null;
 }
 
 interface HouseRow {
@@ -403,7 +405,7 @@ export async function saveProjectBudgetByProjectId(
     {
       project_id: projectId,
       total_budget: normalizedTotalBudget,
-      currency: "USD",
+      currency: normalizeCurrencyCode(project.currency),
     },
     { onConflict: "project_id" }
   );
@@ -490,7 +492,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
 
     const { data: projectRows, error: projectError } = await supabase
       .from("projects")
-      .select("id,name,client_name,location")
+      .select("id,name,client_name,location,currency")
       .order("created_at", { ascending: true });
 
     if (projectError) {
@@ -687,6 +689,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
         name: project.name,
         customer: project.client_name ?? "Unknown client",
         location: project.location ?? "Unknown location",
+        currency: normalizeCurrencyCode(project.currency),
         houses: mappedHouses,
       };
     });
@@ -1461,7 +1464,7 @@ export async function updateRoomObjectBudgetAllowanceById(
 
   if (error) {
     if (hasMissingBudgetAllowanceColumnError(error.code, error.message)) {
-      throw new Error("Room object allowance column is missing in DB. Apply latest migrations and retry.");
+      throw new Error("Room object budget column is missing in DB. Apply latest migrations and retry.");
     }
     throw new Error(error.message);
   }
@@ -1482,4 +1485,6 @@ export async function deleteRoomObjectById(roomObjectId: string): Promise<void> 
     throw new Error(error.message);
   }
 }
+
+
 

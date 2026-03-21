@@ -45,18 +45,30 @@ export interface ProjectBudget {
 
 export type BudgetFitTone = "good" | "warn" | "danger" | "neutral";
 
+export type BudgetHealthStatus = "healthy" | "at_risk" | "over_budget" | "not_planned";
+
+export type ObjectBudgetFitStatus =
+  | "no_object_budget"
+  | "under_object_budget"
+  | "on_object_budget"
+  | "over_object_budget";
+
 export interface ProductOptionBudgetImpact {
   optionId: string;
   candidateCategory: BudgetCategoryName;
   candidateTotal: number;
+  candidateLeadTimeDays: number;
+  priceMissing: boolean;
+  isCurrentSelection: boolean;
   currentSelectedTotal: number;
   deltaAmount: number;
   fitLabel: string;
   fitTone: BudgetFitTone;
-  objectAllowance: number | null;
-  allowanceDelta: number | null;
-  allowanceLabel: string | null;
-  allowanceTone: BudgetFitTone | null;
+  objectBudget: number | null;
+  objectBudgetDelta: number | null;
+  objectBudgetLabel: string | null;
+  objectBudgetTone: BudgetFitTone | null;
+  objectBudgetStatus: ObjectBudgetFitStatus;
   currentProjectRemaining: number;
   nextProjectRemaining: number;
   currentHouseRemaining: number | null;
@@ -65,16 +77,29 @@ export interface ProductOptionBudgetImpact {
   nextRoomRemaining: number | null;
   currentCategoryRemaining: number;
   nextCategoryRemaining: number;
+  keepsProjectOnPlan: boolean;
+  keepsHouseOnPlan: boolean;
+  keepsRoomOnPlan: boolean;
+  keepsCategoryOnPlan: boolean;
+  recommendationScore: number;
+  primaryReasonLabel: string;
+  secondaryReasonLabel: string | null;
 }
 
 export interface ProductSelectionBudgetSummary {
   quantity: number;
-  objectAllowance: number | null;
+  objectBudget: number | null;
   currentSelectedTotal: number;
-  currentAllowanceDelta: number | null;
+  currentObjectBudgetDelta: number | null;
+  objectBudgetStatus: ObjectBudgetFitStatus;
   currentProjectRemaining: number;
   currentHouseRemaining: number | null;
   currentRoomRemaining: number | null;
   currentCategoryName: BudgetCategoryName | null;
   currentCategoryRemaining: number | null;
+  currentProjectHealth: BudgetHealthStatus;
+  currentHouseHealth: BudgetHealthStatus;
+  currentRoomHealth: BudgetHealthStatus;
+  currentCategoryHealth: BudgetHealthStatus;
 }
+
