@@ -19,6 +19,7 @@ interface ProjectRoomsStackProps {
   onDecreaseSuggestion: (roomId: string, objectName: string, category: string) => void;
   onSelectObject: (houseId: string, roomId: string, objectId: string) => void;
   onDeleteObject: (roomId: string, objectId: string) => void;
+  onUpdateBudgetAllowance: (objectId: string, budgetAllowance: number | null) => void;
   onUpdateWorkflow: (
     objectId: string,
     patch: { poApproved?: boolean; ordered?: boolean; installed?: boolean }
@@ -40,6 +41,7 @@ export function ProjectRoomsStack({
   onDecreaseSuggestion,
   onSelectObject,
   onDeleteObject,
+  onUpdateBudgetAllowance,
   onUpdateWorkflow,
   overBudgetObjectIdsByRoomId,
   roomBudgetByRoomId,
@@ -118,6 +120,7 @@ export function ProjectRoomsStack({
                     projectCurrency={projectCurrency}
                     onSelectObject={(objectId) => onSelectObject(house.id, room.id, objectId)}
                     onDeleteObject={(objectId) => onDeleteObject(room.id, objectId)}
+                    onUpdateBudgetAllowance={onUpdateBudgetAllowance}
                     onUpdateWorkflow={onUpdateWorkflow}
                   />
                 </div>
@@ -129,3 +132,5 @@ export function ProjectRoomsStack({
     </div>
   );
 }
+
+

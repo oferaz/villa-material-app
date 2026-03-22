@@ -2615,6 +2615,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onDecreaseSuggestion={handleDecreaseSuggestedObject}
         onSelectObject={handleSelectObject}
         onDeleteObject={handleDeleteObject}
+        onUpdateBudgetAllowance={handleUpdateBudgetAllowance}
         onUpdateWorkflow={handleUpdateObjectWorkflow}
         overBudgetObjectIdsByRoomId={overBudgetObjectIdsByRoomId}
         roomBudgetByRoomId={calculatedProjectBudget.rooms}
@@ -2767,6 +2768,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} activeWorkspaceTab={activeTab} />;
 }
+
+
 
 
 
