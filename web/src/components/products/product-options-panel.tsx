@@ -4,7 +4,14 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Link as LinkIcon } from "lucide-react";
 import { ProductOptionBudgetImpact, ProductSelectionBudgetSummary, RoomObject, getObjectStatus } from "@/types";
 import { formatCurrencyAmount } from "@/lib/currency";
-import { getBudgetHealthLabel, getBudgetHealthVariant, getObjectBudgetFitLabel, getObjectBudgetFitVariant } from "@/lib/mock/budget";
+import {
+  getBudgetHealthLabel,
+  getBudgetHealthVariant,
+  getObjectBudgetFitLabel,
+  getObjectBudgetFitVariant,
+  resolveBudgetCategory,
+} from "@/lib/mock/budget";
+import { parseMaterialTagsInput } from "@/lib/material-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +24,7 @@ interface AddFromLinkPayload {
   supplier?: string;
   price?: number;
   imageUrl?: string;
+  tags?: string[];
 }
 
 interface LinkPreviewResult {
@@ -35,7 +43,7 @@ type BudgetFilter = "recommended" | "object_budget" | "room_plan" | "all";
 interface ProductOptionsPanelProps {
   roomObject: RoomObject | undefined;
   projectCurrency: string;
-  globalSearchQuery: string;
+  materialLibraryVersion: number;
   budgetSelectionSummary?: ProductSelectionBudgetSummary;
   budgetImpactByOptionId?: Record<string, ProductOptionBudgetImpact>;
   onSelectProduct: (productId: string) => void;
@@ -115,7 +123,7 @@ function matchesBudgetFilter(
 export function ProductOptionsPanel({
   roomObject,
   projectCurrency,
-  globalSearchQuery,
+  materialLibraryVersion,
   budgetSelectionSummary,
   budgetImpactByOptionId,
   onSelectProduct,
@@ -129,6 +137,7 @@ export function ProductOptionsPanel({
   const [linkSupplier, setLinkSupplier] = useState("");
   const [linkPrice, setLinkPrice] = useState("");
   const [linkImageUrl, setLinkImageUrl] = useState("");
+  const [linkTagsInput, setLinkTagsInput] = useState("");
   const [linkError, setLinkError] = useState("");
   const [isFetchingLinkPreview, setIsFetchingLinkPreview] = useState(false);
   const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
@@ -150,10 +159,9 @@ export function ProductOptionsPanel({
     setShowSearchTools(!hasSelectedMaterial);
     setBudgetFilter("recommended");
 
-    const defaultQuery = roomObject.name;
+    const defaultQuery = roomObject.materialSearchQuery?.trim() || roomObject.name;
     setCatalogQuery(defaultQuery);
     if (!hasSelectedMaterial) {
-      onSearchCatalog(roomObject.id, defaultQuery);
       window.requestAnimationFrame(() => {
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
@@ -164,10 +172,26 @@ export function ProductOptionsPanel({
     setLinkSupplier("");
     setLinkPrice("");
     setLinkImageUrl("");
+    setLinkTagsInput("");
     setLinkError("");
     setIsFetchingLinkPreview(false);
     setLinkPreviewMessage("");
   }, [roomObject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!roomObject || !showSearchTools) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const nextQuery = catalogQuery.trim() || roomObject.name;
+      onSearchCatalog(roomObject.id, nextQuery);
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [catalogQuery, materialLibraryVersion, roomObject?.id, roomObject?.name, showSearchTools]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const nextAllowance =
@@ -206,22 +230,38 @@ export function ProductOptionsPanel({
   }, [budgetImpactByOptionId, roomObject]);
 
   const visibleOptions = useMemo(() => {
-    const q = (globalSearchQuery ?? "").trim().toLowerCase();
-    return rankedOptions.filter((option) => {
-      const matchesSearch =
-        !q || option.name.toLowerCase().includes(q) || option.supplier.toLowerCase().includes(q);
-      if (!matchesSearch) {
-        return false;
-      }
-      return matchesBudgetFilter(budgetFilter, budgetImpactByOptionId?.[option.id], budgetSelectionSummary);
-    });
-  }, [budgetFilter, budgetImpactByOptionId, budgetSelectionSummary, globalSearchQuery, rankedOptions]);
+    return rankedOptions.filter((option) =>
+      matchesBudgetFilter(budgetFilter, budgetImpactByOptionId?.[option.id], budgetSelectionSummary)
+    );
+  }, [budgetFilter, budgetImpactByOptionId, budgetSelectionSummary, rankedOptions]);
 
   const selectedOption = useMemo(() => {
     if (!roomObject?.selectedProductId) {
       return undefined;
     }
     return roomObject.productOptions.find((option) => option.id === roomObject.selectedProductId);
+  }, [roomObject]);
+
+  const suggestionChips = useMemo(() => {
+    if (!roomObject) {
+      return [];
+    }
+
+    const budgetCategory = resolveBudgetCategory(roomObject.name, roomObject.category);
+    switch (budgetCategory) {
+      case "Lighting":
+        return ["brushed brass", "matte black", "warm light", "wall light"];
+      case "Tiles":
+        return ["travertine", "matte porcelain", "mosaic", "outdoor"];
+      case "Bathroom":
+        return ["wall mirror", "brushed nickel", "stone", "floating vanity"];
+      case "Kitchen":
+        return ["quartz", "stainless steel", "oak veneer", "matte white"];
+      case "Decor":
+        return ["textured", "handmade", "woven", "minimal"];
+      default:
+        return ["white oak", "walnut", "linen", "performance fabric"];
+    }
   }, [roomObject]);
 
   if (!roomObject) {
@@ -399,6 +439,7 @@ export function ProductOptionsPanel({
       supplier: linkSupplier.trim() || undefined,
       price: parsedPrice,
       imageUrl: trimmedImageUrl || undefined,
+      tags: parseMaterialTagsInput(linkTagsInput),
     });
 
     setLinkUrl("");
@@ -406,6 +447,7 @@ export function ProductOptionsPanel({
     setLinkSupplier("");
     setLinkPrice("");
     setLinkImageUrl("");
+    setLinkTagsInput("");
     setLinkError("");
     setLinkPreviewMessage("");
   }
@@ -569,6 +611,23 @@ export function ProductOptionsPanel({
               Search Library
             </Button>
           </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {suggestionChips.map((chip) => {
+              const nextQuery = `${roomObject.name} ${chip}`.trim();
+              return (
+                <Button
+                  key={chip}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-[11px]"
+                  onClick={() => setCatalogQuery(nextQuery)}
+                >
+                  {chip}
+                </Button>
+              );
+            })}
+          </div>
         </form>
 
         <form
@@ -627,6 +686,11 @@ export function ProductOptionsPanel({
                 onChange={(event) => setLinkImageUrl(event.target.value)}
                 placeholder="Image URL (auto-filled, optional override)"
               />
+              <Input
+                value={linkTagsInput}
+                onChange={(event) => setLinkTagsInput(event.target.value)}
+                placeholder="Optional tags, e.g. material:oak, finish:matte, room:bathroom"
+              />
             </>
           ) : (
             <p className="text-xs text-slate-500">Optional fields will appear after you paste a link.</p>
@@ -641,8 +705,8 @@ export function ProductOptionsPanel({
         {showSearchTools ? (
           visibleOptions.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-              {(globalSearchQuery ?? "").trim()
-                ? `No options match "${globalSearchQuery}".`
+              {catalogQuery.trim()
+                ? `No options match "${catalogQuery.trim()}" yet. Try changing the search words or add from link.`
                 : "No options found for this query yet. Try changing search words or add from link."}
             </div>
           ) : (

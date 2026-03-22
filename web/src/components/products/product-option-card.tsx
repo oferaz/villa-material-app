@@ -65,6 +65,15 @@ export function ProductOptionCard({ option, isSelected, onSelect, projectCurrenc
           </div>
         </div>
         <p className="text-xs text-slate-500">{option.supplier}</p>
+        {option.searchMatchLabels?.length ? (
+          <div className="flex flex-wrap gap-1">
+            {option.searchMatchLabels.map((label) => (
+              <Badge key={label} variant="outline" className="text-[10px]">
+                {label}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
         <p className="text-xs text-slate-500">
           {option.price > 0 ? `${formatCurrencyAmount(option.price, projectCurrency)} per unit` : "Price on request"} - {" "}
           {option.leadTimeDays > 0 ? `${option.leadTimeDays} days lead time` : "Lead time pending"}

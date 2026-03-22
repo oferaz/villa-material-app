@@ -1,4 +1,8 @@
 import { resolveBudgetCategory } from "@/lib/mock/budget";
+import {
+  normalizeMaterialTags,
+  rankMaterialsForObject,
+} from "@/lib/material-search";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { ProductOption } from "@/types";
 
@@ -6,12 +10,14 @@ interface MaterialRow {
   id: string;
   name: string;
   supplier_name: string | null;
+  description: string | null;
   price: number | null;
   lead_time_days: number | null;
   budget_category: string;
   sku: string | null;
   source_type: string;
   source_url: string | null;
+  tags?: string[] | null;
   updated_at?: string | null;
 }
 
@@ -37,6 +43,7 @@ interface AddLinkMaterialInput {
   supplier?: string;
   price?: number;
   imageUrl?: string;
+  tags?: string[];
 }
 
 export interface UserMaterial extends ProductOption {
@@ -51,6 +58,13 @@ const budgetCategorySet = new Set([
   "Kitchen",
   "Decor",
 ]);
+
+function hasMissingMaterialTagsColumnError(code?: string, message?: string): boolean {
+  if (code === "42703" || code === "PGRST204") {
+    return true;
+  }
+  return (message ?? "").toLowerCase().includes("tags");
+}
 
 function normalizeBudgetCategory(
   storedCategory: string | null | undefined,
@@ -68,11 +82,12 @@ function toProductOption(
   objectName: string,
   objectCategory?: string,
   imageUrl?: string
-): ProductOption {
+): UserMaterial {
   return {
     id: row.id,
     name: row.name,
     supplier: row.supplier_name ?? "Private Material",
+    description: row.description ?? undefined,
     price: Math.max(0, Math.round(row.price ?? 0)),
     leadTimeDays: Math.max(0, Math.round(row.lead_time_days ?? 0)),
     budgetCategory: normalizeBudgetCategory(row.budget_category, objectName, objectCategory),
@@ -80,14 +95,13 @@ function toProductOption(
     sourceType: row.source_type === "link" ? "link" : "catalog",
     sourceUrl: row.source_url ?? undefined,
     imageUrl,
+    tags: normalizeMaterialTags(row.tags ?? []),
+    updatedAt: row.updated_at ?? undefined,
   };
 }
 
 function toUserMaterial(row: MaterialRow, imageUrl?: string): UserMaterial {
-  return {
-    ...toProductOption(row, row.name, row.name, imageUrl),
-    updatedAt: row.updated_at ?? undefined,
-  };
+  return toProductOption(row, row.name, row.name, imageUrl);
 }
 
 function deriveSupplierFromUrl(url: string): string {
@@ -103,9 +117,9 @@ function deriveSupplierFromUrl(url: string): string {
   }
 }
 
-function getSafeQueryPattern(query: string): string {
-  const sanitized = query.trim().replace(/[,%]/g, " ").replace(/\s+/g, " ");
-  return `%${sanitized}%`;
+function materialSelect(withTags: boolean): string {
+  const base = "id,name,supplier_name,description,price,lead_time_days,budget_category,sku,source_type,source_url,updated_at";
+  return withTags ? `${base},tags` : base;
 }
 
 async function loadPrimaryImageMap(materialIds: string[]): Promise<Record<string, string>> {
@@ -131,6 +145,47 @@ async function loadPrimaryImageMap(materialIds: string[]): Promise<Record<string
     }
   }
   return imageMap;
+}
+
+async function listVisibleMaterialRows(limit: number | null = null): Promise<MaterialRow[]> {
+  const pageSize = typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? Math.min(limit, 250) : 250;
+  let from = 0;
+  const rows: MaterialRow[] = [];
+  let includeTags = true;
+
+  while (true) {
+    const to = from + pageSize - 1;
+    const request = supabase
+      .from("materials")
+      .select(materialSelect(includeTags))
+      .order("updated_at", { ascending: false })
+      .range(from, to);
+    const { data, error } = await request;
+
+    if (error) {
+      if (includeTags && hasMissingMaterialTagsColumnError(error.code, error.message)) {
+        includeTags = false;
+        from = 0;
+        rows.length = 0;
+        continue;
+      }
+      throw new Error(error.message);
+    }
+
+    const batch = (data ?? []) as unknown as MaterialRow[];
+    rows.push(...batch);
+
+    if (batch.length < pageSize) {
+      break;
+    }
+    if (limit !== null && rows.length >= limit) {
+      break;
+    }
+
+    from += pageSize;
+  }
+
+  return limit !== null ? rows.slice(0, limit) : rows;
 }
 
 async function ensureMaterialImage(materialId: string, imageUrl: string): Promise<void> {
@@ -187,51 +242,26 @@ export async function searchMaterialsForCurrentUser({
   objectCategory,
   query,
   limit = 30,
-}: SearchMaterialsInput): Promise<ProductOption[]> {
+}: SearchMaterialsInput): Promise<UserMaterial[]> {
   if (!isSupabaseConfigured) {
     return [];
   }
 
-  let request = supabase
-    .from("materials")
-    .select("id,name,supplier_name,price,lead_time_days,budget_category,sku,source_type,source_url")
-    .order("updated_at", { ascending: false })
-    .limit(limit);
-
-  const trimmedQuery = query.trim();
-  if (trimmedQuery) {
-    const pattern = getSafeQueryPattern(trimmedQuery);
-    request = request.or(
-      `name.ilike.${pattern},description.ilike.${pattern},supplier_name.ilike.${pattern},sku.ilike.${pattern}`
-    );
-  }
-
-  const { data, error } = await request;
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const rows = (data ?? []) as MaterialRow[];
-  const imageMap = await loadPrimaryImageMap(rows.map((row) => row.id));
-  return rows.map((row) => toProductOption(row, objectName, objectCategory, imageMap[row.id]));
+  const allMaterials = await listMaterialsForCurrentUser();
+  return rankMaterialsForObject(allMaterials, {
+    query,
+    objectName,
+    objectCategory,
+    limit,
+  });
 }
 
-export async function listMaterialsForCurrentUser(limit = 200): Promise<UserMaterial[]> {
+export async function listMaterialsForCurrentUser(limit: number | null = null): Promise<UserMaterial[]> {
   if (!isSupabaseConfigured) {
     return [];
   }
 
-  const { data, error } = await supabase
-    .from("materials")
-    .select("id,name,supplier_name,price,lead_time_days,budget_category,sku,source_type,source_url,updated_at")
-    .order("updated_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const rows = (data ?? []) as MaterialRow[];
+  const rows = await listVisibleMaterialRows(limit);
   const imageMap = await loadPrimaryImageMap(rows.map((row) => row.id));
   return rows.map((row) => toUserMaterial(row, imageMap[row.id]));
 }
@@ -260,7 +290,8 @@ export async function addLinkMaterialForCurrentUser({
   supplier,
   price,
   imageUrl,
-}: AddLinkMaterialInput): Promise<ProductOption> {
+  tags,
+}: AddLinkMaterialInput): Promise<UserMaterial> {
   if (!isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
   }
@@ -293,16 +324,40 @@ export async function addLinkMaterialForCurrentUser({
   const normalizedPrice =
     typeof price === "number" && Number.isFinite(price) && price > 0 ? Math.round(price) : null;
   const normalizedImageUrl = imageUrl?.trim() || "";
+  const normalizedTags = normalizeMaterialTags(tags ?? []);
 
-  const { data: existingRows, error: existingError } = await supabase
+  const existingRequest = supabase
     .from("materials")
-    .select("id,name,supplier_name,price,lead_time_days,budget_category,sku,source_type,source_url")
+    .select(materialSelect(true))
     .eq("owner_user_id", user.id)
     .eq("source_url", parsedUrl.toString())
     .limit(1);
+  let existingRows: MaterialRow[] | null = null;
+  let existingError: Error | null = null;
+
+  const existingResult = await existingRequest;
+  if (existingResult.error) {
+    if (hasMissingMaterialTagsColumnError(existingResult.error.code, existingResult.error.message)) {
+      const fallbackResult = await supabase
+        .from("materials")
+        .select(materialSelect(false))
+        .eq("owner_user_id", user.id)
+        .eq("source_url", parsedUrl.toString())
+        .limit(1);
+      if (fallbackResult.error) {
+        existingError = new Error(fallbackResult.error.message);
+      } else {
+        existingRows = (fallbackResult.data ?? []) as unknown as MaterialRow[];
+      }
+    } else {
+      existingError = new Error(existingResult.error.message);
+    }
+  } else {
+    existingRows = (existingResult.data ?? []) as unknown as MaterialRow[];
+  }
 
   if (existingError) {
-    throw new Error(existingError.message);
+    throw existingError;
   }
 
   const existingRow = (existingRows ?? [])[0] as MaterialRow | undefined;
@@ -310,8 +365,20 @@ export async function addLinkMaterialForCurrentUser({
     if (normalizedImageUrl) {
       await ensureMaterialImage(existingRow.id, normalizedImageUrl);
     }
+    if (normalizedTags.length > 0) {
+      const mergedTags = normalizeMaterialTags([...(existingRow.tags ?? []), ...normalizedTags]);
+      const { error: updateError } = await supabase
+        .from("materials")
+        .update({ tags: mergedTags })
+        .eq("id", existingRow.id);
+      if (!updateError || hasMissingMaterialTagsColumnError(updateError.code, updateError.message)) {
+        existingRow.tags = mergedTags;
+      } else {
+        throw new Error(updateError.message);
+      }
+    }
     const imageMap = await loadPrimaryImageMap([existingRow.id]);
-    return toProductOption(existingRow, objectName, objectCategory, imageMap[existingRow.id]);
+    return toUserMaterial(existingRow, imageMap[existingRow.id]);
   }
 
   const payload = {
@@ -327,22 +394,37 @@ export async function addLinkMaterialForCurrentUser({
     source_type: "link",
     source_url: parsedUrl.toString(),
     is_private: true,
+    tags: normalizedTags,
   };
 
-  const { data, error } = await supabase
+  let data: MaterialRow | null = null;
+  const insertResult = await supabase
     .from("materials")
     .insert(payload)
-    .select("id,name,supplier_name,price,lead_time_days,budget_category,sku,source_type,source_url")
+    .select(materialSelect(true))
     .single();
+  let error = insertResult.error;
+  data = (insertResult.data as unknown as MaterialRow | null) ?? null;
+
+  if (error && hasMissingMaterialTagsColumnError(error.code, error.message)) {
+    const fallbackResult = await supabase
+      .from("materials")
+      .insert({ ...payload, tags: undefined })
+      .select(materialSelect(false))
+      .single();
+    error = fallbackResult.error;
+    data = (fallbackResult.data as unknown as MaterialRow | null) ?? null;
+  }
 
   if (error) {
     throw new Error(error.message);
   }
 
   const insertedRow = data as MaterialRow;
+  insertedRow.tags = normalizedTags;
   if (normalizedImageUrl) {
     await ensureMaterialImage(insertedRow.id, normalizedImageUrl);
   }
   const imageMap = await loadPrimaryImageMap([insertedRow.id]);
-  return toProductOption(insertedRow, objectName, objectCategory, imageMap[insertedRow.id]);
+  return toUserMaterial(insertedRow, imageMap[insertedRow.id]);
 }

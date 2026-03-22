@@ -81,6 +81,7 @@ interface RoomObjectRow {
   category: string;
   quantity?: number | null;
   budget_allowance?: number | null;
+  material_search_query?: string | null;
   selected_material_id: string | null;
   po_approved?: boolean | null;
   is_ordered?: boolean | null;
@@ -92,12 +93,15 @@ interface MaterialRow {
   id: string;
   name: string;
   supplier_name: string | null;
+  description?: string | null;
   price: number | null;
   lead_time_days: number | null;
   budget_category: string;
   sku: string | null;
   source_type: string;
   source_url: string | null;
+  tags?: string[] | null;
+  updated_at?: string | null;
 }
 
 interface ProjectBudgetRow {
@@ -216,6 +220,22 @@ function hasMissingBudgetAllowanceColumnError(code?: string, message?: string): 
   return normalizedMessage.includes("budget_allowance");
 }
 
+function hasMissingMaterialSearchQueryColumnError(code?: string, message?: string): boolean {
+  if (code === "42703" || code === "PGRST204") {
+    return true;
+  }
+  const normalizedMessage = (message ?? "").toLowerCase();
+  return normalizedMessage.includes("material_search_query");
+}
+
+function hasMissingMaterialTagsColumnError(code?: string, message?: string): boolean {
+  if (code === "42703" || code === "PGRST204") {
+    return true;
+  }
+  const normalizedMessage = (message ?? "").toLowerCase();
+  return normalizedMessage.includes("tags");
+}
+
 function hasMissingRpcFunctionError(code?: string, message?: string, functionName?: string): boolean {
   if (code === "PGRST202" || code === "42883") {
     return true;
@@ -256,12 +276,15 @@ function toProductOptionFromMaterial(material: MaterialRow, objectName: string, 
     id: material.id,
     name: material.name,
     supplier: material.supplier_name ?? "Private Material",
+    description: material.description ?? undefined,
     price: Math.max(0, Math.round(material.price ?? 0)),
     leadTimeDays: Math.max(0, Math.round(material.lead_time_days ?? 0)),
     budgetCategory: normalizeBudgetCategory(material.budget_category, objectName, objectCategory),
     sku: material.sku ?? undefined,
     sourceType: material.source_type === "link" ? "link" : "catalog",
     sourceUrl: material.source_url ?? undefined,
+    tags: material.tags ?? undefined,
+    updatedAt: material.updated_at ?? undefined,
   };
 }
 
@@ -297,10 +320,10 @@ export async function loadProjectBudgetsByProjectIds(projects: Project[]): Promi
       throw firstError;
     }
 
-    const projectBudgetRows = (projectBudgetResult.data ?? []) as ProjectBudgetRow[];
-    const categoryBudgetRows = (categoryBudgetResult.data ?? []) as ProjectBudgetCategoryRow[];
-    const houseBudgetRows = (houseBudgetResult.data ?? []) as ProjectHouseBudgetRow[];
-    const roomBudgetRows = (roomBudgetResult.data ?? []) as ProjectRoomBudgetRow[];
+    const projectBudgetRows = (projectBudgetResult.data ?? []) as unknown as ProjectBudgetRow[];
+    const categoryBudgetRows = (categoryBudgetResult.data ?? []) as unknown as ProjectBudgetCategoryRow[];
+    const houseBudgetRows = (houseBudgetResult.data ?? []) as unknown as ProjectHouseBudgetRow[];
+    const roomBudgetRows = (roomBudgetResult.data ?? []) as unknown as ProjectRoomBudgetRow[];
 
     return projects.reduce<Record<string, ProjectBudget>>((acc, project) => {
       const baseBudget = createMockProjectBudget(project);
@@ -503,7 +526,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
       return [];
     }
 
-    const projects = projectRows as ProjectRow[];
+    const projects = projectRows as unknown as ProjectRow[];
     const projectIds = projects.map((project) => project.id);
 
     const { data: houseRows, error: houseError } = await supabase
@@ -516,7 +539,7 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
       throw houseError;
     }
 
-    const houses = (houseRows ?? []) as HouseRow[];
+    const houses = (houseRows ?? []) as unknown as unknown as HouseRow[];
 
     const houseIds = houses.map((house) => house.id);
     const roomsQuery = supabase
@@ -530,68 +553,42 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
       throw roomError;
     }
 
-    const rooms = (roomRows ?? []) as RoomRow[];
+    const rooms = (roomRows ?? []) as unknown as unknown as RoomRow[];
 
     const roomIds = rooms.map((room) => room.id);
-    const legacyRoomObjectSelect = "id,room_id,name,category,selected_material_id,sort_order";
-    const roomObjectSelectWithQuantity = `${legacyRoomObjectSelect},quantity`;
-    const workflowRoomObjectSelect = `${roomObjectSelectWithQuantity},po_approved,is_ordered,is_installed`;
-    const allowanceRoomObjectSelect = `${workflowRoomObjectSelect},budget_allowance`;
+    const roomObjectSelectCandidates = [
+      "id,room_id,name,category,selected_material_id,sort_order,material_search_query,quantity,po_approved,is_ordered,is_installed,budget_allowance",
+      "id,room_id,name,category,selected_material_id,sort_order,material_search_query,quantity,po_approved,is_ordered,is_installed",
+      "id,room_id,name,category,selected_material_id,sort_order,material_search_query,quantity",
+      "id,room_id,name,category,selected_material_id,sort_order,material_search_query",
+      "id,room_id,name,category,selected_material_id,sort_order,quantity,po_approved,is_ordered,is_installed,budget_allowance",
+      "id,room_id,name,category,selected_material_id,sort_order,quantity,po_approved,is_ordered,is_installed",
+      "id,room_id,name,category,selected_material_id,sort_order,quantity",
+      "id,room_id,name,category,selected_material_id,sort_order",
+    ];
 
     let roomObjects: RoomObjectRow[] = [];
     if (roomIds.length > 0) {
-      const withAllowanceQuery = supabase
-        .from("room_objects")
-        .select(allowanceRoomObjectSelect)
-        .in("room_id", roomIds)
-        .order("sort_order", { ascending: true });
-      const { data: allowanceRows, error: allowanceError } = await withAllowanceQuery;
-
-      if (allowanceError && hasMissingBudgetAllowanceColumnError(allowanceError.code, allowanceError.message)) {
-        const withWorkflowQuery = supabase
+      for (const selectClause of roomObjectSelectCandidates) {
+        const { data: roomObjectRows, error: roomObjectError } = await supabase
           .from("room_objects")
-          .select(workflowRoomObjectSelect)
+          .select(selectClause)
           .in("room_id", roomIds)
           .order("sort_order", { ascending: true });
-        const { data: roomObjectRows, error: roomObjectError } = await withWorkflowQuery;
 
-        if (
-          roomObjectError &&
-          (hasMissingWorkflowColumnsError(roomObjectError.code, roomObjectError.message) ||
-            hasMissingQuantityColumnError(roomObjectError.code, roomObjectError.message))
-        ) {
-          const quantityQuery = supabase
-            .from("room_objects")
-            .select(roomObjectSelectWithQuantity)
-            .in("room_id", roomIds)
-            .order("sort_order", { ascending: true });
-          const { data: quantityRows, error: quantityError } = await quantityQuery;
-
-          if (quantityError && hasMissingQuantityColumnError(quantityError.code, quantityError.message)) {
-            const legacyQuery = supabase
-              .from("room_objects")
-              .select(legacyRoomObjectSelect)
-              .in("room_id", roomIds)
-              .order("sort_order", { ascending: true });
-            const { data: legacyRows, error: legacyError } = await legacyQuery;
-            if (legacyError) {
-              throw legacyError;
-            }
-            roomObjects = (legacyRows ?? []) as RoomObjectRow[];
-          } else if (quantityError) {
-            throw quantityError;
-          } else {
-            roomObjects = (quantityRows ?? []) as RoomObjectRow[];
-          }
-        } else if (roomObjectError) {
-          throw roomObjectError;
-        } else {
-          roomObjects = (roomObjectRows ?? []) as RoomObjectRow[];
+        if (!roomObjectError) {
+          roomObjects = (roomObjectRows ?? []) as unknown as RoomObjectRow[];
+          break;
         }
-      } else if (allowanceError) {
-        throw allowanceError;
-      } else {
-        roomObjects = (allowanceRows ?? []) as RoomObjectRow[];
+
+        const canFallback =
+          hasMissingBudgetAllowanceColumnError(roomObjectError.code, roomObjectError.message) ||
+          hasMissingWorkflowColumnsError(roomObjectError.code, roomObjectError.message) ||
+          hasMissingQuantityColumnError(roomObjectError.code, roomObjectError.message) ||
+          hasMissingMaterialSearchQueryColumnError(roomObjectError.code, roomObjectError.message);
+        if (!canFallback || selectClause === roomObjectSelectCandidates[roomObjectSelectCandidates.length - 1]) {
+          throw roomObjectError;
+        }
       }
     }
     const selectedMaterialIds = roomObjects
@@ -602,16 +599,26 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
     let selectedMaterials: MaterialRow[] = [];
 
     if (uniqueSelectedMaterialIds.length > 0) {
+      const materialSelect = "id,name,supplier_name,description,price,lead_time_days,budget_category,sku,source_type,source_url,updated_at,tags";
       const { data: materialRows, error: materialError } = await supabase
         .from("materials")
-        .select("id,name,supplier_name,price,lead_time_days,budget_category,sku,source_type,source_url")
+        .select(materialSelect)
         .in("id", uniqueSelectedMaterialIds);
 
-      if (materialError) {
+      if (materialError && hasMissingMaterialTagsColumnError(materialError.code, materialError.message)) {
+        const fallback = await supabase
+          .from("materials")
+          .select("id,name,supplier_name,description,price,lead_time_days,budget_category,sku,source_type,source_url,updated_at")
+          .in("id", uniqueSelectedMaterialIds);
+        if (fallback.error) {
+          throw fallback.error;
+        }
+        selectedMaterials = (fallback.data ?? []) as unknown as MaterialRow[];
+      } else if (materialError) {
         throw materialError;
+      } else {
+        selectedMaterials = (materialRows ?? []) as unknown as MaterialRow[];
       }
-
-      selectedMaterials = (materialRows ?? []) as MaterialRow[];
     }
 
     const selectedMaterialMap = new Map(selectedMaterials.map((material) => [material.id, material]));
@@ -657,7 +664,8 @@ export async function loadProjectsForWorkspace(): Promise<Project[]> {
                     category: roomObject.category,
                     quantity: Math.max(1, Math.round(roomObject.quantity ?? 1)),
                     budgetAllowance: normalizeBudgetAllowance(roomObject.budget_allowance) ?? null,
-                    selectedProductId: selectedOption?.id,
+                    materialSearchQuery: roomObject.material_search_query ?? undefined,
+                    selectedProductId: roomObject.selected_material_id ?? undefined,
                     poApproved: Boolean(roomObject.po_approved),
                     ordered: Boolean(roomObject.is_ordered),
                     installed: Boolean(roomObject.is_installed),
@@ -909,7 +917,7 @@ export async function listProjectSnapshotsByProjectId(projectId: string): Promis
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as ProjectSnapshotRow[]).map((row) => ({
+  return ((data ?? []) as unknown as ProjectSnapshotRow[]).map((row) => ({
     id: row.id,
     projectId: row.project_id,
     name: row.snapshot_name,
@@ -987,6 +995,7 @@ function buildRoomObjectFromSource(
   category: string;
   quantity: number;
   budget_allowance: number | null;
+  material_search_query: string | null;
   selected_material_id: string | null;
   po_approved: boolean;
   is_ordered: boolean;
@@ -1002,6 +1011,7 @@ function buildRoomObjectFromSource(
     category: sourceObject.category.trim() || "Custom",
     quantity: Math.max(1, Math.round(sourceObject.quantity || 1)),
     budget_allowance: normalizeBudgetAllowance(sourceObject.budgetAllowance) ?? null,
+    material_search_query: sourceObject.materialSearchQuery?.trim() || null,
     selected_material_id: sourceObject.selectedProductId ?? null,
     po_approved: poApproved,
     is_ordered: ordered,
@@ -1053,7 +1063,7 @@ export async function createHouseForProject({ projectId, name, sizeSqm }: Create
     throw new Error(createHouseError.message);
   }
 
-  const houseRow = createdHouseRow as HouseRow;
+  const houseRow = createdHouseRow as unknown as HouseRow;
   const roomInsertPayload = defaultRoomBlueprint.map((room, index) => ({
     house_id: houseRow.id,
     name: room.name,
@@ -1071,7 +1081,7 @@ export async function createHouseForProject({ projectId, name, sizeSqm }: Create
     throw new Error(createRoomsError.message);
   }
 
-  const mappedRooms: Room[] = ((createdRoomRows ?? []) as RoomRow[]).map((row) => ({
+  const mappedRooms: Room[] = ((createdRoomRows ?? []) as unknown as unknown as RoomRow[]).map((row) => ({
     id: row.id,
     houseId: row.house_id,
     name: row.name,
@@ -1134,7 +1144,7 @@ export async function duplicateHouseWithContents({
     throw new Error(createHouseError.message);
   }
 
-  const houseRow = createdHouseRow as HouseRow;
+  const houseRow = createdHouseRow as unknown as HouseRow;
   const sourceRooms = [...sourceHouse.rooms];
 
   const roomInsertPayload = sourceRooms.map((room, roomIndex) => ({
@@ -1154,7 +1164,7 @@ export async function duplicateHouseWithContents({
     throw new Error(createRoomsError.message);
   }
 
-  const duplicatedRooms = ((createdRoomRows ?? []) as RoomRow[]).sort(
+  const duplicatedRooms = ((createdRoomRows ?? []) as unknown as unknown as RoomRow[]).sort(
     (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
   );
 
@@ -1356,7 +1366,7 @@ export async function createRoomObjectForRoom({
     .insert(payload)
     .select("id,room_id,name,category,quantity,selected_material_id,po_approved,is_ordered,is_installed,sort_order")
     .single();
-  let data = insertWithWorkflow.data as RoomObjectRow | null;
+  let data = insertWithWorkflow.data as unknown as RoomObjectRow | null;
   let error = insertWithWorkflow.error;
 
   if (error && hasMissingWorkflowColumnsError(error.code, error.message)) {
@@ -1373,7 +1383,7 @@ export async function createRoomObjectForRoom({
       .insert(fallbackPayload)
       .select("id,room_id,name,category,quantity,selected_material_id,sort_order")
       .single();
-    data = fallback.data as RoomObjectRow | null;
+    data = fallback.data as unknown as RoomObjectRow | null;
     error = fallback.error;
   }
 
@@ -1390,7 +1400,7 @@ export async function createRoomObjectForRoom({
       .insert(legacyPayload)
       .select("id,room_id,name,category,selected_material_id,sort_order")
       .single();
-    data = legacy.data as RoomObjectRow | null;
+    data = legacy.data as unknown as RoomObjectRow | null;
     error = legacy.error;
   }
 
@@ -1406,6 +1416,7 @@ export async function createRoomObjectForRoom({
     category: row.category,
     quantity: Math.max(1, Math.round(row.quantity ?? normalizedQuantity)),
     budgetAllowance: normalizeBudgetAllowance(row.budget_allowance) ?? null,
+    materialSearchQuery: row.material_search_query ?? undefined,
     selectedProductId: row.selected_material_id ?? undefined,
     poApproved: Boolean(row.po_approved),
     ordered: Boolean(row.is_ordered),
@@ -1465,6 +1476,36 @@ export async function updateRoomObjectBudgetAllowanceById(
   if (error) {
     if (hasMissingBudgetAllowanceColumnError(error.code, error.message)) {
       throw new Error("Room object budget column is missing in DB. Apply latest migrations and retry.");
+    }
+    throw new Error(error.message);
+  }
+}
+
+export async function updateRoomObjectMaterialSearchQueryById(
+  roomObjectId: string,
+  materialSearchQuery: string
+): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedObjectId = roomObjectId.trim();
+  if (!normalizedObjectId) {
+    throw new Error("Room object ID is required.");
+  }
+
+  const normalizedQuery = materialSearchQuery.trim();
+
+  const { error } = await supabase
+    .from("room_objects")
+    .update({
+      material_search_query: normalizedQuery || null,
+    })
+    .eq("id", normalizedObjectId);
+
+  if (error) {
+    if (hasMissingMaterialSearchQueryColumnError(error.code, error.message)) {
+      throw new Error("Room object material search query column is missing in DB. Apply latest migrations and retry.");
     }
     throw new Error(error.message);
   }

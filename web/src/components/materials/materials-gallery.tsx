@@ -3,6 +3,12 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Database, Link2, RefreshCcw, Search } from "lucide-react";
+import {
+  collectTopMaterialTags,
+  formatMaterialTagLabel,
+  parseMaterialTagsInput,
+  rankMaterialsForObject,
+} from "@/lib/material-search";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import {
   addLinkMaterialForCurrentUser,
@@ -26,6 +32,8 @@ interface MaterialsGalleryProps {
   };
   pendingMaterialId?: string;
   onAssignMaterial?: (material: UserMaterial) => void;
+  onMaterialAdded?: (material: UserMaterial) => void;
+  onMaterialDeleted?: (materialId: string) => void;
 }
 
 interface LinkPreviewResult {
@@ -54,6 +62,8 @@ export function MaterialsGallery({
   focusTarget,
   pendingMaterialId,
   onAssignMaterial,
+  onMaterialAdded,
+  onMaterialDeleted,
 }: MaterialsGalleryProps) {
   const [materials, setMaterials] = useState<UserMaterial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,11 +76,13 @@ export function MaterialsGallery({
   const [linkSupplier, setLinkSupplier] = useState("");
   const [linkPrice, setLinkPrice] = useState("");
   const [linkImageUrl, setLinkImageUrl] = useState("");
+  const [linkTagsInput, setLinkTagsInput] = useState("");
   const [linkError, setLinkError] = useState("");
   const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
   const [isFetchingLinkPreview, setIsFetchingLinkPreview] = useState(false);
   const [isSavingFromLink, setIsSavingFromLink] = useState(false);
   const [gallerySearchQuery, setGallerySearchQuery] = useState("");
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
 
   async function loadMaterials(refresh = false) {
     if (!isSupabaseConfigured) {
@@ -103,20 +115,13 @@ export function MaterialsGallery({
   }, []);
 
   const filteredMaterials = useMemo(() => {
-    const query = gallerySearchQuery.trim().toLowerCase();
-    if (!query) {
-      return materials;
-    }
-    return materials.filter((item) => {
-      return (
-        item.name.toLowerCase().includes(query) ||
-        item.supplier.toLowerCase().includes(query) ||
-        item.budgetCategory.toLowerCase().includes(query) ||
-        (item.sku ?? "").toLowerCase().includes(query) ||
-        (item.sourceUrl ?? "").toLowerCase().includes(query)
-      );
+    return rankMaterialsForObject(materials, {
+      query: gallerySearchQuery,
+      activeTag: activeTagFilter,
     });
-  }, [materials, gallerySearchQuery]);
+  }, [activeTagFilter, gallerySearchQuery, materials]);
+
+  const topTags = useMemo(() => collectTopMaterialTags(materials, 10), [materials]);
 
   async function handleDelete(material: UserMaterial) {
     const confirmed = window.confirm(
@@ -130,6 +135,7 @@ export function MaterialsGallery({
     try {
       await deleteMaterialForCurrentUser(material.id);
       setMaterials((prev) => prev.filter((item) => item.id !== material.id));
+      onMaterialDeleted?.(material.id);
     } catch (deleteError) {
       window.alert(deleteError instanceof Error ? deleteError.message : "Failed to delete material.");
     } finally {
@@ -143,6 +149,7 @@ export function MaterialsGallery({
     setLinkSupplier("");
     setLinkPrice("");
     setLinkImageUrl("");
+    setLinkTagsInput("");
     setLinkError("");
     setLinkPreviewMessage("");
     setIsFetchingLinkPreview(false);
@@ -249,17 +256,19 @@ export function MaterialsGallery({
     setLinkError("");
     setIsSavingFromLink(true);
     try {
-      await addLinkMaterialForCurrentUser({
+      const savedMaterial = await addLinkMaterialForCurrentUser({
         objectName: linkName.trim() || "Link Material",
         url: trimmedUrl,
         name: linkName.trim() || undefined,
         supplier: linkSupplier.trim() || undefined,
         price: parsedPrice,
         imageUrl: trimmedImageUrl || undefined,
+        tags: parseMaterialTagsInput(linkTagsInput),
       });
+      setMaterials((prev) => [savedMaterial, ...prev.filter((item) => item.id !== savedMaterial.id)]);
+      onMaterialAdded?.(savedMaterial);
       setIsAddLinkOpen(false);
       resetLinkForm();
-      await loadMaterials(true);
     } catch (saveError) {
       setLinkError(saveError instanceof Error ? saveError.message : "Failed to save material from link.");
     } finally {
@@ -318,16 +327,32 @@ export function MaterialsGallery({
             <Input
               value={gallerySearchQuery}
               onChange={(event) => setGallerySearchQuery(event.target.value)}
-              placeholder="Filter by name, supplier, category, SKU, or source URL"
+              placeholder="Filter by name, supplier, category, tag, SKU, or source URL"
               className="h-8 bg-white text-xs"
             />
+            {topTags.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {topTags.map((tag) => (
+                  <Button
+                    key={tag}
+                    type="button"
+                    size="sm"
+                    variant={activeTagFilter === tag ? "default" : "outline"}
+                    className="h-7 px-2 text-[11px]"
+                    onClick={() => setActiveTagFilter((current) => (current === tag ? null : tag))}
+                  >
+                    {formatMaterialTagLabel(tag)}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
             <p className="text-[11px] text-slate-600">
               This search filters gallery cards only and does not change project/global search.
             </p>
           </div>
           <p className="text-[11px] text-slate-600">
             {materials.length} total materials
-            {gallerySearchQuery.trim() ? ` - ${filteredMaterials.length} matching "${gallerySearchQuery.trim()}"` : ""}
+            {gallerySearchQuery.trim() || activeTagFilter ? ` - ${filteredMaterials.length} matching current filters` : ""}
           </p>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
             {pendingMaterialId
@@ -403,6 +428,11 @@ export function MaterialsGallery({
               onChange={(event) => setLinkImageUrl(event.target.value)}
               placeholder="Image URL (optional)"
             />
+            <Input
+              value={linkTagsInput}
+              onChange={(event) => setLinkTagsInput(event.target.value)}
+              placeholder="Optional tags, e.g. material:oak, finish:matte, room:bathroom"
+            />
             {linkPreviewMessage ? <p className="text-xs text-emerald-700">{linkPreviewMessage}</p> : null}
             {linkError ? <p className="text-xs text-red-600">{linkError}</p> : null}
             <DialogFooter>
@@ -440,8 +470,8 @@ export function MaterialsGallery({
       {!isLoading && filteredMaterials.length === 0 ? (
         <Card className="border-slate-200 shadow-sm">
           <CardContent className="py-6 text-sm text-slate-600">
-            {gallerySearchQuery.trim()
-              ? "No materials match this gallery filter."
+            {gallerySearchQuery.trim() || activeTagFilter
+              ? "No materials match the current gallery filters."
               : "No materials in your DB yet. Add products from link or choose options in rooms."}
           </CardContent>
         </Card>
@@ -478,6 +508,11 @@ export function MaterialsGallery({
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {material.sourceType ? <Badge variant="outline">{material.sourceType}</Badge> : null}
+                  {material.searchMatchLabels?.map((label) => (
+                    <Badge key={label} variant="outline">
+                      {label}
+                    </Badge>
+                  ))}
                   {material.sku ? (
                     <Badge
                       variant="outline"
@@ -488,6 +523,15 @@ export function MaterialsGallery({
                     </Badge>
                   ) : null}
                 </div>
+                {material.tags?.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {material.tags.slice(0, 4).map((tag) => (
+                      <Badge key={tag} variant="outline">
+                        {formatMaterialTagLabel(tag)}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="space-y-1.5">
                   <Button
                     type="button"

@@ -46,3 +46,11 @@ def test_legacy_migration_covers_room_objects_and_cart_json():
     assert "create table if not exists public.legacy_migration_log" in sql
     assert "insert into public.project_items" in sql
     assert "insert into public.legacy_migration_log" in sql
+
+
+def test_material_tags_migration_adds_jsonb_array_column():
+    sql = _read("db/migrations/20260322_add_material_tags.sql")
+
+    assert "alter table public.materials" in sql
+    assert "add column if not exists tags jsonb not null default '[]'::jsonb" in sql
+    assert "check (jsonb_typeof(tags) = 'array')" in sql

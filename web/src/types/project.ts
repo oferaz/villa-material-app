@@ -22,6 +22,10 @@ export interface ProductOption {
   budgetCategory: BudgetCategoryName;
   sku?: string;
   imageUrl?: string;
+  description?: string;
+  tags?: string[];
+  updatedAt?: string;
+  searchMatchLabels?: string[];
   sourceType?: "catalog" | "link";
   sourceUrl?: string;
 }
@@ -35,6 +39,7 @@ export interface RoomObject {
   category: string;
   quantity: number;
   budgetAllowance?: number | null;
+  materialSearchQuery?: string;
   selectedProductId?: UUID;
   poApproved?: boolean;
   ordered?: boolean;
@@ -128,4 +133,5 @@ export function getWorkflowStageStep(stage: WorkflowStage): number {
       return 0;
   }
 }
+
 

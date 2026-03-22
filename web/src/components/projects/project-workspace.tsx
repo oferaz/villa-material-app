@@ -35,7 +35,7 @@ import {
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
 import { createMockRoomObject } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
-import { addLinkMaterialForCurrentUser, searchMaterialsForCurrentUser } from "@/lib/supabase/materials-repository";
+import { addLinkMaterialForCurrentUser, listMaterialsForCurrentUser, UserMaterial } from "@/lib/supabase/materials-repository";
 import {
   createProjectSnapshotByProjectId,
   createRoomObjectForRoom,
@@ -54,6 +54,7 @@ import {
   saveProjectBudgetByProjectId,
   restoreProjectSnapshotById,
   updateRoomObjectBudgetAllowanceById,
+  updateRoomObjectMaterialSearchQueryById,
   updateRoomObjectQuantityById,
   updateRoomObjectSelectedMaterialById,
   updateRoomObjectWorkflowById,
@@ -62,6 +63,7 @@ import {
 import { summarizeWorkflowForProject } from "@/lib/workflow/summary";
 import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { exportProjectToExcel } from "@/lib/export/project-excel";
+import { rankMaterialsForObject } from "@/lib/material-search";
 import { defaultUserPreferences, loadUserPreferences, USER_PREFERENCES_EVENT } from "@/lib/user-preferences";
 import {
   BudgetCategoryName,
@@ -513,7 +515,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [workflowStageFilters, setWorkflowStageFilters] = useState<WorkflowStage[]>([]);
   const [budgetFocusSelection, setBudgetFocusSelection] = useState<BudgetFocusSelection | null>(null);
   const [projectSnapshots, setProjectSnapshots] = useState<ProjectSnapshotSummary[]>([]);
-  const [materialSearchResults, setMaterialSearchResults] = useState<ProductOption[]>([]);
+  const [materialLibrary, setMaterialLibrary] = useState<UserMaterial[]>([]);
+  const [materialLibraryVersion, setMaterialLibraryVersion] = useState(0);
   const [pendingMaterialAssignment, setPendingMaterialAssignment] = useState<ProductOption | null>(null);
   const [pendingAssignmentSelection, setPendingAssignmentSelection] = useState<{
     houseId: string;
@@ -687,42 +690,49 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   }, [isSignedIn, project?.id]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !isSignedIn) {
-      setMaterialSearchResults([]);
-      return;
-    }
-
-    const trimmedQuery = searchQuery.trim();
-    if (trimmedQuery.length < 1) {
-      setMaterialSearchResults([]);
-      return;
-    }
-
     let isCancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      void searchMaterialsForCurrentUser({
-        objectName: "Material",
-        query: trimmedQuery,
-        limit: 24,
-      })
-        .then((options) => {
-          if (!isCancelled) {
-            setMaterialSearchResults(options);
-          }
-        })
-        .catch((error) => {
-          if (!isCancelled) {
-            console.warn("Failed to run global material search.", error);
-            setMaterialSearchResults([]);
-          }
-        });
-    }, 220);
+
+    async function loadVisibleMaterials() {
+      if (!isSupabaseConfigured || !isSignedIn) {
+        setMaterialLibrary([]);
+        setMaterialLibraryVersion((current) => current + 1);
+        return;
+      }
+
+      try {
+        const nextMaterials = await listMaterialsForCurrentUser();
+        if (!isCancelled) {
+          setMaterialLibrary(nextMaterials);
+          setMaterialLibraryVersion((current) => current + 1);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.warn("Failed to load visible materials.", error);
+          setMaterialLibrary([]);
+          setMaterialLibraryVersion((current) => current + 1);
+        }
+      }
+    }
+
+    void loadVisibleMaterials();
 
     return () => {
       isCancelled = true;
-      window.clearTimeout(timeoutId);
     };
-  }, [isSignedIn, searchQuery]);
+  }, [isSignedIn]);
+
+  const materialSearchResults = useMemo(() => {
+    const trimmedQuery = searchQuery.trim();
+    if (!trimmedQuery) {
+      return [];
+    }
+
+    return rankMaterialsForObject(materialLibrary, {
+      query: trimmedQuery,
+      objectName: "Material",
+      limit: 24,
+    });
+  }, [materialLibrary, searchQuery]);
 
   const selectedHouse = useMemo(() => {
     return project?.houses.find((house) => house.id === selectedHouseId) ?? project?.houses[0];
@@ -858,9 +868,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       }));
 
     const materialItems = materialSearchResults
-      .filter((item) =>
-        matchesSearchTerm(trimmedQuery, [item.name, item.supplier, item.budgetCategory, item.sku, item.sourceUrl, "material"])
-      )
       .slice(0, GLOBAL_SEARCH_RESULT_LIMIT)
       .map<WorkspaceSearchResultItem>((item) => ({
         id: `material-${item.id}`,
@@ -2089,6 +2096,39 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
   }
 
+  function upsertMaterialInLibrary(material: UserMaterial) {
+    setMaterialLibrary((current) => [material, ...current.filter((item) => item.id !== material.id)]);
+    setMaterialLibraryVersion((current) => current + 1);
+  }
+
+  function removeMaterialFromLibrary(materialId: string) {
+    setMaterialLibrary((current) => current.filter((item) => item.id !== materialId));
+    setMaterialLibraryVersion((current) => current + 1);
+    updateCurrentProject((targetProject) => ({
+      ...targetProject,
+      houses: targetProject.houses.map((house) => ({
+        ...house,
+        rooms: house.rooms.map((room) => ({
+          ...room,
+          objects: room.objects.map((objectItem) => {
+            const nextOptions = objectItem.productOptions.filter((option) => option.id !== materialId);
+            if (objectItem.selectedProductId !== materialId) {
+              return {
+                ...objectItem,
+                productOptions: nextOptions,
+              };
+            }
+            return {
+              ...objectItem,
+              productOptions: nextOptions,
+              selectedProductId: undefined,
+            };
+          }),
+        })),
+      })),
+    }));
+  }
+
   function handleSelectProduct(productId: string) {
     if (!selectedObject) {
       return;
@@ -2245,7 +2285,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
   }
 
-  async function handleSearchCatalog(objectId: string, query: string) {
+  function handleSearchCatalog(objectId: string, query: string) {
     const targetObject = project?.houses
       .flatMap((house) => house.rooms.flatMap((room) => room.objects))
       .find((objectItem) => objectItem.id === objectId);
@@ -2254,46 +2294,62 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       return;
     }
 
-    if (isSupabaseConfigured) {
-      try {
-        const materialOptions = await searchMaterialsForCurrentUser({
-          objectName: targetObject.name,
-          objectCategory: targetObject.category,
-          query,
-        });
+    const normalizedQuery = query.trim() || targetObject.name;
 
-        updateObjectById(objectId, (objectItem) => {
-          const selectedStillVisible = materialOptions.some((option) => option.id === objectItem.selectedProductId);
-          return {
-            ...objectItem,
-            productOptions: materialOptions,
-            selectedProductId: selectedStillVisible ? objectItem.selectedProductId : undefined,
-          };
-        });
-      } catch (error) {
-        console.warn("Failed to search materials from Supabase.", error);
-      }
+    if (isSupabaseConfigured) {
+      const rankedMaterials = rankMaterialsForObject(materialLibrary, {
+        query: normalizedQuery,
+        objectName: targetObject.name,
+        objectCategory: targetObject.category,
+        limit: 30,
+      });
+
+      updateObjectById(objectId, (objectItem) => {
+        const selectedOption = objectItem.selectedProductId
+          ? objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId)
+          : undefined;
+        const nextOptions = selectedOption && !rankedMaterials.some((option) => option.id === selectedOption.id)
+          ? [selectedOption, ...rankedMaterials]
+          : rankedMaterials;
+
+        return {
+          ...objectItem,
+          materialSearchQuery: normalizedQuery,
+          productOptions: nextOptions,
+        };
+      });
+
+      void updateRoomObjectMaterialSearchQueryById(objectId, normalizedQuery).catch((error) => {
+        console.warn("Failed to save room object material search query.", error);
+      });
       return;
     }
 
-    const catalogOptions = searchMockCatalogOptions(targetObject.name, query);
+    const catalogOptions = searchMockCatalogOptions(targetObject.name, normalizedQuery);
 
     updateObjectById(objectId, (objectItem) => {
       const linkedOptions = objectItem.productOptions.filter(isLinkOption);
-      const nextOptions = [...linkedOptions, ...catalogOptions];
-      const selectedStillVisible = nextOptions.some((option) => option.id === objectItem.selectedProductId);
+      const selectedOption = objectItem.selectedProductId
+        ? objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId)
+        : undefined;
+      const dedupedOptions = [...linkedOptions, ...catalogOptions].filter(
+        (option, index, collection) => collection.findIndex((candidate) => candidate.id === option.id) === index
+      );
+      const nextOptions = selectedOption && !dedupedOptions.some((option) => option.id === selectedOption.id)
+        ? [selectedOption, ...dedupedOptions]
+        : dedupedOptions;
 
       return {
         ...objectItem,
+        materialSearchQuery: normalizedQuery,
         productOptions: nextOptions,
-        selectedProductId: selectedStillVisible ? objectItem.selectedProductId : undefined,
       };
     });
   }
 
   function handleAddFromLink(
     objectId: string,
-    payload: { url: string; name?: string; supplier?: string; price?: number; imageUrl?: string }
+    payload: { url: string; name?: string; supplier?: string; price?: number; imageUrl?: string; tags?: string[] }
   ) {
     const targetObject = project?.houses
       .flatMap((house) => house.rooms.flatMap((room) => room.objects))
@@ -2312,8 +2368,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         supplier: payload.supplier,
         price: payload.price,
         imageUrl: payload.imageUrl,
+        tags: payload.tags,
       })
         .then((savedOption) => {
+          upsertMaterialInLibrary(savedOption);
           updateObjectById(objectId, (objectItem) => {
             const dedupedOptions = [savedOption, ...objectItem.productOptions.filter((item) => item.id !== savedOption.id)];
             return {
@@ -2655,6 +2713,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       }
       pendingMaterialId={pendingMaterialAssignment?.id}
       onAssignMaterial={handleAssignMaterialFromGallery}
+      onMaterialAdded={upsertMaterialInLibrary}
+      onMaterialDeleted={removeMaterialFromLibrary}
     />
   ) : (
     <PlaceholderTab
@@ -2688,7 +2748,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       <ProductOptionsPanel
         roomObject={visibleSelectedObject}
         projectCurrency={project.currency}
-        globalSearchQuery={searchQuery}
+        materialLibraryVersion={materialLibraryVersion}
         budgetSelectionSummary={budgetSelectionSummary}
         budgetImpactByOptionId={budgetImpactByOptionId}
         onSelectProduct={handleSelectProduct}
