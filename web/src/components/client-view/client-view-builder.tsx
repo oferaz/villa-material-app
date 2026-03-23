@@ -19,7 +19,6 @@ import {
   ClientViewDetail,
   ClientViewPublishInput,
   ClientViewResponse,
-  ClientViewScopeDecision,
   Project,
 } from "@/types";
 
@@ -45,6 +44,16 @@ function defaultConfigForObject(selectedMaterialId?: string): BuilderItemConfig 
     showSourceLink: false,
     optionMaterialIds: selectedMaterialId ? [selectedMaterialId] : [],
   };
+}
+
+function sanitizeOptionMaterialIds(optionMaterialIds: string[], allowedMaterialIds: Set<string>): string[] {
+  return Array.from(
+    new Set(
+      optionMaterialIds
+        .map((materialId) => materialId.trim())
+        .filter((materialId) => materialId && allowedMaterialIds.has(materialId))
+    )
+  ).slice(0, 3);
 }
 
 function parseRecipientInput(value: string): string[] {
@@ -99,6 +108,8 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
     [project]
   );
 
+  const ownedMaterialIds = useMemo(() => new Set(materials.map((material) => material.id)), [materials]);
+
   async function loadClientViewState() {
     setIsLoading(true);
     setErrorMessage(null);
@@ -112,7 +123,11 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
       setConfigsByObjectId(() => {
         const next: Record<string, BuilderItemConfig> = {};
         allObjects.forEach(({ objectItem }) => {
-          next[objectItem.id] = defaultConfigForObject(objectItem.selectedProductId);
+          next[objectItem.id] = defaultConfigForObject(
+            objectItem.selectedProductId && ownedMaterialIds.has(objectItem.selectedProductId)
+              ? objectItem.selectedProductId
+              : undefined
+          );
         });
         detail?.items.forEach((item) => {
           if (!item.roomObjectId) {
@@ -123,9 +138,12 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
             cardMode: item.cardMode,
             promptText: item.promptText ?? "",
             showSourceLink: item.showSourceLink,
-            optionMaterialIds: item.options
-              .map((option) => option.sourceMaterialId)
-              .filter((value): value is string => Boolean(value)),
+            optionMaterialIds: sanitizeOptionMaterialIds(
+              item.options
+                .map((option) => option.sourceMaterialId)
+                .filter((value): value is string => Boolean(value)),
+              ownedMaterialIds
+            ),
           };
         });
         return next;
@@ -139,7 +157,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
 
   useEffect(() => {
     void loadClientViewState();
-  }, [project.id]);
+  }, [allObjects, ownedMaterialIds, project.id, project.name]);
 
   function updateConfig(objectId: string, patch: Partial<BuilderItemConfig>) {
     setConfigsByObjectId((current) => ({
@@ -161,7 +179,10 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
         cardMode: config.cardMode,
         promptText: config.promptText,
         showSourceLink: config.showSourceLink,
-        optionMaterialIds: config.cardMode === "material_choice" ? config.optionMaterialIds.slice(0, 3) : [],
+        optionMaterialIds:
+          config.cardMode === "material_choice"
+            ? sanitizeOptionMaterialIds(config.optionMaterialIds, ownedMaterialIds)
+            : [],
       }));
 
     if (items.length === 0) {
@@ -322,7 +343,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
         </CardHeader>
         <CardContent className="space-y-4">
           {allObjects.map(({ house, room, objectItem }) => {
-            const config = configsByObjectId[objectItem.id] ?? defaultConfigForObject(objectItem.selectedProductId);
+            const config = configsByObjectId[objectItem.id] ?? defaultConfigForObject(objectItem.selectedProductId && ownedMaterialIds.has(objectItem.selectedProductId) ? objectItem.selectedProductId : undefined);
             const selectedMaterial = materials.find((material) => material.id === objectItem.selectedProductId);
             const availableMaterials = materials.filter((material) => !config.optionMaterialIds.includes(material.id));
             return (
@@ -342,8 +363,8 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
                       <Badge variant="outline">{house.name}</Badge>
                     </div>
                     <p className="mt-1 text-sm text-slate-500">
-                      {objectItem.category} Ã‚Â· Qty {objectItem.quantity}
-                      {selectedMaterial ? ` Ã‚Â· Current: ${selectedMaterial.name}` : " Ã‚Â· No current selection"}
+                      {objectItem.category} - Qty {objectItem.quantity}
+                      {selectedMaterial ? ` - Current: ${selectedMaterial.name}` : " - No current selection"}
                     </p>
                   </div>
                   {objectItem.budgetAllowance != null ? (
