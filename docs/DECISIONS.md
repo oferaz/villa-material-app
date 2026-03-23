@@ -169,9 +169,28 @@ It records the decisions that currently shape the codebase so future changes can
   `tests/test_relational_migrations.py`
   `tests/test_user_template_manager.py`
 
+### ADR-011: Model external client review as frozen published shares, not project membership
+
+- Status: `Accepted`
+- Context:
+  Designers need to show a curated subset of a project to clients, collect approvals or preferences, and keep the rest of the private workspace and materials library hidden.
+- Decision:
+  Introduce a separate client-view publishing model that stores versioned, minimal review payloads and invited recipient emails outside `project_members`.
+- Consequences:
+  External viewers do not gain direct project access.
+  Public pages load only from published client-view records resolved by hashed share tokens.
+  Client responses remain review data until an owner or editor explicitly applies them back into the workspace.
+  Published material options must be frozen snapshots so later library edits do not silently change what the client saw.
+- Evidence:
+  `db/migrations/20260323_add_client_views.sql`
+  `web/src/components/client-view/client-view-builder.tsx`
+  `web/src/components/client-view/public-client-view.tsx`
+  `web/src/app/api/client-view/`
+  `web/src/lib/supabase/projects-repository.ts`
+
 ## Open Questions To Capture Next
 
 - When the Streamlit surface becomes read-only or can be removed.
 - Whether procurement flows should eventually be re-modeled on top of the workspace hierarchy.
 - How much server-side Next.js logic should replace browser-direct Supabase access over time.
-
+- Whether future client-view versions should support reconstructable public share identifiers in addition to hashed secret tokens.

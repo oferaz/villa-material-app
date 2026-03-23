@@ -54,3 +54,16 @@ def test_material_tags_migration_adds_jsonb_array_column():
     assert "alter table public.materials" in sql
     assert "add column if not exists tags jsonb not null default '[]'::jsonb" in sql
     assert "check (jsonb_typeof(tags) = 'array')" in sql
+
+def test_client_view_migration_adds_share_tables_and_rpc_functions():
+    sql = _read("db/migrations/20260323_add_client_views.sql")
+
+    assert "create table if not exists public.client_views" in sql
+    assert "create table if not exists public.client_view_items" in sql
+    assert "create table if not exists public.client_view_item_options" in sql
+    assert "create table if not exists public.client_view_responses" in sql
+    assert "create or replace function public.publish_client_view" in sql
+    assert "create or replace function public.get_published_client_view" in sql
+    assert "create or replace function public.submit_client_view_response" in sql
+    assert "create or replace function public.apply_client_view_response" in sql
+

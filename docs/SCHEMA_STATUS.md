@@ -19,8 +19,10 @@ The active workspace schema is built incrementally on top of these migrations:
 9. `db/migrations/20260316_add_room_object_workflow_stages.sql`
 10. `db/migrations/20260321_add_house_and_room_project_budgets.sql`
 11. `db/migrations/20260321_add_room_object_budget_allowance.sql`
+12. `db/migrations/20260322_add_material_tags.sql`
+13. `db/migrations/20260323_add_client_views.sql`
 
-As of `2026-03-21`, this is the latest workspace-oriented migration chain present in the repo.
+As of `2026-03-23`, this is the latest workspace-oriented migration chain present in the repo.
 
 ## Core Workspace Tables
 
@@ -39,6 +41,11 @@ These are the main tables that power the current editor:
 - `project_house_budgets`
 - `project_room_budgets`
 - `project_snapshots`
+- `client_views`
+- `client_view_recipients`
+- `client_view_items`
+- `client_view_item_options`
+- `client_view_responses`
 
 ## Core Workspace Views And Functions
 
@@ -52,6 +59,11 @@ Important RPC / SQL functions:
 - `invite_project_collaborator`
 - `create_project_snapshot`
 - `restore_project_snapshot`
+- `publish_client_view`
+- `get_published_client_view`
+- `get_client_view_submission_context`
+- `submit_client_view_response`
+- `apply_client_view_response`
 - `touch_updated_at`
 
 ## Current Room Object Fields That Matter To The Workspace
@@ -90,6 +102,23 @@ This means budget behavior is now spread across both:
 - dedicated budget tables
 - `room_objects`
 
+## Current Client View Shape
+
+The external client review model includes:
+
+- `client_views` for share lifecycle, publish version, token hash, and expiry
+- `client_view_recipients` for invited approval emails
+- `client_view_items` for frozen object-level review cards
+- `client_view_item_options` for published material-choice option snapshots
+- `client_view_responses` for invited-recipient submissions and owner apply tracking
+
+Important behavioral rules:
+
+- public pages load through `get_published_client_view`, not direct reads from private project tables
+- published items are versioned and frozen so later workspace edits do not alter the client payload retroactively
+- approvals require authentication plus invited email membership
+- response apply-back is explicit and updates workspace state only when an owner or editor chooses to apply it
+
 ## Snapshot Coverage Status
 
 Snapshot support currently includes:
@@ -104,6 +133,7 @@ Snapshot support currently includes:
 - project room budgets
 
 The latest snapshot restore function also restores `room_objects.budget_allowance`.
+Client-view data is intentionally not part of snapshot restore today.
 
 ## Legacy Relational Chain Still Present
 

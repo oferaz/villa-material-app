@@ -87,8 +87,30 @@ Also review:
 - invite flow behavior
 - snapshot permissions
 - delete permissions
+- whether the change is for internal collaborators or external client review
 
-## 7. Change Snapshot Behavior
+## 7. Add Or Change Client View / External Review
+
+Use this flow when exposing part of a project to a client without granting project membership.
+
+Primary places:
+
+- migration `db/migrations/20260323_add_client_views.sql`
+- owner-side repository helpers in `web/src/lib/supabase/projects-repository.ts`
+- builder UI in `web/src/components/client-view/client-view-builder.tsx`
+- workspace integration in `web/src/components/projects/project-workspace.tsx`
+- public share page in `web/src/app/client/[token]/page.tsx`
+- public APIs in `web/src/app/api/client-view/`
+- shared types in `web/src/types/client-view.ts`
+
+Rules:
+
+- publish frozen payloads, not live project reads
+- do not expose internal project or private materials data directly on public pages
+- require authenticated invited-recipient email match for formal submissions
+- keep client responses separate until an owner or editor applies them back into the workspace
+
+## 8. Change Snapshot Behavior
 
 Snapshots are database-native.
 
@@ -103,7 +125,7 @@ Rule:
 
 - if a field should survive snapshot and restore, both snapshot creation and restore must understand it
 
-## 8. Work On Legacy Streamlit Functionality
+## 9. Work On Legacy Streamlit Functionality
 
 Use this workflow when the task is explicitly about the legacy surface.
 
@@ -118,7 +140,7 @@ Guardrail:
 
 - do not move new workspace product logic into the Python surface unless the feature is intentionally shared or legacy-only
 
-## 9. Record A Lasting Design Choice
+## 10. Record A Lasting Design Choice
 
 When a change alters system shape or direction:
 

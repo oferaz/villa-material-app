@@ -77,6 +77,7 @@ The active workspace schema includes:
 - materials and material images
 - project, category, house, room, and per-object budget planning
 - snapshots and restore flows
+- external client-view publishing with frozen review payloads and invited approval recipients
 - collaboration via RLS and RPC-backed workflows
 
 ## Notes

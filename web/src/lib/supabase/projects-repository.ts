@@ -2,6 +2,7 @@ import { normalizeCurrencyCode } from "@/lib/currency";
 import { budgetCategoryOrder, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { BudgetCategoryName, House, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
+import { ClientViewApplyResult, ClientViewDetail, ClientViewItem, ClientViewItemOption, ClientViewPublishInput, ClientViewResponse, ClientViewStatus, ClientViewSummary } from "@/types";
 
 interface ProjectRow {
   id: string;
@@ -1528,4 +1529,415 @@ export async function deleteRoomObjectById(roomObjectId: string): Promise<void> 
 }
 
 
+
+
+
+interface ClientViewRow {
+  id: string;
+  project_id: string;
+  title: string;
+  status: string;
+  published_version: number | null;
+  published_at: string | null;
+  expires_at: string | null;
+}
+
+interface ClientViewRecipientRow {
+  id: string;
+  client_view_id: string;
+  email: string;
+}
+
+interface ClientViewItemRow {
+  id: string;
+  client_view_id: string;
+  published_version: number;
+  room_object_id: string | null;
+  house_name: string;
+  room_name: string;
+  object_name: string;
+  object_category: string;
+  quantity: number | null;
+  card_mode: string;
+  prompt_text: string | null;
+  show_source_link: boolean | null;
+  budget_allowance: number | null;
+  current_selected_material_name: string | null;
+  current_selected_price: number | null;
+  sort_order: number | null;
+}
+
+interface ClientViewItemOptionRow {
+  id: string;
+  item_id: string;
+  source_material_id: string | null;
+  name: string;
+  supplier_name: string | null;
+  image_url: string | null;
+  price: number | null;
+  description: string | null;
+  source_url: string | null;
+  sort_order: number | null;
+}
+
+interface ClientViewResponseRow {
+  id: string;
+  client_view_id: string;
+  item_id: string;
+  published_version: number;
+  recipient_email: string;
+  selected_option_id: string | null;
+  preferred_budget: number | null;
+  scope_decision: string | null;
+  comment: string | null;
+  applied_at: string | null;
+  updated_at: string;
+}
+
+function normalizeClientViewStatus(value: string | null | undefined): ClientViewStatus {
+  switch (value) {
+    case "published":
+    case "closed":
+    case "revoked":
+    case "expired":
+    case "draft":
+      return value;
+    default:
+      return "draft";
+  }
+}
+
+function toClientViewSummary(row: ClientViewRow): ClientViewSummary {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    title: row.title,
+    status: normalizeClientViewStatus(row.status),
+    publishedVersion: Math.max(0, Math.round(row.published_version ?? 0)),
+    publishedAt: row.published_at,
+    expiresAt: row.expires_at,
+  };
+}
+
+function toClientViewItemOption(row: ClientViewItemOptionRow): ClientViewItemOption {
+  return {
+    id: row.id,
+    sourceMaterialId: row.source_material_id ?? undefined,
+    name: row.name,
+    supplierName: row.supplier_name ?? undefined,
+    imageUrl: row.image_url ?? undefined,
+    price: row.price ?? null,
+    description: row.description ?? undefined,
+    sourceUrl: row.source_url ?? undefined,
+    sortOrder: Math.max(0, Math.round(row.sort_order ?? 0)),
+  };
+}
+
+function normalizeClientViewCardMode(value: string): ClientViewItem["cardMode"] {
+  if (value === "budget_input" || value === "scope_confirmation") {
+    return value;
+  }
+  return "material_choice";
+}
+
+function toClientViewItem(row: ClientViewItemRow, options: ClientViewItemOption[]): ClientViewItem {
+  return {
+    id: row.id,
+    roomObjectId: row.room_object_id ?? undefined,
+    houseName: row.house_name,
+    roomName: row.room_name,
+    objectName: row.object_name,
+    objectCategory: row.object_category,
+    quantity: Math.max(1, Math.round(row.quantity ?? 1)),
+    cardMode: normalizeClientViewCardMode(row.card_mode),
+    promptText: row.prompt_text ?? undefined,
+    showSourceLink: Boolean(row.show_source_link),
+    budgetAllowance: normalizeBudgetAllowance(row.budget_allowance) ?? null,
+    currentSelectedMaterialName: row.current_selected_material_name ?? undefined,
+    currentSelectedPrice: row.current_selected_price ?? null,
+    options,
+  };
+}
+
+async function loadClientViewRowsByProjectId(projectId: string): Promise<ClientViewDetail | null> {
+  const normalizedProjectId = projectId.trim();
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+
+  const { data: clientViewRows, error: clientViewError } = await supabase
+    .from("client_views")
+    .select("id,project_id,title,status,published_version,published_at,expires_at")
+    .eq("project_id", normalizedProjectId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+
+  if (clientViewError) {
+    throw new Error(clientViewError.message);
+  }
+
+  const clientViewRow = ((clientViewRows ?? []) as unknown as ClientViewRow[])[0];
+  if (!clientViewRow) {
+    return null;
+  }
+
+  const summary = toClientViewSummary(clientViewRow);
+
+  const [recipientsResult, itemsResult] = await Promise.all([
+    supabase
+      .from("client_view_recipients")
+      .select("id,client_view_id,email")
+      .eq("client_view_id", clientViewRow.id)
+      .order("email", { ascending: true }),
+    supabase
+      .from("client_view_items")
+      .select(
+        "id,client_view_id,published_version,room_object_id,house_name,room_name,object_name,object_category,quantity,card_mode,prompt_text,show_source_link,budget_allowance,current_selected_material_name,current_selected_price,sort_order"
+      )
+      .eq("client_view_id", clientViewRow.id)
+      .eq("published_version", summary.publishedVersion)
+      .order("sort_order", { ascending: true }),
+  ]);
+
+  if (recipientsResult.error) {
+    throw new Error(recipientsResult.error.message);
+  }
+  if (itemsResult.error) {
+    throw new Error(itemsResult.error.message);
+  }
+
+  const itemRows = (itemsResult.data ?? []) as unknown as ClientViewItemRow[];
+  const itemIds = itemRows.map((item) => item.id);
+  let optionRows: ClientViewItemOptionRow[] = [];
+  if (itemIds.length > 0) {
+    const { data, error } = await supabase
+      .from("client_view_item_options")
+      .select("id,item_id,source_material_id,name,supplier_name,image_url,price,description,source_url,sort_order")
+      .in("item_id", itemIds)
+      .order("sort_order", { ascending: true });
+    if (error) {
+      throw new Error(error.message);
+    }
+    optionRows = (data ?? []) as unknown as ClientViewItemOptionRow[];
+  }
+
+  const optionsByItemId = new Map<string, ClientViewItemOption[]>();
+  optionRows.forEach((row) => {
+    const current = optionsByItemId.get(row.item_id) ?? [];
+    current.push(toClientViewItemOption(row));
+    optionsByItemId.set(row.item_id, current);
+  });
+
+  return {
+    ...summary,
+    recipients: ((recipientsResult.data ?? []) as unknown as ClientViewRecipientRow[]).map((recipient) => ({
+      id: recipient.id,
+      email: recipient.email,
+    })),
+    items: itemRows.map((row) => toClientViewItem(row, optionsByItemId.get(row.id) ?? [])),
+  };
+}
+
+export async function loadLatestClientViewByProjectId(projectId: string): Promise<ClientViewDetail | null> {
+  if (!isSupabaseConfigured) {
+    return null;
+  }
+
+  return loadClientViewRowsByProjectId(projectId);
+}
+
+export async function publishClientView(
+  projectId: string,
+  input: ClientViewPublishInput
+): Promise<{ detail: ClientViewDetail; token: string }> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedProjectId = projectId.trim();
+  if (!normalizedProjectId) {
+    throw new Error("Project ID is required.");
+  }
+
+  const normalizedTitle = input.title.trim();
+  const normalizedRecipientEmails = Array.from(
+    new Set(
+      input.recipientEmails
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+  const normalizedItems = input.items
+    .filter((item) => item.roomObjectId.trim())
+    .map((item) => ({
+      roomObjectId: item.roomObjectId.trim(),
+      cardMode: item.cardMode,
+      promptText: item.promptText?.trim() || null,
+      showSourceLink: Boolean(item.showSourceLink),
+      options: (item.optionMaterialIds ?? [])
+        .map((materialId) => materialId.trim())
+        .filter(Boolean)
+        .slice(0, 3)
+        .map((materialId) => ({ materialId })),
+    }));
+
+  const { data, error } = await supabase.rpc("publish_client_view", {
+    p_project_id: normalizedProjectId,
+    p_title: normalizedTitle || null,
+    p_expires_at: input.expiresAt?.trim() || null,
+    p_recipient_emails: normalizedRecipientEmails,
+    p_items: normalizedItems,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const detail = await loadClientViewRowsByProjectId(normalizedProjectId);
+  if (!detail) {
+    throw new Error("Client view was published but could not be reloaded.");
+  }
+
+  return {
+    detail,
+    token: String((data as { token?: string } | null)?.token ?? ""),
+  };
+}
+
+export async function updateClientViewStatusById(clientViewId: string, status: ClientViewStatus): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedClientViewId = clientViewId.trim();
+  if (!normalizedClientViewId) {
+    throw new Error("Client view ID is required.");
+  }
+
+  const { error } = await supabase
+    .from("client_views")
+    .update({ status })
+    .eq("id", normalizedClientViewId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function listClientViewResponses(clientViewId: string): Promise<ClientViewResponse[]> {
+  if (!isSupabaseConfigured) {
+    return [];
+  }
+
+  const normalizedClientViewId = clientViewId.trim();
+  if (!normalizedClientViewId) {
+    throw new Error("Client view ID is required.");
+  }
+
+  const { data: clientViewRows, error: clientViewError } = await supabase
+    .from("client_views")
+    .select("id,project_id,title,status,published_version,published_at,expires_at")
+    .eq("id", normalizedClientViewId)
+    .limit(1);
+
+  if (clientViewError) {
+    throw new Error(clientViewError.message);
+  }
+
+  const clientViewRow = ((clientViewRows ?? []) as unknown as ClientViewRow[])[0];
+  if (!clientViewRow) {
+    return [];
+  }
+
+  const publishedVersion = Math.max(0, Math.round(clientViewRow.published_version ?? 0));
+
+  const [responsesResult, itemsResult] = await Promise.all([
+    supabase
+      .from("client_view_responses")
+      .select("id,client_view_id,item_id,published_version,recipient_email,selected_option_id,preferred_budget,scope_decision,comment,applied_at,updated_at")
+      .eq("client_view_id", normalizedClientViewId)
+      .eq("published_version", publishedVersion)
+      .order("updated_at", { ascending: false }),
+    supabase
+      .from("client_view_items")
+      .select("id,object_name,room_name,published_version")
+      .eq("client_view_id", normalizedClientViewId)
+      .eq("published_version", publishedVersion),
+  ]);
+
+  if (responsesResult.error) {
+    throw new Error(responsesResult.error.message);
+  }
+  if (itemsResult.error) {
+    throw new Error(itemsResult.error.message);
+  }
+
+  const responses = (responsesResult.data ?? []) as unknown as ClientViewResponseRow[];
+  const items = (itemsResult.data ?? []) as Array<{ id: string; object_name: string; room_name: string; published_version: number }>;
+  const itemIds = items.map((item) => item.id);
+
+  let options: ClientViewItemOptionRow[] = [];
+  if (itemIds.length > 0) {
+    const { data, error } = await supabase
+      .from("client_view_item_options")
+      .select("id,item_id,source_material_id,name,supplier_name,image_url,price,description,source_url,sort_order")
+      .in("item_id", itemIds);
+    if (error) {
+      throw new Error(error.message);
+    }
+    options = (data ?? []) as unknown as ClientViewItemOptionRow[];
+  }
+
+  const itemLabelById = new Map(items.map((item) => [item.id, `${item.object_name} - ${item.room_name}`]));
+  const optionNameById = new Map(options.map((option) => [option.id, option.name]));
+
+  return responses.map((response) => ({
+    id: response.id,
+    itemId: response.item_id,
+    publishedVersion: response.published_version,
+    recipientEmail: response.recipient_email,
+    selectedOptionId: response.selected_option_id,
+    preferredBudget: response.preferred_budget,
+    scopeDecision:
+      response.scope_decision === "approved" ||
+      response.scope_decision === "not_needed" ||
+      response.scope_decision === "needs_revision"
+        ? response.scope_decision
+        : null,
+    comment: response.comment ?? undefined,
+    appliedAt: response.applied_at,
+    updatedAt: response.updated_at,
+    itemLabel: itemLabelById.get(response.item_id),
+    selectedOptionName: response.selected_option_id ? optionNameById.get(response.selected_option_id) : undefined,
+  }));
+}
+
+export async function applyClientViewResponseById(projectId: string, responseId: string): Promise<ClientViewApplyResult> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedProjectId = projectId.trim();
+  const normalizedResponseId = responseId.trim();
+  if (!normalizedProjectId || !normalizedResponseId) {
+    throw new Error("Project ID and response ID are required.");
+  }
+
+  const { data, error } = await supabase.rpc("apply_client_view_response", {
+    p_project_id: normalizedProjectId,
+    p_response_id: normalizedResponseId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const payload = (data ?? {}) as { responseId?: string; itemId?: string; action?: string; appliedAt?: string };
+  return {
+    responseId: String(payload.responseId ?? normalizedResponseId),
+    itemId: String(payload.itemId ?? ""),
+    action: String(payload.action ?? "none"),
+    appliedAt: String(payload.appliedAt ?? new Date().toISOString()),
+  };
+}
 

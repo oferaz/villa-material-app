@@ -11,6 +11,7 @@ import {
   TopNavSearchResultItem,
 } from "@/components/layout/top-nav";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
+import { ClientViewBuilder } from "@/components/client-view/client-view-builder";
 import { BudgetOverview, type BudgetFocusSelection } from "@/components/budget/budget-overview";
 import { MaterialsGallery } from "@/components/materials/materials-gallery";
 import { HouseRoomTree } from "@/components/rooms/house-room-tree";
@@ -1270,6 +1271,19 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         return updater(item);
       })
     );
+  }
+
+  async function reloadWorkspaceProjects() {
+    const loadedProjects = await loadProjectsForWorkspace();
+    setProjects(loadedProjects);
+    const persistedBudgets = isSupabaseConfigured ? await loadProjectBudgetsByProjectIds(loadedProjects) : {};
+    setProjectBudgets((prev) => {
+      const next = createInitialBudgetMap(loadedProjects);
+      for (const projectId of Object.keys(next)) {
+        next[projectId] = persistedBudgets[projectId] ?? prev[projectId] ?? next[projectId];
+      }
+      return next;
+    });
   }
 
   function handleProjectChange(projectId: string) {
@@ -2734,12 +2748,20 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     />
   );
 
-  const clientContent = (
+  const clientContent = project ? (
+    <ClientViewBuilder
+      project={project}
+      materials={materialLibrary}
+      onProjectDataChanged={async () => {
+        await reloadWorkspaceProjects();
+      }}
+    />
+  ) : (
     <PlaceholderTab
       icon={Presentation}
       title="Client presentation mode"
-      description="Client-facing views and approvals will be prepared from curated selections."
-      details="This tab will provide shareable presentation pages with final design choices."
+      description="Load a project to prepare a curated client-facing review."
+      details="Share only the decisions you want a client to review, then collect responses without exposing the full workspace."
     />
   );
 
@@ -2828,6 +2850,11 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} activeWorkspaceTab={activeTab} />;
 }
+
+
+
+
+
 
 
 

@@ -31,6 +31,7 @@ Users
          +--> React UI + repository modules
          +--> Browser Supabase client
          +--> Small server routes for web-only helpers
+         +--> Public client-review page backed by server-side RPC access
 
 Shared backend
   |
@@ -39,6 +40,7 @@ Shared backend
          +--> RLS policies
          +--> RPC functions for multi-row workflows
          +--> Views for derived read models
+         +--> Frozen client-view share payloads for external review
 ```
 
 ## Main Bounded Areas
@@ -78,6 +80,7 @@ Primary entrypoints:
 - `web/src/app/page.tsx`
 - `web/src/app/dashboard/page.tsx`
 - `web/src/app/projects/[projectId]/page.tsx`
+- `web/src/app/client/[token]/page.tsx`
 
 Key UI modules:
 
@@ -86,6 +89,7 @@ Key UI modules:
 - `web/src/components/materials/*`
 - `web/src/components/budget/*`
 - `web/src/components/workflow/*`
+- `web/src/components/client-view/*`
 
 Key data-access modules:
 
@@ -103,10 +107,12 @@ Responsibilities:
 - Workflow tracking for assignment, PO approval, ordering, and installation.
 - Snapshot creation and restore.
 - Collaboration features such as project membership and invite flows.
+- Client-view publishing, public review links, invited approvals, and owner-side apply-back of accepted client responses.
 
 Important characteristic:
 
 - The web app is built around the current product editing model, not the legacy procurement-first model.
+- External client review is intentionally separate from internal project membership.
 
 ### 3. Database Contract
 
@@ -123,6 +129,7 @@ Notable migrations:
 - `db/migrations/20260316_add_invite_project_collaborator_function.sql`
 - `db/migrations/20260321_add_house_and_room_project_budgets.sql`
 - `db/migrations/20260321_add_room_object_budget_allowance.sql`
+- `db/migrations/20260323_add_client_views.sql`
 - `db/migrations/20260309_relational_purchasing_model.sql`
 
 The database layer carries a large part of the product contract:
@@ -134,6 +141,7 @@ The database layer carries a large part of the product contract:
 - row-level security
 - RPC functions for multi-step writes
 - read-model views such as `project_budget_allocations`
+- frozen client-view payloads and approval submissions
 
 ## Canonical Domain Model Today
 
@@ -160,6 +168,14 @@ Collaboration data is handled through:
 
 - `profiles`
 - `project_members`
+
+External client review data is handled separately through:
+
+- `client_views`
+- `client_view_recipients`
+- `client_view_items`
+- `client_view_item_options`
+- `client_view_responses`
 
 Snapshot support is handled through:
 
@@ -190,6 +206,7 @@ It should not be treated as the primary editing model for new workspace features
 - Streamlit uses `auth_ui.py` and stores auth state in `st.session_state`.
 - The Python Supabase client is created per use and can attach the current access token so RLS works correctly.
 - The Next.js workspace uses `@supabase/supabase-js` in `web/src/lib/supabase/client.ts`.
+- Public client-view pages use server-side route handlers that call database functions with token-based lookup, rather than reading private tables directly in the browser.
 
 ### Project Creation
 
@@ -202,6 +219,7 @@ It should not be treated as the primary editing model for new workspace features
 - Search results are derived from `materials` and `material_images`.
 - The selected material is persisted on `room_objects.selected_material_id`.
 - Search results themselves are not persisted as first-class records.
+- Client review publishes a curated snapshot of 1 to 3 explicit material options per object when external comparison is needed.
 
 ### Budgeting
 
@@ -210,12 +228,23 @@ It should not be treated as the primary editing model for new workspace features
 - Allocated values are derived from currently selected materials.
 - The workspace computes option-level impact and marks the specific object rows that push a room past its planned budget.
 - The UI therefore mixes stored planning data with computed read models.
+- Client review can request a client-preferred budget per object, but that response remains separate until an owner or editor applies it back into the workspace.
 
 ### Snapshot / Restore
 
 - The current workspace snapshots are created inside the database as JSON payloads.
 - Restore is also database-native and rewrites the project structure in a controlled order.
 - This keeps large multi-table restore logic close to the data and inside RLS-aware database functions.
+- Client-view publishing does not reuse snapshots because snapshots are too broad and include internal workspace data that should not be exposed externally.
+
+### Client View Publish / Review
+
+- Designers curate a subset of room objects from the workspace.
+- Publishing writes a frozen, minimal payload through `publish_client_view`.
+- Public pages load only the latest published version through `get_published_client_view`.
+- Viewing is token-based and guest-capable.
+- Approval submission is authenticated and limited to invited recipient emails through `get_client_view_submission_context` and `submit_client_view_response`.
+- Owner-side apply-back uses `apply_client_view_response` so client responses do not mutate project data automatically.
 
 ## Security Model
 
@@ -226,6 +255,14 @@ The workspace security model is centered on Supabase RLS:
 - viewers can read but not write
 - materials are private to their owner
 - RPC functions are used when a workflow needs more than a simple row insert/update
+
+Client views add a second collaboration boundary:
+
+- external clients do not become `project_members`
+- public share links resolve through hashed tokens
+- published client-view tables store only the approved display subset
+- public pages must not query `projects`, `room_objects`, or `materials` directly for client content
+- invited, signed-in recipients can submit responses, but owner/editor apply-back remains explicit
 
 When building new features, start by asking whether the operation belongs in:
 
@@ -257,10 +294,11 @@ This means:
 - Expect environments to lag behind the latest migration; some repository code includes compatibility fallbacks for missing columns or RPC functions.
 - Do not assume the Streamlit and Next.js surfaces use the same schema conventions everywhere.
 - Avoid global auth-bearing clients; per-request or per-session client construction is intentional.
+- Because client share tokens are stored hashed, the app can show a fresh link at publish time but cannot reconstruct an old token later from the database alone.
 
 ## Where New Work Should Usually Go
 
-- New workspace UX, collaboration, budgeting, and room/object flows should usually go in `web/` plus matching Supabase migrations.
+- New workspace UX, collaboration, budgeting, room/object flows, and client-review publishing should usually go in `web/` plus matching Supabase migrations.
 - Legacy-only support or compatibility fixes should stay in the Python surface.
 - Cross-cutting product rules should be expressed in the database when they are data-integrity or permission-sensitive.
 
@@ -269,4 +307,3 @@ This means:
 - `docs/nextjs_supabase_workspace_plan.md`
 - `docs/relational_purchasing_refactor.md`
 - `docs/DECISIONS.md`
-
