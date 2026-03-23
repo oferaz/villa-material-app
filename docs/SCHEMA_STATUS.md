@@ -21,6 +21,7 @@ The active workspace schema is built incrementally on top of these migrations:
 11. `db/migrations/20260321_add_room_object_budget_allowance.sql`
 12. `db/migrations/20260322_add_material_tags.sql`
 13. `db/migrations/20260323_add_client_views.sql`
+14. `db/migrations/20260323_fix_client_view_token_hash_extension_schema.sql`
 
 As of `2026-03-23`, this is the latest workspace-oriented migration chain present in the repo.
 

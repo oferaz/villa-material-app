@@ -328,7 +328,7 @@ returns text
 language sql
 immutable
 as $$
-  select encode(digest(coalesce(p_token, ''), 'sha256'), 'hex')
+  select encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex')
 $$;
 
 drop function if exists public.publish_client_view(uuid, text, timestamptz, jsonb, jsonb);
@@ -1067,4 +1067,5 @@ grant execute on function public.submit_client_view_response(text, uuid, uuid, n
 revoke all on function public.apply_client_view_response(uuid, uuid) from public;
 grant execute on function public.apply_client_view_response(uuid, uuid) to authenticated;
 grant execute on function public.apply_client_view_response(uuid, uuid) to service_role;
+
 

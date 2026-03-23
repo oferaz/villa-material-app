@@ -55,6 +55,7 @@ def test_material_tags_migration_adds_jsonb_array_column():
     assert "add column if not exists tags jsonb not null default '[]'::jsonb" in sql
     assert "check (jsonb_typeof(tags) = 'array')" in sql
 
+
 def test_client_view_migration_adds_share_tables_and_rpc_functions():
     sql = _read("db/migrations/20260323_add_client_views.sql")
 
@@ -66,4 +67,12 @@ def test_client_view_migration_adds_share_tables_and_rpc_functions():
     assert "create or replace function public.get_published_client_view" in sql
     assert "create or replace function public.submit_client_view_response" in sql
     assert "create or replace function public.apply_client_view_response" in sql
+    assert "extensions.digest" in sql
 
+
+def test_client_view_hash_fix_migration_qualifies_digest_function():
+    sql = _read("db/migrations/20260323_fix_client_view_token_hash_extension_schema.sql")
+
+    assert "create extension if not exists pgcrypto" in sql
+    assert "create or replace function public.client_view_token_hash" in sql
+    assert "extensions.digest" in sql
