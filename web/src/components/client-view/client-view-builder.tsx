@@ -79,6 +79,16 @@ function toDatetimeLocalValue(value?: string | null): string {
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
+function formatCardModeLabel(cardMode: ClientViewCardMode): string {
+  if (cardMode === "budget_input") {
+    return "Budget input";
+  }
+  if (cardMode === "scope_confirmation") {
+    return "Scope confirmation";
+  }
+  return "Material choice";
+}
+
 export function ClientViewBuilder({ project, materials, onProjectDataChanged }: ClientViewBuilderProps) {
   const [clientView, setClientView] = useState<ClientViewDetail | null>(null);
   const [responses, setResponses] = useState<ClientViewResponse[]>([]);
@@ -109,6 +119,15 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
   );
 
   const ownedMaterialIds = useMemo(() => new Set(materials.map((material) => material.id)), [materials]);
+  const responsesByItemId = useMemo(() => {
+    const next = new Map<string, ClientViewResponse[]>();
+    responses.forEach((response) => {
+      const current = next.get(response.itemId) ?? [];
+      current.push(response);
+      next.set(response.itemId, current);
+    });
+    return next;
+  }, [responses]);
 
   async function loadClientViewState() {
     setIsLoading(true);
@@ -501,43 +520,98 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
 
       <Card className="border-slate-200 shadow-sm">
         <CardHeader>
-          <CardTitle>Client responses</CardTitle>
-          <CardDescription>Review saved client feedback for the latest published version and apply supported changes back into the project.</CardDescription>
+          <CardTitle>Review by object</CardTitle>
+          <CardDescription>Review saved client feedback for each published object and apply supported changes back into the project.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {responses.length === 0 ? (
+          {!clientView ? (
             <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-              {clientView ? "No client responses yet for the current published version." : "Publish a client view to start collecting responses."}
+              Publish a client view to start collecting responses.
             </p>
           ) : (
-            responses.map((response) => (
-              <div key={response.id} className="rounded-xl border border-slate-200 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-slate-900">{response.itemLabel ?? response.itemId}</p>
-                    <p className="text-sm text-slate-500">{response.recipientEmail}</p>
+            clientView.items.map((item) => {
+              const itemResponses = responsesByItemId.get(item.id) ?? [];
+              const appliedCount = itemResponses.filter((response) => Boolean(response.appliedAt)).length;
+
+              return (
+                <div key={item.id} className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-slate-900">{item.objectName}</p>
+                        <Badge variant="outline">{item.roomName}</Badge>
+                        <Badge variant="outline">{item.houseName}</Badge>
+                        <Badge variant="outline">{formatCardModeLabel(item.cardMode)}</Badge>
+                      </div>
+                      <p className="text-sm text-slate-500">
+                        {item.objectCategory} - Qty {item.quantity}
+                        {item.currentSelectedMaterialName ? ` - Current: ${item.currentSelectedMaterialName}` : ""}
+                      </p>
+                      {item.promptText ? <p className="text-sm text-slate-600">{item.promptText}</p> : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">{itemResponses.length} response{itemResponses.length === 1 ? "" : "s"}</Badge>
+                      {appliedCount > 0 ? <Badge variant="success">{appliedCount} applied</Badge> : null}
+                      {item.budgetAllowance != null ? (
+                        <Badge variant="outline">Target {formatCurrencyAmount(item.budgetAllowance, project.currency)}</Badge>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {response.selectedOptionName ? <Badge variant="outline">{response.selectedOptionName}</Badge> : null}
-                    {response.scopeDecision ? <Badge variant="outline">{response.scopeDecision.replace("_", " ")}</Badge> : null}
-                    {response.preferredBudget != null ? <Badge variant="outline">{formatCurrencyAmount(response.preferredBudget, project.currency)}</Badge> : null}
-                    {response.appliedAt ? <Badge variant="success">Applied</Badge> : null}
+
+                  {item.cardMode === "material_choice" && item.options.length > 0 ? (
+                    <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      {item.options.map((option) => (
+                        <div key={option.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                          <p className="font-medium text-slate-900">{option.name}</p>
+                          {option.supplierName ? <p className="text-slate-500">{option.supplierName}</p> : null}
+                          {option.price != null ? (
+                            <p className="mt-1 text-slate-700">{formatCurrencyAmount(option.price, project.currency)}</p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 space-y-3">
+                    {itemResponses.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                        No client responses yet for this object.
+                      </p>
+                    ) : (
+                      itemResponses.map((response) => (
+                        <div key={response.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-slate-900">{response.recipientEmail}</p>
+                              <p className="text-xs text-slate-500">Updated {new Date(response.updatedAt).toLocaleString()}</p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {response.selectedOptionName ? <Badge variant="outline">{response.selectedOptionName}</Badge> : null}
+                              {response.scopeDecision ? <Badge variant="outline">{response.scopeDecision.replace("_", " ")}</Badge> : null}
+                              {response.preferredBudget != null ? (
+                                <Badge variant="outline">{formatCurrencyAmount(response.preferredBudget, project.currency)}</Badge>
+                              ) : null}
+                              {response.appliedAt ? <Badge variant="success">Applied</Badge> : null}
+                            </div>
+                          </div>
+                          {response.comment ? <p className="mt-3 text-sm text-slate-600">{response.comment}</p> : null}
+                          <div className="mt-3 flex items-center justify-end">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={Boolean(response.appliedAt) || applyingResponseId === response.id}
+                              onClick={() => void handleApplyResponse(response)}
+                            >
+                              {applyingResponseId === response.id ? "Applying..." : response.appliedAt ? "Applied" : "Apply to project"}
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
-                {response.comment ? <p className="mt-3 text-sm text-slate-600">{response.comment}</p> : null}
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <p className="text-xs text-slate-500">Updated {new Date(response.updatedAt).toLocaleString()}</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={Boolean(response.appliedAt) || applyingResponseId === response.id}
-                    onClick={() => void handleApplyResponse(response)}
-                  >
-                    {applyingResponseId === response.id ? "Applying..." : response.appliedAt ? "Applied" : "Apply to project"}
-                  </Button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </CardContent>
       </Card>
