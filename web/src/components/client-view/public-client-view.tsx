@@ -110,7 +110,40 @@ function validateDraftBeforeSubmit(item: ClientViewItem, draft: ItemDraft): stri
   return null;
 }
 
+function formatOverviewCurrencyValue(
+  value: number | null | undefined,
+  currency: string,
+): { code: string; amount: string; amountGroups: string[]; label: string } | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalizedCurrency = currency.trim().toUpperCase() || "USD";
+  const formatter = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: normalizedCurrency,
+    maximumFractionDigits: 0,
+  });
+  const parts = formatter.formatToParts(Math.round(value));
+  const amount = parts
+    .filter((part) => part.type !== "currency" && part.type !== "literal")
+    .map((part) => part.value)
+    .join("")
+    .trim();
+  const displayAmount = amount || formatter.format(Math.round(value));
+
+  return {
+    code: normalizedCurrency,
+    amount: displayAmount,
+    amountGroups: displayAmount.split(",").filter(Boolean),
+    label: formatter.format(Math.round(value)),
+  };
+}
+
 function OverviewSnapshotCard({ title, subtitle, progress, budget, currency }: OverviewSnapshotCardProps) {
+  const totalBudgetDisplay = formatOverviewCurrencyValue(budget.totalBudget, currency);
+  const remainingBudgetDisplay = formatOverviewCurrencyValue(budget.remainingAmount, currency);
+
   return (
     <Card className="border-slate-200 bg-white/95 shadow-sm backdrop-blur">
       <CardHeader>
@@ -130,9 +163,21 @@ function OverviewSnapshotCard({ title, subtitle, progress, budget, currency }: O
           </div>
           <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Budget</p>
-            <p className="mt-2 min-w-0 break-words text-[clamp(1.6rem,2.8vw,2rem)] font-semibold leading-tight text-slate-900">
-              {budget.totalBudget != null ? formatCurrencyAmount(budget.totalBudget, currency) : "Not set"}
-            </p>
+            {totalBudgetDisplay ? (
+              <div className="mt-2 min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">{totalBudgetDisplay.code}</p>
+                <p
+                  aria-label={totalBudgetDisplay.label}
+                  className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-1 text-[clamp(1.15rem,1.9vw,1.55rem)] font-semibold leading-tight tabular-nums tracking-[-0.02em] text-slate-900"
+                >
+                  {totalBudgetDisplay.amountGroups.map((group, index) => (
+                    <span key={`${group}-${index}`}>{index === 0 ? group : `,${group}`}</span>
+                  ))}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 min-w-0 break-words text-[clamp(1.15rem,1.9vw,1.55rem)] font-semibold leading-tight text-slate-900">Not set</p>
+            )}
             <p className="mt-1 break-words text-sm text-slate-600">Allocated {formatCurrencyAmount(budget.allocatedAmount, currency)}</p>
           </div>
           <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
@@ -142,9 +187,21 @@ function OverviewSnapshotCard({ title, subtitle, progress, budget, currency }: O
           </div>
           <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Remaining budget</p>
-            <p className="mt-2 min-w-0 break-words text-[clamp(1.6rem,2.8vw,2rem)] font-semibold leading-tight text-slate-900">
-              {budget.remainingAmount != null ? formatCurrencyAmount(budget.remainingAmount, currency) : "Not set"}
-            </p>
+            {remainingBudgetDisplay ? (
+              <div className="mt-2 min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">{remainingBudgetDisplay.code}</p>
+                <p
+                  aria-label={remainingBudgetDisplay.label}
+                  className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-1 text-[clamp(1.15rem,1.9vw,1.55rem)] font-semibold leading-tight tabular-nums tracking-[-0.02em] text-slate-900"
+                >
+                  {remainingBudgetDisplay.amountGroups.map((group, index) => (
+                    <span key={`${group}-${index}`}>{index === 0 ? group : `,${group}`}</span>
+                  ))}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 min-w-0 break-words text-[clamp(1.15rem,1.9vw,1.55rem)] font-semibold leading-tight text-slate-900">Not set</p>
+            )}
             <p className="mt-1 break-words text-sm text-slate-600">Compared with the current published selections</p>
           </div>
         </div>

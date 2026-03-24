@@ -36,6 +36,9 @@ interface BuilderItemConfig {
 interface ClientViewBuilderProps {
   project: Project;
   materials: UserMaterial[];
+  focusedRoomId?: string;
+  focusedObjectId?: string;
+  onFocusChange?: (selection: { houseId: string; roomId: string; objectId: string }) => void;
   onProjectDataChanged?: () => Promise<void> | void;
 }
 
@@ -111,7 +114,7 @@ function summarizeConfig(config: BuilderItemConfig): string {
   return "Client will confirm scope for this object.";
 }
 
-export function ClientViewBuilder({ project, materials, onProjectDataChanged }: ClientViewBuilderProps) {
+export function ClientViewBuilder({ project, materials, focusedRoomId, focusedObjectId, onFocusChange, onProjectDataChanged }: ClientViewBuilderProps) {
   const [clientView, setClientView] = useState<ClientViewDetail | null>(null);
   const [responses, setResponses] = useState<ClientViewResponse[]>([]);
   const [title, setTitle] = useState(`${project.name} Client Review`);
@@ -121,7 +124,8 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
   const [showHouseOverviews, setShowHouseOverviews] = useState(true);
   const [configsByObjectId, setConfigsByObjectId] = useState<Record<string, BuilderItemConfig>>({});
   const [optionPickerByObjectId, setOptionPickerByObjectId] = useState<Record<string, string>>({});
-  const [focusedObjectId, setFocusedObjectId] = useState("");
+  const [internalFocusedRoomId, setInternalFocusedRoomId] = useState("");
+  const [internalFocusedObjectId, setInternalFocusedObjectId] = useState("");
   const [publishedLink, setPublishedLink] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -144,6 +148,10 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
   );
 
   const ownedMaterialIds = useMemo(() => new Set(materials.map((material) => material.id)), [materials]);
+  const allRooms = useMemo(
+    () => project.houses.flatMap((house) => house.rooms.map((room) => ({ house, room }))),
+    [project]
+  );
   const responsesByItemId = useMemo(() => {
     const next = new Map<string, ClientViewResponse[]>();
     responses.forEach((response) => {
@@ -154,26 +162,81 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
     return next;
   }, [responses]);
 
+  const focusedRoomEntry = useMemo(() => {
+    return allRooms.find(({ room }) => room.id === internalFocusedRoomId) ?? allRooms[0] ?? null;
+  }, [allRooms, internalFocusedRoomId]);
+
   const focusedObjectEntry = useMemo(() => {
-    return allObjects.find(({ objectItem }) => objectItem.id === focusedObjectId) ?? allObjects[0] ?? null;
-  }, [allObjects, focusedObjectId]);
+    if (!focusedRoomEntry) {
+      return null;
+    }
+
+    return (
+      allObjects.find(
+        ({ room, objectItem }) => room.id === focusedRoomEntry.room.id && objectItem.id === internalFocusedObjectId
+      ) ??
+      allObjects.find(({ room }) => room.id === focusedRoomEntry.room.id) ??
+      null
+    );
+  }, [allObjects, focusedRoomEntry, internalFocusedObjectId]);
 
   useEffect(() => {
-    if (!allObjects.length) {
-      if (focusedObjectId) {
-        setFocusedObjectId("");
+    if (!allRooms.length) {
+      if (internalFocusedRoomId) {
+        setInternalFocusedRoomId("");
       }
       return;
     }
 
-    const nextFocusedId = allObjects.some(({ objectItem }) => objectItem.id === focusedObjectId)
-      ? focusedObjectId
-      : allObjects[0].objectItem.id;
+    const nextFocusedRoomId = allRooms.some(({ room }) => room.id === internalFocusedRoomId)
+      ? internalFocusedRoomId
+      : allRooms[0].room.id;
 
-    if (nextFocusedId !== focusedObjectId) {
-      setFocusedObjectId(nextFocusedId);
+    if (nextFocusedRoomId !== internalFocusedRoomId) {
+      setInternalFocusedRoomId(nextFocusedRoomId);
     }
-  }, [allObjects, focusedObjectId]);
+  }, [allRooms, internalFocusedRoomId]);
+
+  useEffect(() => {
+    const activeRoom = allRooms.find(({ room }) => room.id === internalFocusedRoomId)?.room;
+    const nextFocusedObjectId = activeRoom?.objects.some((objectItem) => objectItem.id === internalFocusedObjectId)
+      ? internalFocusedObjectId
+      : activeRoom?.objects[0]?.id ?? "";
+
+    if (nextFocusedObjectId !== internalFocusedObjectId) {
+      setInternalFocusedObjectId(nextFocusedObjectId);
+    }
+  }, [allRooms, internalFocusedObjectId, internalFocusedRoomId]);
+
+  useEffect(() => {
+    if (focusedObjectId) {
+      const matchingObject = allObjects.find(({ objectItem }) => objectItem.id === focusedObjectId);
+      if (!matchingObject) {
+        return;
+      }
+      if (matchingObject.room.id !== internalFocusedRoomId) {
+        setInternalFocusedRoomId(matchingObject.room.id);
+      }
+      if (matchingObject.objectItem.id !== internalFocusedObjectId) {
+        setInternalFocusedObjectId(matchingObject.objectItem.id);
+      }
+      return;
+    }
+
+    if (focusedRoomId) {
+      const matchingRoom = allRooms.find(({ room }) => room.id === focusedRoomId)?.room;
+      if (!matchingRoom) {
+        return;
+      }
+      if (matchingRoom.id !== internalFocusedRoomId) {
+        setInternalFocusedRoomId(matchingRoom.id);
+      }
+      const nextFocusedObjectId = matchingRoom.objects[0]?.id ?? "";
+      if (nextFocusedObjectId !== internalFocusedObjectId) {
+        setInternalFocusedObjectId(nextFocusedObjectId);
+      }
+    }
+  }, [allObjects, allRooms, focusedObjectId, focusedRoomId, internalFocusedObjectId, internalFocusedRoomId]);
 
   const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
 
@@ -248,6 +311,18 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
         ...patch,
       },
     }));
+  }
+
+  function handleFocusRoom(houseId: string, roomId: string, objectId: string) {
+    setInternalFocusedRoomId(roomId);
+    setInternalFocusedObjectId(objectId);
+    onFocusChange?.({ houseId, roomId, objectId });
+  }
+
+  function handleFocusObject(houseId: string, roomId: string, objectId: string) {
+    setInternalFocusedRoomId(roomId);
+    setInternalFocusedObjectId(objectId);
+    onFocusChange?.({ houseId, roomId, objectId });
   }
 
   const selectedCount = Object.values(configsByObjectId).filter((config) => config.selected).length;
@@ -544,7 +619,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
 
                   {house.rooms.map((room) => {
                     const roomSelectedCount = room.objects.filter((objectItem) => (configsByObjectId[objectItem.id] ?? defaultConfigForObject()).selected).length;
-                    const isRoomFocused = room.objects.some((objectItem) => objectItem.id === focusedObjectEntry?.objectItem.id);
+                    const isRoomFocused = room.id === focusedRoomEntry?.room.id;
 
                     return (
                       <div
@@ -555,10 +630,14 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
                         )}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
+                          <button
+                            type="button"
+                            onClick={() => handleFocusRoom(house.id, room.id, room.objects[0]?.id ?? "")}
+                            className="min-w-0 text-left"
+                          >
                             <p className="font-medium text-slate-900">{room.name}</p>
                             <p className="text-xs text-slate-500">{room.objects.length} object{room.objects.length === 1 ? "" : "s"}</p>
-                          </div>
+                          </button>
                           <Badge variant="outline">{roomSelectedCount} selected</Badge>
                         </div>
 
@@ -578,7 +657,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
                               <button
                                 key={objectItem.id}
                                 type="button"
-                                onClick={() => setFocusedObjectId(objectItem.id)}
+                                onClick={() => handleFocusObject(house.id, room.id, objectItem.id)}
                                 className={cn(
                                   "w-full rounded-lg border px-3 py-2 text-left transition",
                                   isFocused ? "border-blue-300 bg-blue-50 shadow-sm" : "border-slate-200 bg-white hover:bg-slate-50",

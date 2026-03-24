@@ -1397,14 +1397,22 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   }
 
   function handleSelectRoom(houseId: string, roomId: string) {
-    setActiveTab("rooms");
-    setSelectedHouseId(houseId);
-    setSelectedRoomId(roomId);
-
     const house = project?.houses.find((item) => item.id === houseId);
     const room = house?.rooms.find((item) => item.id === roomId);
-    setSelectedObjectId(room?.objects[0]?.id ?? "");
-    setPendingScrollRoomId(roomId);
+    const nextObjectId = room?.objects[0]?.id ?? "";
+
+    if (activeTab !== "client") {
+      setActiveTab("rooms");
+      setPendingScrollRoomId(roomId);
+    }
+
+    setSelectedHouseId(houseId);
+    setSelectedRoomId(roomId);
+    setSelectedObjectId(nextObjectId);
+
+    if (activeTab === "client" && typeof window !== "undefined" && window.innerWidth < 1024) {
+      window.dispatchEvent(new Event("materia:open-right-panel"));
+    }
   }
 
   function handleRenameRoom(roomId: string, nextName: string) {
@@ -2025,7 +2033,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   }
 
   function handleSelectObject(houseId: string, roomId: string, objectId: string) {
-    setActiveTab("rooms");
+    if (activeTab !== "client") {
+      setActiveTab("rooms");
+    }
+
     setSelectedHouseId(houseId);
     setSelectedRoomId(roomId);
     setSelectedObjectId(objectId);
@@ -2753,6 +2764,16 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     <ClientViewBuilder
       project={project}
       materials={materialLibrary}
+      focusedRoomId={selectedRoom?.id ?? ""}
+      focusedObjectId={selectedObject?.id ?? ""}
+      onFocusChange={({ houseId, roomId, objectId }) => {
+        setSelectedHouseId(houseId);
+        setSelectedRoomId(roomId);
+        setSelectedObjectId(objectId);
+        if (typeof window !== "undefined" && window.innerWidth < 1024) {
+          window.dispatchEvent(new Event("materia:open-right-panel"));
+        }
+      }}
       onProjectDataChanged={async () => {
         await reloadWorkspaceProjects();
       }}
