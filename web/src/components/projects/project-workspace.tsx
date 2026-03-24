@@ -12,6 +12,7 @@ import {
 } from "@/components/layout/top-nav";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import { ClientViewBuilder } from "@/components/client-view/client-view-builder";
+import { ClientViewFocusPanelShell } from "@/components/client-view/client-view-focus-panel";
 import { BudgetOverview, type BudgetFocusSelection } from "@/components/budget/budget-overview";
 import { MaterialsGallery } from "@/components/materials/materials-gallery";
 import { HouseRoomTree } from "@/components/rooms/house-room-tree";
@@ -2797,6 +2798,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
           description='Click "Assign" in the Materials Gallery to choose a room object and confirm with OK.'
         />
       )
+    ) : activeTab === "client" ? (
+      <ClientViewFocusPanelShell />
     ) : (
       <RightPanelPlaceholder
         title="Workspace context"

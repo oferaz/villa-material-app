@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { formatCurrencyAmount } from "@/lib/currency";
 import { UserMaterial } from "@/lib/supabase/materials-repository";
 import {
@@ -15,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { CLIENT_VIEW_FOCUS_PANEL_SLOT_ID, ClientViewFocusedObjectManager } from "@/components/client-view/client-view-focus-panel";
 import {
   ClientViewCardMode,
   ClientViewDetail,
@@ -172,6 +174,21 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
       setFocusedObjectId(nextFocusedId);
     }
   }, [allObjects, focusedObjectId]);
+
+  const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const syncPortalHost = () => setPortalHost(document.getElementById(CLIENT_VIEW_FOCUS_PANEL_SLOT_ID));
+    syncPortalHost();
+    const observer = new MutationObserver(syncPortalHost);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
   async function loadClientViewState() {
     setIsLoading(true);
     setErrorMessage(null);
@@ -335,8 +352,50 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
       ? []
       : materials.filter((material) => !focusedConfig.optionMaterialIds.includes(material.id));
 
+  const focusedObjectManager = !focusedObjectEntry || !focusedConfig ? (
+    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+      Choose an object from the map to manage card mode, prompt, and published materials.
+    </div>
+  ) : (
+    <ClientViewFocusedObjectManager
+      houseName={focusedObjectEntry.house.name}
+      roomName={focusedObjectEntry.room.name}
+      objectName={focusedObjectEntry.objectItem.name}
+      objectCategory={focusedObjectEntry.objectItem.category}
+      quantity={focusedObjectEntry.objectItem.quantity}
+      budgetAllowance={focusedObjectEntry.objectItem.budgetAllowance}
+      currentSelectedMaterialName={focusedSelectedMaterial?.name ?? null}
+      selected={focusedConfig.selected}
+      cardMode={focusedConfig.cardMode}
+      promptText={focusedConfig.promptText}
+      showSourceLink={focusedConfig.showSourceLink}
+      optionMaterialIds={focusedConfig.optionMaterialIds}
+      materials={materials}
+      availableMaterials={focusedAvailableMaterials}
+      optionPickerValue={optionPickerByObjectId[focusedObjectEntry.objectItem.id] ?? ""}
+      projectCurrency={project.currency}
+      onToggleSelected={(selected) => updateConfig(focusedObjectEntry.objectItem.id, { selected })}
+      onCardModeChange={(cardMode) => updateConfig(focusedObjectEntry.objectItem.id, { cardMode, optionMaterialIds: cardMode === "material_choice" ? focusedConfig.optionMaterialIds : [] })}
+      onPromptChange={(promptText) => updateConfig(focusedObjectEntry.objectItem.id, { promptText })}
+      onToggleShowSourceLink={(showSourceLink) => updateConfig(focusedObjectEntry.objectItem.id, { showSourceLink })}
+      onOptionPickerChange={(value) => setOptionPickerByObjectId((current) => ({ ...current, [focusedObjectEntry.objectItem.id]: value }))}
+      onAddOption={() => {
+        const materialId = optionPickerByObjectId[focusedObjectEntry.objectItem.id];
+        if (!materialId) {
+          return;
+        }
+        updateConfig(focusedObjectEntry.objectItem.id, { optionMaterialIds: [...focusedConfig.optionMaterialIds, materialId].slice(0, 3) });
+        setOptionPickerByObjectId((current) => ({ ...current, [focusedObjectEntry.objectItem.id]: "" }));
+      }}
+      onRemoveOption={(materialId) => updateConfig(focusedObjectEntry.objectItem.id, { optionMaterialIds: focusedConfig.optionMaterialIds.filter((entry) => entry !== materialId) })}
+    />
+  );
+
+  const focusedObjectManagerPortal = portalHost && portalHost.isConnected ? createPortal(focusedObjectManager, portalHost) : null;
+
   return (
     <div className="min-w-0 space-y-4">
+      {focusedObjectManagerPortal}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
@@ -444,9 +503,26 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
       <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <CardTitle>Objects to share</CardTitle>
-          <CardDescription>Use the project map on the left, then configure the selected object on the right just like the Rooms workflow.</CardDescription>
+          <CardDescription>Use the project map here, then manage card mode, prompt, and material options from the right panel in Client View.</CardDescription>
         </CardHeader>
-        <CardContent className="grid min-w-0 gap-4 overflow-hidden xl:grid-cols-[0.9fr_1.1fr]">
+        <CardContent className="space-y-4">
+          <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-sm text-slate-700">
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Focused object</p>
+            {focusedObjectEntry ? (
+              <>
+                <p className="mt-1 font-semibold text-slate-900">{focusedObjectEntry.objectItem.name}</p>
+                <p className="mt-1 text-slate-600">{focusedObjectEntry.room.name} - {focusedObjectEntry.house.name}</p>
+                <p className="mt-2 text-slate-600">
+                  {portalHost && portalHost.isConnected
+                    ? "Use the right panel to edit card mode, prompt, source links, and material options for this object."
+                    : "Use the editor below to edit card mode, prompt, source links, and material options for this object."}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-slate-600">Choose an object from the map to start configuring what the client will see.</p>
+            )}
+          </div>
+
           <div className="space-y-4">
             {project.houses.map((house) => {
               const houseSelectedCount = house.rooms.reduce(
@@ -548,173 +624,8 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
             })}
           </div>
 
-          <div className="min-w-0">
-            {!focusedObjectEntry || !focusedConfig ? (
-              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
-                Choose an object from the map to configure what the client will see.
-              </div>
-            ) : (
-              <div className="min-w-0 space-y-4 overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="min-w-0 break-words text-lg font-semibold text-slate-900">{focusedObjectEntry.objectItem.name}</h3>
-                      <Badge variant="outline">{focusedObjectEntry.room.name}</Badge>
-                      <Badge variant="outline">{focusedObjectEntry.house.name}</Badge>
-                    </div>
-                    <p className="break-words text-sm text-slate-500">
-                      {focusedObjectEntry.objectItem.category} - Qty {focusedObjectEntry.objectItem.quantity}
-                      {focusedSelectedMaterial ? ` - Current: ${focusedSelectedMaterial.name}` : " - No current selection"}
-                    </p>
-                  </div>
-                  {focusedObjectEntry.objectItem.budgetAllowance != null ? (
-                    <Badge variant="outline">Budget {formatCurrencyAmount(focusedObjectEntry.objectItem.budgetAllowance, project.currency)}</Badge>
-                  ) : null}
-                </div>
 
-                <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
-                  <input
-                    type="checkbox"
-                    checked={focusedConfig.selected}
-                    onChange={(event) => updateConfig(focusedObjectEntry.objectItem.id, { selected: event.target.checked })}
-                  />
-                  Include this object in the client view
-                </label>
-
-                <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-                  <div className="min-w-0 space-y-3">
-                    <label className="block space-y-1.5">
-                      <span className="text-sm font-medium text-slate-700">Card mode</span>
-                      <select
-                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
-                        value={focusedConfig.cardMode}
-                        onChange={(event) =>
-                          updateConfig(focusedObjectEntry.objectItem.id, {
-                            cardMode: event.target.value as ClientViewCardMode,
-                            optionMaterialIds:
-                              event.target.value === "material_choice" ? focusedConfig.optionMaterialIds : [],
-                          })
-                        }
-                      >
-                        <option value="material_choice">Material choice</option>
-                        <option value="budget_input">Budget input</option>
-                        <option value="scope_confirmation">Scope confirmation</option>
-                      </select>
-                    </label>
-                    <label className="block space-y-1.5">
-                      <span className="text-sm font-medium text-slate-700">Prompt</span>
-                      <textarea
-                        className="min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
-                        value={focusedConfig.promptText}
-                        onChange={(event) => updateConfig(focusedObjectEntry.objectItem.id, { promptText: event.target.value })}
-                        placeholder="Optional prompt shown to the client"
-                      />
-                    </label>
-                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={focusedConfig.showSourceLink}
-                        onChange={(event) => updateConfig(focusedObjectEntry.objectItem.id, { showSourceLink: event.target.checked })}
-                      />
-                      Show source/vendor links when available
-                    </label>
-                    {!focusedConfig.selected ? (
-                      <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
-                        This object stays private until you enable &quot;Include this object in the client view.&quot;
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {focusedConfig.cardMode === "material_choice" ? (
-                    <div className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-800">Published options</p>
-                          <p className="break-words text-xs text-slate-500">Choose up to 3 explicit materials from your private library.</p>
-                        </div>
-                        <Badge variant="outline">{focusedConfig.optionMaterialIds.length}/3</Badge>
-                      </div>
-                      <div className="flex gap-2">
-                        <select
-                          className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
-                          value={optionPickerByObjectId[focusedObjectEntry.objectItem.id] ?? ""}
-                          onChange={(event) =>
-                            setOptionPickerByObjectId((current) => ({
-                              ...current,
-                              [focusedObjectEntry.objectItem.id]: event.target.value,
-                            }))
-                          }
-                        >
-                          <option value="">Choose material</option>
-                          {focusedAvailableMaterials.map((material) => (
-                            <option key={material.id} value={material.id}>
-                              {material.name} - {material.supplier}
-                            </option>
-                          ))}
-                        </select>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="shrink-0"
-                          disabled={!optionPickerByObjectId[focusedObjectEntry.objectItem.id] || focusedConfig.optionMaterialIds.length >= 3}
-                          onClick={() => {
-                            const materialId = optionPickerByObjectId[focusedObjectEntry.objectItem.id];
-                            if (!materialId) {
-                              return;
-                            }
-                            updateConfig(focusedObjectEntry.objectItem.id, {
-                              optionMaterialIds: [...focusedConfig.optionMaterialIds, materialId].slice(0, 3),
-                            });
-                            setOptionPickerByObjectId((current) => ({ ...current, [focusedObjectEntry.objectItem.id]: "" }));
-                          }}
-                        >
-                          Add
-                        </Button>
-                      </div>
-                      <div className="grid min-w-0 gap-2 md:grid-cols-2">
-                        {focusedConfig.optionMaterialIds.map((materialId) => {
-                          const material = materials.find((entry) => entry.id === materialId);
-                          if (!material) {
-                            return null;
-                          }
-                          return (
-                            <div key={material.id} className="min-w-0 rounded-lg border border-slate-200 bg-white p-3 text-sm">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="break-words font-medium text-slate-900">{material.name}</p>
-                                  <p className="break-words text-slate-500">{material.supplier}</p>
-                                  <p className="mt-1 break-words text-slate-700">{formatCurrencyAmount(material.price, project.currency)}</p>
-                                </div>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="shrink-0"
-                                  onClick={() =>
-                                    updateConfig(focusedObjectEntry.objectItem.id, {
-                                      optionMaterialIds: focusedConfig.optionMaterialIds.filter((entry) => entry !== material.id),
-                                    })
-                                  }
-                                >
-                                  Remove
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                      {focusedConfig.cardMode === "budget_input"
-                        ? "Clients will see the object context and submit a preferred budget."
-                        : "Clients will confirm whether this object is approved, not needed, or needs revision."}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          {portalHost && portalHost.isConnected ? null : focusedObjectManager}
         </CardContent>
       </Card>
 

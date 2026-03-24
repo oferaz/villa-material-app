@@ -94,6 +94,22 @@ function resolveClientViewCurrency(clientView: PublicClientViewData | null): str
   return "USD";
 }
 
+function validateDraftBeforeSubmit(item: ClientViewItem, draft: ItemDraft): string | null {
+  if (item.cardMode === "material_choice" && !draft.selectedOptionId) {
+    return `Please choose one of the material options for ${item.objectName} before saving your response.`;
+  }
+
+  if (item.cardMode === "budget_input" && !draft.preferredBudget.trim()) {
+    return `Please enter a preferred budget for ${item.objectName} before saving your response.`;
+  }
+
+  if (item.cardMode === "scope_confirmation" && !draft.scopeDecision) {
+    return `Please choose a scope decision for ${item.objectName} before saving your response.`;
+  }
+
+  return null;
+}
+
 function OverviewSnapshotCard({ title, subtitle, progress, budget, currency }: OverviewSnapshotCardProps) {
   return (
     <Card className="border-slate-200 bg-white/95 shadow-sm backdrop-blur">
@@ -290,6 +306,12 @@ export function PublicClientView({ token }: PublicClientViewProps) {
     }
 
     const draft = drafts[item.id] ?? buildDraftFromItem(item, context ?? undefined);
+    const validationMessage = validateDraftBeforeSubmit(item, draft);
+    if (validationMessage) {
+      setErrorMessage(validationMessage);
+      return;
+    }
+
     setSavingItemId(item.id);
     setErrorMessage(null);
     try {
