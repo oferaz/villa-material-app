@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductOptionCard } from "@/components/products/product-option-card";
+import { cn } from "@/lib/utils";
 
 interface AddFromLinkPayload {
   url: string;
@@ -246,6 +247,7 @@ export function ProductOptionsPanel({
   const showLinkPreview = Boolean(
     linkUrl.trim() || trimmedLinkName || trimmedLinkSupplier || linkPrice.trim() || trimmedLinkImageUrl || isFetchingLinkPreview || linkPreviewMessage
   );
+  const showMissingPriceWarning = showLinkPreview && !hasPreviewPrice && !isFetchingLinkPreview;
 
   if (!roomObject) {
     return (
@@ -604,7 +606,11 @@ export function ProductOptionsPanel({
                   </p>
                   <p className="mt-1 text-xs text-slate-500">Secondary fast path: paste link, fetch product, and add it to this object.</p>
                 </div>
-                {hasPreviewPrice ? <Badge variant="outline">{formatMoney(parsedLinkPrice, projectCurrency)}</Badge> : null}
+                {hasPreviewPrice ? (
+                  <Badge variant="outline">{formatMoney(parsedLinkPrice, projectCurrency)}</Badge>
+                ) : showMissingPriceWarning ? (
+                  <Badge variant="danger">Price missing</Badge>
+                ) : null}
               </div>
 
               <form onSubmit={handleAddFromLink} className="mt-3 space-y-3">
@@ -653,14 +659,31 @@ export function ProductOptionsPanel({
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Preview</p>
                           <p className="mt-1 text-sm font-semibold text-slate-900">{trimmedLinkName || "Product name will appear here"}</p>
                           <p className="mt-1 text-xs text-slate-500">{trimmedLinkSupplier || "Supplier will be derived from the link if available."}</p>
-                          <p className="mt-2 text-sm font-medium text-slate-900">
+                          <p
+                            className={cn(
+                              "mt-2 text-sm font-medium",
+                              hasPreviewPrice ? "text-slate-900" : "text-red-700"
+                            )}
+                          >
                             {hasPreviewPrice ? formatMoney(parsedLinkPrice, projectCurrency) : "Price needed before adding"}
                           </p>
                         </div>
+                        {showMissingPriceWarning ? (
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                            <p className="font-semibold">Price was not fetched.</p>
+                            <p className="mt-1 text-xs text-red-600">Add the product price manually before clicking Add from link.</p>
+                          </div>
+                        ) : null}
                         <div className="grid gap-2 sm:grid-cols-2">
                           <Input value={linkName} onChange={(event) => setLinkName(event.target.value)} placeholder="Product name (optional)" />
                           <Input value={linkSupplier} onChange={(event) => setLinkSupplier(event.target.value)} placeholder="Supplier (optional)" />
-                          <Input value={linkPrice} onChange={(event) => setLinkPrice(event.target.value)} placeholder="Price" inputMode="decimal" />
+                          <Input
+                            value={linkPrice}
+                            onChange={(event) => setLinkPrice(event.target.value)}
+                            placeholder="Price"
+                            inputMode="decimal"
+                            className={cn(showMissingPriceWarning && "border-red-300 bg-red-50 text-red-900 placeholder:text-red-500 focus-visible:bg-white")}
+                          />
                           <Input value={linkImageUrl} onChange={(event) => setLinkImageUrl(event.target.value)} placeholder="Image URL (optional override)" />
                         </div>
                         <Input

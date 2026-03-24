@@ -148,6 +148,45 @@ describe("ProductOptionsPanel", () => {
     vi.unstubAllGlobals();
   });
 
+  it("highlights when price is not fetched so the user adds it manually", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        name: "Stone basin",
+        supplier: "Shopee",
+        imageUrl: "https://example.com/basin.jpg",
+        priceFound: false,
+        imageFound: true,
+        warning: "Could not extract price from link. Enter price manually.",
+      }),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <ProductOptionsPanel
+        roomObject={createRoomObject()}
+        projectCurrency="THB"
+        materialLibraryVersion={1}
+        onSelectProduct={() => {}}
+        onSearchCatalog={() => {}}
+        onAddFromLink={() => {}}
+      />
+    );
+
+    await user.type(screen.getByPlaceholderText("Paste product link"), "https://shopee.co.th/product");
+    await user.click(screen.getByRole("button", { name: /fetch product/i }));
+
+    await waitFor(() => expect(screen.getByText("Price missing")).toBeTruthy());
+    expect(screen.getByText("Price was not fetched.")).toBeTruthy();
+    expect(screen.getByText("Add the product price manually before clicking Add from link.")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Price").className).toContain("border-red-300");
+
+    vi.unstubAllGlobals();
+  });
+
   it("shows the selected product price once an item has been added", () => {
     render(
       <ProductOptionsPanel
