@@ -106,34 +106,34 @@ function OverviewSnapshotCard({ title, subtitle, progress, budget, currency }: O
         <CardDescription>{subtitle}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="min-w-0 grid gap-3 sm:grid-cols-2">
+          <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Progress</p>
             <p className="mt-2 text-3xl font-semibold text-slate-900">{progress.completionPercent}%</p>
             <p className="mt-1 text-sm text-slate-600">{progress.actionsCompleted} of {progress.actionsTotal} workflow steps completed</p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Budget</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
+            <p className="mt-2 min-w-0 break-words text-[clamp(1.6rem,2.8vw,2rem)] font-semibold leading-tight text-slate-900">
               {budget.totalBudget != null ? formatCurrencyAmount(budget.totalBudget, currency) : "Not set"}
             </p>
-            <p className="mt-1 text-sm text-slate-600">Allocated {formatCurrencyAmount(budget.allocatedAmount, currency)}</p>
+            <p className="mt-1 break-words text-sm text-slate-600">Allocated {formatCurrencyAmount(budget.allocatedAmount, currency)}</p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Remaining steps</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{progress.actionsRemaining}</p>
+            <p className="mt-2 min-w-0 break-words text-[clamp(1.6rem,2.8vw,2rem)] font-semibold leading-tight text-slate-900">{progress.actionsRemaining}</p>
             <p className="mt-1 text-sm text-slate-600">Still to complete across material, PO, order, and install</p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Remaining budget</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
+            <p className="mt-2 min-w-0 break-words text-[clamp(1.6rem,2.8vw,2rem)] font-semibold leading-tight text-slate-900">
               {budget.remainingAmount != null ? formatCurrencyAmount(budget.remainingAmount, currency) : "Not set"}
             </p>
-            <p className="mt-1 text-sm text-slate-600">Compared with the current published selections</p>
+            <p className="mt-1 break-words text-sm text-slate-600">Compared with the current published selections</p>
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div>
             <p className="text-sm font-medium text-slate-900">Workflow stage snapshot</p>
             <p className="text-xs text-slate-500">This is a frozen summary captured when the designer published this client view.</p>
@@ -420,7 +420,13 @@ export function PublicClientView({ token }: PublicClientViewProps) {
         ) : null}
 
         <section className="grid gap-4">
-          {clientView.items.map((item) => {
+          {clientView.items.length === 0 ? (
+            <Card className="border-slate-200 shadow-sm">
+              <CardContent className="pt-5 text-sm text-slate-600">
+                This client view does not include object review cards. The shared page is currently being used just for project and budget visibility.
+              </CardContent>
+            </Card>
+          ) : clientView.items.map((item) => {
             const draft = drafts[item.id] ?? buildDraftFromItem(item, context ?? undefined);
             const response = itemResponsesById.get(item.id);
             return (

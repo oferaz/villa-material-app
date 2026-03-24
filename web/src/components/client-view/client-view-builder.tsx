@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   ClientViewCardMode,
   ClientViewDetail,
@@ -34,6 +35,12 @@ interface ClientViewBuilderProps {
   project: Project;
   materials: UserMaterial[];
   onProjectDataChanged?: () => Promise<void> | void;
+}
+
+interface ProjectObjectEntry {
+  house: Project["houses"][number];
+  room: Project["houses"][number]["rooms"][number];
+  objectItem: Project["houses"][number]["rooms"][number]["objects"][number];
 }
 
 function defaultConfigForObject(selectedMaterialId?: string): BuilderItemConfig {
@@ -89,6 +96,19 @@ function formatCardModeLabel(cardMode: ClientViewCardMode): string {
   return "Material choice";
 }
 
+function summarizeConfig(config: BuilderItemConfig): string {
+  if (!config.selected) {
+    return "Not included in the shared view yet.";
+  }
+  if (config.cardMode === "material_choice") {
+    return `${config.optionMaterialIds.length} material option${config.optionMaterialIds.length === 1 ? "" : "s"} prepared.`;
+  }
+  if (config.cardMode === "budget_input") {
+    return "Client will submit a preferred budget for this object.";
+  }
+  return "Client will confirm scope for this object.";
+}
+
 export function ClientViewBuilder({ project, materials, onProjectDataChanged }: ClientViewBuilderProps) {
   const [clientView, setClientView] = useState<ClientViewDetail | null>(null);
   const [responses, setResponses] = useState<ClientViewResponse[]>([]);
@@ -99,6 +119,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
   const [showHouseOverviews, setShowHouseOverviews] = useState(true);
   const [configsByObjectId, setConfigsByObjectId] = useState<Record<string, BuilderItemConfig>>({});
   const [optionPickerByObjectId, setOptionPickerByObjectId] = useState<Record<string, string>>({});
+  const [focusedObjectId, setFocusedObjectId] = useState("");
   const [publishedLink, setPublishedLink] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -106,7 +127,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
   const [applyingResponseId, setApplyingResponseId] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const allObjects = useMemo(
+  const allObjects = useMemo<ProjectObjectEntry[]>(
     () =>
       project.houses.flatMap((house) =>
         house.rooms.flatMap((room) =>
@@ -131,6 +152,26 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
     return next;
   }, [responses]);
 
+  const focusedObjectEntry = useMemo(() => {
+    return allObjects.find(({ objectItem }) => objectItem.id === focusedObjectId) ?? allObjects[0] ?? null;
+  }, [allObjects, focusedObjectId]);
+
+  useEffect(() => {
+    if (!allObjects.length) {
+      if (focusedObjectId) {
+        setFocusedObjectId("");
+      }
+      return;
+    }
+
+    const nextFocusedId = allObjects.some(({ objectItem }) => objectItem.id === focusedObjectId)
+      ? focusedObjectId
+      : allObjects[0].objectItem.id;
+
+    if (nextFocusedId !== focusedObjectId) {
+      setFocusedObjectId(nextFocusedId);
+    }
+  }, [allObjects, focusedObjectId]);
   async function loadClientViewState() {
     setIsLoading(true);
     setErrorMessage(null);
@@ -208,10 +249,6 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
             : [],
       }));
 
-    if (items.length === 0) {
-      setErrorMessage("Select at least one object to publish.");
-      return;
-    }
 
     if (items.some((item) => item.cardMode === "material_choice" && item.optionMaterialIds.length === 0)) {
       setErrorMessage("Each material choice item needs at least one published option.");
@@ -277,6 +314,26 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
       setApplyingResponseId("");
     }
   }
+
+  const focusedConfig =
+    focusedObjectEntry == null
+      ? null
+      : configsByObjectId[focusedObjectEntry.objectItem.id] ??
+        defaultConfigForObject(
+          focusedObjectEntry.objectItem.selectedProductId && ownedMaterialIds.has(focusedObjectEntry.objectItem.selectedProductId)
+            ? focusedObjectEntry.objectItem.selectedProductId
+            : undefined
+        );
+
+  const focusedSelectedMaterial =
+    focusedObjectEntry == null
+      ? null
+      : materials.find((material) => material.id === focusedObjectEntry.objectItem.selectedProductId) ?? null;
+
+  const focusedAvailableMaterials =
+    focusedObjectEntry == null || focusedConfig == null
+      ? []
+      : materials.filter((material) => !focusedConfig.optionMaterialIds.includes(material.id));
 
   return (
     <div className="space-y-4">
@@ -386,164 +443,276 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
 
       <Card className="border-slate-200 shadow-sm">
         <CardHeader>
-          <CardTitle>Published objects</CardTitle>
-          <CardDescription>Select which room objects the client should see, and choose the review mode for each.</CardDescription>
+          <CardTitle>Objects to share</CardTitle>
+          <CardDescription>Use the project map on the left, then configure the selected object on the right just like the Rooms workflow.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {allObjects.map(({ house, room, objectItem }) => {
-            const config = configsByObjectId[objectItem.id] ?? defaultConfigForObject(objectItem.selectedProductId && ownedMaterialIds.has(objectItem.selectedProductId) ? objectItem.selectedProductId : undefined);
-            const selectedMaterial = materials.find((material) => material.id === objectItem.selectedProductId);
-            const availableMaterials = materials.filter((material) => !config.optionMaterialIds.includes(material.id));
-            return (
-              <div key={objectItem.id} className="rounded-xl border border-slate-200 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={config.selected}
-                          onChange={(event) => updateConfig(objectItem.id, { selected: event.target.checked })}
-                        />
-                        {objectItem.name}
-                      </label>
-                      <Badge variant="outline">{room.name}</Badge>
-                      <Badge variant="outline">{house.name}</Badge>
+        <CardContent className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="space-y-4">
+            {project.houses.map((house) => {
+              const houseSelectedCount = house.rooms.reduce(
+                (total, room) =>
+                  total + room.objects.filter((objectItem) => (configsByObjectId[objectItem.id] ?? defaultConfigForObject()).selected).length,
+                0
+              );
+
+              return (
+                <section key={house.id} className="space-y-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">House</p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-base font-semibold text-slate-900">{house.name}</h3>
+                      <Badge variant="outline">{houseSelectedCount} selected</Badge>
                     </div>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {objectItem.category} - Qty {objectItem.quantity}
-                      {selectedMaterial ? ` - Current: ${selectedMaterial.name}` : " - No current selection"}
-                    </p>
+                    {house.sizeSqm ? <p className="text-xs text-slate-500">{house.sizeSqm} m2</p> : null}
                   </div>
-                  {objectItem.budgetAllowance != null ? (
-                    <Badge variant="outline">Budget {formatCurrencyAmount(objectItem.budgetAllowance, project.currency)}</Badge>
-                  ) : null}
-                </div>
 
-                {config.selected ? (
-                  <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-                    <div className="space-y-3">
-                      <label className="block space-y-1.5">
-                        <span className="text-sm font-medium text-slate-700">Card mode</span>
-                        <select
-                          className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
-                          value={config.cardMode}
-                          onChange={(event) =>
-                            updateConfig(objectItem.id, {
-                              cardMode: event.target.value as ClientViewCardMode,
-                              optionMaterialIds:
-                                event.target.value === "material_choice" ? config.optionMaterialIds : [],
-                            })
-                          }
-                        >
-                          <option value="material_choice">Material choice</option>
-                          <option value="budget_input">Budget input</option>
-                          <option value="scope_confirmation">Scope confirmation</option>
-                        </select>
-                      </label>
-                      <label className="block space-y-1.5">
-                        <span className="text-sm font-medium text-slate-700">Prompt</span>
-                        <textarea
-                          className="min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
-                          value={config.promptText}
-                          onChange={(event) => updateConfig(objectItem.id, { promptText: event.target.value })}
-                          placeholder="Optional prompt shown to the client"
-                        />
-                      </label>
-                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={config.showSourceLink}
-                          onChange={(event) => updateConfig(objectItem.id, { showSourceLink: event.target.checked })}
-                        />
-                        Show source/vendor links when available
-                      </label>
-                    </div>
+                  {house.rooms.map((room) => {
+                    const roomSelectedCount = room.objects.filter((objectItem) => (configsByObjectId[objectItem.id] ?? defaultConfigForObject()).selected).length;
+                    const isRoomFocused = room.objects.some((objectItem) => objectItem.id === focusedObjectEntry?.objectItem.id);
 
-                    {config.cardMode === "material_choice" ? (
-                      <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex items-center justify-between gap-2">
+                    return (
+                      <div
+                        key={room.id}
+                        className={cn(
+                          "space-y-2.5 rounded-xl border p-3 transition",
+                          isRoomFocused ? "border-blue-200 bg-blue-50/60 shadow-sm" : "border-slate-200 bg-white"
+                        )}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <p className="text-sm font-medium text-slate-800">Published options</p>
-                            <p className="text-xs text-slate-500">Choose up to 3 explicit materials from your private library.</p>
+                            <p className="font-medium text-slate-900">{room.name}</p>
+                            <p className="text-xs text-slate-500">{room.objects.length} object{room.objects.length === 1 ? "" : "s"}</p>
                           </div>
-                          <Badge variant="outline">{config.optionMaterialIds.length}/3</Badge>
+                          <Badge variant="outline">{roomSelectedCount} selected</Badge>
                         </div>
-                        <div className="flex gap-2">
-                          <select
-                            className="h-10 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
-                            value={optionPickerByObjectId[objectItem.id] ?? ""}
-                            onChange={(event) => setOptionPickerByObjectId((current) => ({ ...current, [objectItem.id]: event.target.value }))}
-                          >
-                            <option value="">Choose material</option>
-                            {availableMaterials.map((material) => (
-                              <option key={material.id} value={material.id}>
-                                {material.name} - {material.supplier}
-                              </option>
-                            ))}
-                          </select>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            disabled={!optionPickerByObjectId[objectItem.id] || config.optionMaterialIds.length >= 3}
-                            onClick={() => {
-                              const materialId = optionPickerByObjectId[objectItem.id];
-                              if (!materialId) {
-                                return;
-                              }
-                              updateConfig(objectItem.id, {
-                                optionMaterialIds: [...config.optionMaterialIds, materialId].slice(0, 3),
-                              });
-                              setOptionPickerByObjectId((current) => ({ ...current, [objectItem.id]: "" }));
-                            }}
-                          >
-                            Add
-                          </Button>
-                        </div>
-                        <div className="grid gap-2 md:grid-cols-2">
-                          {config.optionMaterialIds.map((materialId) => {
-                            const material = materials.find((entry) => entry.id === materialId);
-                            if (!material) {
-                              return null;
-                            }
+
+                        <div className="space-y-2">
+                          {room.objects.map((objectItem) => {
+                            const config =
+                              configsByObjectId[objectItem.id] ??
+                              defaultConfigForObject(
+                                objectItem.selectedProductId && ownedMaterialIds.has(objectItem.selectedProductId)
+                                  ? objectItem.selectedProductId
+                                  : undefined
+                              );
+                            const isFocused = focusedObjectEntry?.objectItem.id === objectItem.id;
+                            const selectedMaterial = materials.find((material) => material.id === objectItem.selectedProductId);
+
                             return (
-                              <div key={material.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div>
-                                    <p className="font-medium text-slate-900">{material.name}</p>
-                                    <p className="text-slate-500">{material.supplier}</p>
-                                    <p className="mt-1 text-slate-700">{formatCurrencyAmount(material.price, project.currency)}</p>
+                              <button
+                                key={objectItem.id}
+                                type="button"
+                                onClick={() => setFocusedObjectId(objectItem.id)}
+                                className={cn(
+                                  "w-full rounded-lg border px-3 py-2 text-left transition",
+                                  isFocused ? "border-blue-300 bg-blue-50 shadow-sm" : "border-slate-200 bg-white hover:bg-slate-50",
+                                  config.selected ? "ring-1 ring-emerald-200" : ""
+                                )}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={config.selected}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onChange={(event) => updateConfig(objectItem.id, { selected: event.target.checked })}
+                                    className="mt-1"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="truncate text-sm font-medium text-slate-900">
+                                        {objectItem.name}
+                                        {objectItem.quantity > 1 ? ` x${objectItem.quantity}` : ""}
+                                      </p>
+                                      {config.selected ? <Badge variant="success">Included</Badge> : null}
+                                      <Badge variant="outline">{formatCardModeLabel(config.cardMode)}</Badge>
+                                    </div>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      {objectItem.category}
+                                      {selectedMaterial ? ` - Current: ${selectedMaterial.name}` : " - No current selection"}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-500">{summarizeConfig(config)}</p>
                                   </div>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() =>
-                                      updateConfig(objectItem.id, {
-                                        optionMaterialIds: config.optionMaterialIds.filter((entry) => entry !== material.id),
-                                      })
-                                    }
-                                  >
-                                    Remove
-                                  </Button>
+                                  {objectItem.budgetAllowance != null ? (
+                                    <Badge variant="outline">{formatCurrencyAmount(objectItem.budgetAllowance, project.currency)}</Badge>
+                                  ) : null}
                                 </div>
-                              </div>
+                              </button>
                             );
                           })}
                         </div>
                       </div>
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                        {config.cardMode === "budget_input"
-                          ? "Clients will see the object context and submit a preferred budget."
-                          : "Clients will confirm whether this object is approved, not needed, or needs revision."}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
+                    );
+                  })}
+                </section>
+              );
+            })}
+          </div>
+
+          <div>
+            {!focusedObjectEntry || !focusedConfig ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+                Choose an object from the map to configure what the client will see.
               </div>
-            );
-          })}
+            ) : (
+              <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-semibold text-slate-900">{focusedObjectEntry.objectItem.name}</h3>
+                      <Badge variant="outline">{focusedObjectEntry.room.name}</Badge>
+                      <Badge variant="outline">{focusedObjectEntry.house.name}</Badge>
+                    </div>
+                    <p className="text-sm text-slate-500">
+                      {focusedObjectEntry.objectItem.category} - Qty {focusedObjectEntry.objectItem.quantity}
+                      {focusedSelectedMaterial ? ` - Current: ${focusedSelectedMaterial.name}` : " - No current selection"}
+                    </p>
+                  </div>
+                  {focusedObjectEntry.objectItem.budgetAllowance != null ? (
+                    <Badge variant="outline">Budget {formatCurrencyAmount(focusedObjectEntry.objectItem.budgetAllowance, project.currency)}</Badge>
+                  ) : null}
+                </div>
+
+                <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={focusedConfig.selected}
+                    onChange={(event) => updateConfig(focusedObjectEntry.objectItem.id, { selected: event.target.checked })}
+                  />
+                  Include this object in the client view
+                </label>
+
+                <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+                  <div className="space-y-3">
+                    <label className="block space-y-1.5">
+                      <span className="text-sm font-medium text-slate-700">Card mode</span>
+                      <select
+                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
+                        value={focusedConfig.cardMode}
+                        onChange={(event) =>
+                          updateConfig(focusedObjectEntry.objectItem.id, {
+                            cardMode: event.target.value as ClientViewCardMode,
+                            optionMaterialIds:
+                              event.target.value === "material_choice" ? focusedConfig.optionMaterialIds : [],
+                          })
+                        }
+                      >
+                        <option value="material_choice">Material choice</option>
+                        <option value="budget_input">Budget input</option>
+                        <option value="scope_confirmation">Scope confirmation</option>
+                      </select>
+                    </label>
+                    <label className="block space-y-1.5">
+                      <span className="text-sm font-medium text-slate-700">Prompt</span>
+                      <textarea
+                        className="min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
+                        value={focusedConfig.promptText}
+                        onChange={(event) => updateConfig(focusedObjectEntry.objectItem.id, { promptText: event.target.value })}
+                        placeholder="Optional prompt shown to the client"
+                      />
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={focusedConfig.showSourceLink}
+                        onChange={(event) => updateConfig(focusedObjectEntry.objectItem.id, { showSourceLink: event.target.checked })}
+                      />
+                      Show source/vendor links when available
+                    </label>
+                    {!focusedConfig.selected ? (
+                      <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                        This object stays private until you enable &quot;Include this object in the client view.&quot;
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {focusedConfig.cardMode === "material_choice" ? (
+                    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">Published options</p>
+                          <p className="text-xs text-slate-500">Choose up to 3 explicit materials from your private library.</p>
+                        </div>
+                        <Badge variant="outline">{focusedConfig.optionMaterialIds.length}/3</Badge>
+                      </div>
+                      <div className="flex gap-2">
+                        <select
+                          className="h-10 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
+                          value={optionPickerByObjectId[focusedObjectEntry.objectItem.id] ?? ""}
+                          onChange={(event) =>
+                            setOptionPickerByObjectId((current) => ({
+                              ...current,
+                              [focusedObjectEntry.objectItem.id]: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Choose material</option>
+                          {focusedAvailableMaterials.map((material) => (
+                            <option key={material.id} value={material.id}>
+                              {material.name} - {material.supplier}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={!optionPickerByObjectId[focusedObjectEntry.objectItem.id] || focusedConfig.optionMaterialIds.length >= 3}
+                          onClick={() => {
+                            const materialId = optionPickerByObjectId[focusedObjectEntry.objectItem.id];
+                            if (!materialId) {
+                              return;
+                            }
+                            updateConfig(focusedObjectEntry.objectItem.id, {
+                              optionMaterialIds: [...focusedConfig.optionMaterialIds, materialId].slice(0, 3),
+                            });
+                            setOptionPickerByObjectId((current) => ({ ...current, [focusedObjectEntry.objectItem.id]: "" }));
+                          }}
+                        >
+                          Add
+                        </Button>
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {focusedConfig.optionMaterialIds.map((materialId) => {
+                          const material = materials.find((entry) => entry.id === materialId);
+                          if (!material) {
+                            return null;
+                          }
+                          return (
+                            <div key={material.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="font-medium text-slate-900">{material.name}</p>
+                                  <p className="text-slate-500">{material.supplier}</p>
+                                  <p className="mt-1 text-slate-700">{formatCurrencyAmount(material.price, project.currency)}</p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    updateConfig(focusedObjectEntry.objectItem.id, {
+                                      optionMaterialIds: focusedConfig.optionMaterialIds.filter((entry) => entry !== material.id),
+                                    })
+                                  }
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                      {focusedConfig.cardMode === "budget_input"
+                        ? "Clients will see the object context and submit a preferred budget."
+                        : "Clients will confirm whether this object is approved, not needed, or needs revision."}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -556,6 +725,10 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
           {!clientView ? (
             <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
               Publish a client view to start collecting responses.
+            </p>
+          ) : clientView.items.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              This version was shared without any object review cards. Clients can still open the link and see the published project or house summary snapshots.
             </p>
           ) : (
             clientView.items.map((item) => {
@@ -600,7 +773,6 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
                       ))}
                     </div>
                   ) : null}
-
                   <div className="mt-4 space-y-3">
                     {itemResponses.length === 0 ? (
                       <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
@@ -647,4 +819,3 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
     </div>
   );
 }
-
