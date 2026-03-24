@@ -2776,7 +2776,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onSelectProduct={handleSelectProduct}
         onSearchCatalog={handleSearchCatalog}
         onAddFromLink={handleAddFromLink}
-        onUpdateBudgetAllowance={handleUpdateBudgetAllowance}
       />
     ) : activeTab === "materials" ? (
       pendingMaterialAssignment ? (
@@ -2850,6 +2849,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} activeWorkspaceTab={activeTab} />;
 }
+
+
 
 
 

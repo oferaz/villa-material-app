@@ -266,6 +266,47 @@ export function RoomObjectsList({
                     </p>
 
                     {isSelected ? (
+                      <form onSubmit={(event) => handleBudgetSave(event, objectItem.id)} className="mt-2 rounded-lg border border-slate-200 bg-white/90 p-2.5">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Object budget</p>
+                            <p className="text-xs text-slate-500">Set or update the object budget here without opening product options.</p>
+                          </div>
+                          <Badge variant="outline">Room section editor</Badge>
+                        </div>
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                          <Input
+                            value={budgetInput}
+                            onChange={(event) => handleBudgetInputChange(objectItem.id, event.target.value)}
+                            placeholder={`Set object budget in ${projectCurrency}`}
+                            inputMode="numeric"
+                            className="sm:flex-1"
+                          />
+                          <Button type="submit" size="sm" variant="outline" disabled={parsedBudgetInput === "invalid" || !isBudgetDirty}>
+                            Save object budget
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={objectBudget === null && !budgetInput.trim()}
+                            onClick={() => handleBudgetClear(objectItem.id)}
+                          >
+                            Clear
+                          </Button>
+                        </div>
+                        {budgetErrors[objectItem.id] ? (
+                          <p className="mt-2 text-xs text-red-600">{budgetErrors[objectItem.id]}</p>
+                        ) : null}
+                      </form>
+                    ) : objectBudget !== null || hasMaterial ? (
+                      <div className="mt-1 grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
+                        <p>Selected cost: {hasMaterial ? formatCurrencyAmount(selectedLineCost, projectCurrency) : "No material selected"}</p>
+                        <p>Object budget: {objectBudget === null ? "Not set" : formatCurrencyAmount(objectBudget, projectCurrency)}</p>
+                      </div>
+                    ) : null}
+
+                    {isSelected ? (
                       <div className="mt-2 rounded-lg border border-slate-200 bg-white/90 p-2.5">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
@@ -302,53 +343,12 @@ export function RoomObjectsList({
                           </div>
                         </div>
                       </div>
-                    ) : objectBudget !== null || hasMaterial ? (
-                      <div className="mt-1 grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
-                        <p>Selected cost: {hasMaterial ? formatCurrencyAmount(selectedLineCost, projectCurrency) : "No material selected"}</p>
-                        <p>Object budget: {objectBudget === null ? "Not set" : formatCurrencyAmount(objectBudget, projectCurrency)}</p>
-                      </div>
                     ) : null}
 
                     {isPushingRoomOverBudget ? (
                       <p className="mt-1 text-xs font-medium text-red-700">
                         This object contributes to the room going over plan.
                       </p>
-                    ) : null}
-
-                    {isSelected ? (
-                      <form onSubmit={(event) => handleBudgetSave(event, objectItem.id)} className="mt-2 rounded-lg border border-slate-200 bg-white/90 p-2.5">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Object budget</p>
-                            <p className="text-xs text-slate-500">Set or update the object budget here without opening product options.</p>
-                          </div>
-                          <Badge variant="outline">Room section editor</Badge>
-                        </div>
-                        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                          <Input
-                            value={budgetInput}
-                            onChange={(event) => handleBudgetInputChange(objectItem.id, event.target.value)}
-                            placeholder={`Set object budget in ${projectCurrency}`}
-                            inputMode="numeric"
-                            className="sm:flex-1"
-                          />
-                          <Button type="submit" size="sm" variant="outline" disabled={parsedBudgetInput === "invalid" || !isBudgetDirty}>
-                            Save object budget
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            disabled={objectBudget === null && !budgetInput.trim()}
-                            onClick={() => handleBudgetClear(objectItem.id)}
-                          >
-                            Clear
-                          </Button>
-                        </div>
-                        {budgetErrors[objectItem.id] ? (
-                          <p className="mt-2 text-xs text-red-600">{budgetErrors[objectItem.id]}</p>
-                        ) : null}
-                      </form>
                     ) : null}
 
                     {showWorkflowActions ? (

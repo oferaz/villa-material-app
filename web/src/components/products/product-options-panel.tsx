@@ -49,7 +49,6 @@ interface ProductOptionsPanelProps {
   onSelectProduct: (productId: string) => void;
   onSearchCatalog: (objectId: string, query: string) => void;
   onAddFromLink: (objectId: string, payload: AddFromLinkPayload) => void;
-  onUpdateBudgetAllowance: (objectId: string, budgetAllowance: number | null) => void;
 }
 
 function formatMoney(value: number | null | undefined, currency: string): string {
@@ -68,21 +67,6 @@ function formatObjectBudgetDelta(value: number | null | undefined, currency: str
     return `${formatCurrencyAmount(rounded, currency)} over object budget`;
   }
   return `${formatCurrencyAmount(Math.abs(rounded), currency)} under object budget`;
-}
-
-function parseBudgetAllowanceInput(value: string): number | null | "invalid" {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const parsed = Number(trimmed.replace(/,/g, ""));
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return "invalid";
-  }
-
-  const normalized = Math.round(parsed);
-  return normalized > 0 ? normalized : null;
 }
 
 function matchesBudgetFilter(
@@ -129,7 +113,6 @@ export function ProductOptionsPanel({
   onSelectProduct,
   onSearchCatalog,
   onAddFromLink,
-  onUpdateBudgetAllowance,
 }: ProductOptionsPanelProps) {
   const [catalogQuery, setCatalogQuery] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
@@ -143,8 +126,6 @@ export function ProductOptionsPanel({
   const [linkPreviewMessage, setLinkPreviewMessage] = useState("");
   const [showSearchTools, setShowSearchTools] = useState(true);
   const [budgetFilter, setBudgetFilter] = useState<BudgetFilter>("recommended");
-  const [budgetAllowanceInput, setBudgetAllowanceInput] = useState("");
-  const [budgetAllowanceError, setBudgetAllowanceError] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -193,14 +174,6 @@ export function ProductOptionsPanel({
     };
   }, [catalogQuery, materialLibraryVersion, roomObject?.id, roomObject?.name, showSearchTools]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const nextAllowance =
-      typeof roomObject?.budgetAllowance === "number" && Number.isFinite(roomObject.budgetAllowance) && roomObject.budgetAllowance > 0
-        ? Math.round(roomObject.budgetAllowance)
-        : null;
-    setBudgetAllowanceInput(nextAllowance === null ? "" : String(nextAllowance));
-    setBudgetAllowanceError("");
-  }, [roomObject?.id, roomObject?.budgetAllowance]);
 
   const rankedOptions = useMemo(() => {
     if (!roomObject) {
@@ -277,10 +250,6 @@ export function ProductOptionsPanel({
 
   const objectStatus = getObjectStatus(roomObject);
   const showLinkOptionalFields = linkUrl.trim().length > 0;
-  const currentObjectBudget = budgetSelectionSummary?.objectBudget ?? null;
-  const parsedBudgetAllowance = parseBudgetAllowanceInput(budgetAllowanceInput);
-  const isBudgetAllowanceDirty =
-    parsedBudgetAllowance !== "invalid" && parsedBudgetAllowance !== currentObjectBudget;
 
   function handleSearchSubmit(event?: FormEvent) {
     event?.preventDefault();
@@ -313,30 +282,6 @@ export function ProductOptionsPanel({
     });
   }
 
-  function handleBudgetAllowanceSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!roomObject) {
-      return;
-    }
-
-    if (parsedBudgetAllowance === "invalid") {
-      setBudgetAllowanceError("Enter a valid non-negative number.");
-      return;
-    }
-
-    setBudgetAllowanceError("");
-    onUpdateBudgetAllowance(roomObject.id, parsedBudgetAllowance);
-  }
-
-  function handleClearBudgetAllowance() {
-    if (!roomObject) {
-      return;
-    }
-
-    setBudgetAllowanceInput("");
-    setBudgetAllowanceError("");
-    onUpdateBudgetAllowance(roomObject.id, null);
-  }
 
   async function fetchLinkDetails() {
     const trimmedUrl = linkUrl.trim();
@@ -511,40 +456,6 @@ export function ProductOptionsPanel({
                 <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentProjectRemaining, projectCurrency)}</span>
               </p>
             </div>
-            <form onSubmit={handleBudgetAllowanceSubmit} className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Object budget</p>
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={budgetAllowanceInput}
-                  onChange={(event) => {
-                    setBudgetAllowanceInput(event.target.value);
-                    setBudgetAllowanceError("");
-                  }}
-                  placeholder={`Set object budget in ${projectCurrency}`}
-                  inputMode="numeric"
-                  className="sm:flex-1"
-                />
-                <Button type="submit" size="sm" variant="outline" disabled={parsedBudgetAllowance === "invalid" || !isBudgetAllowanceDirty}>
-                  Save object budget
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleClearBudgetAllowance}
-                  disabled={currentObjectBudget === null && !budgetAllowanceInput.trim()}
-                >
-                  Clear
-                </Button>
-              </div>
-              {budgetAllowanceError ? (
-                <p className="mt-2 text-xs text-red-600">{budgetAllowanceError}</p>
-              ) : (
-                <p className="mt-2 text-[11px] text-slate-500">
-                  Set an object budget so each option can show whether it lands under, on, or over budget.
-                </p>
-              )}
-            </form>
             <div className="mt-3 flex flex-wrap gap-2">
               {([
                 ["recommended", "Recommended"],
@@ -728,3 +639,4 @@ export function ProductOptionsPanel({
     </Card>
   );
 }
+
