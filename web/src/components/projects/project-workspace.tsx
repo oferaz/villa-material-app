@@ -19,6 +19,7 @@ import { HouseRoomTree } from "@/components/rooms/house-room-tree";
 import { ProjectRoomsStack } from "@/components/rooms/project-rooms-stack";
 import { AddObjectDialog } from "@/components/rooms/add-object-dialog";
 import { ProductOptionsPanel } from "@/components/products/product-options-panel";
+import { applyLinkProductOption, mergeObjectOptionsAfterSearch } from "@/components/products/product-options-state";
 import { WorkflowOverview } from "@/components/workflow/workflow-overview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -475,9 +476,6 @@ function normalizeWorkflowState(
   };
 }
 
-function isLinkOption(option: ProductOption): boolean {
-  return option.sourceType === "link";
-}
 
 function createInitialBudgetMap(projects: Project[] = []): Record<string, ProjectBudget> {
   return projects.reduce<Record<string, ProjectBudget>>((acc, item) => {
@@ -2335,20 +2333,11 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         limit: 30,
       });
 
-      updateObjectById(objectId, (objectItem) => {
-        const selectedOption = objectItem.selectedProductId
-          ? objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId)
-          : undefined;
-        const nextOptions = selectedOption && !rankedMaterials.some((option) => option.id === selectedOption.id)
-          ? [selectedOption, ...rankedMaterials]
-          : rankedMaterials;
-
-        return {
-          ...objectItem,
-          materialSearchQuery: normalizedQuery,
-          productOptions: nextOptions,
-        };
-      });
+      updateObjectById(objectId, (objectItem) => ({
+        ...objectItem,
+        materialSearchQuery: normalizedQuery,
+        productOptions: mergeObjectOptionsAfterSearch(objectItem, rankedMaterials),
+      }));
 
       void updateRoomObjectMaterialSearchQueryById(objectId, normalizedQuery).catch((error) => {
         console.warn("Failed to save room object material search query.", error);
@@ -2358,24 +2347,11 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
     const catalogOptions = searchMockCatalogOptions(targetObject.name, normalizedQuery);
 
-    updateObjectById(objectId, (objectItem) => {
-      const linkedOptions = objectItem.productOptions.filter(isLinkOption);
-      const selectedOption = objectItem.selectedProductId
-        ? objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId)
-        : undefined;
-      const dedupedOptions = [...linkedOptions, ...catalogOptions].filter(
-        (option, index, collection) => collection.findIndex((candidate) => candidate.id === option.id) === index
-      );
-      const nextOptions = selectedOption && !dedupedOptions.some((option) => option.id === selectedOption.id)
-        ? [selectedOption, ...dedupedOptions]
-        : dedupedOptions;
-
-      return {
-        ...objectItem,
-        materialSearchQuery: normalizedQuery,
-        productOptions: nextOptions,
-      };
-    });
+    updateObjectById(objectId, (objectItem) => ({
+      ...objectItem,
+      materialSearchQuery: normalizedQuery,
+      productOptions: mergeObjectOptionsAfterSearch(objectItem, catalogOptions, { preserveLinkOptions: true }),
+    }));
   }
 
   function handleAddFromLink(
@@ -2403,14 +2379,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       })
         .then((savedOption) => {
           upsertMaterialInLibrary(savedOption);
-          updateObjectById(objectId, (objectItem) => {
-            const dedupedOptions = [savedOption, ...objectItem.productOptions.filter((item) => item.id !== savedOption.id)];
-            return {
-              ...objectItem,
-              productOptions: dedupedOptions,
-              selectedProductId: savedOption.id,
-            };
-          });
+          updateObjectById(objectId, (objectItem) => ({
+            ...objectItem,
+            ...applyLinkProductOption(objectItem, savedOption),
+          }));
         })
         .catch((error) => {
           window.alert(error instanceof Error ? error.message : "Failed to save link to your material library.");
@@ -2430,7 +2402,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
     updateObjectById(objectId, (objectItem) => ({
       ...objectItem,
-      productOptions: [linkOption, ...objectItem.productOptions],
+      ...applyLinkProductOption(objectItem, linkOption),
     }));
   }
 

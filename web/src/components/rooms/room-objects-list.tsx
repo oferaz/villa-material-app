@@ -204,6 +204,12 @@ export function RoomObjectsList({
         </div>
       </CardHeader>
       <CardContent>
+        {room.objects.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
+            <p className="font-medium text-slate-800">No products in this room yet.</p>
+            <p className="mt-1 text-xs text-slate-500">Add a suggested or custom object, then search products or paste a link to add your first item.</p>
+          </div>
+        ) : null}
         <ul className="space-y-2">
           {room.objects.map((objectItem) => {
             const workflowStage = getObjectWorkflowStage(objectItem);

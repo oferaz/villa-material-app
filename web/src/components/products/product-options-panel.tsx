@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Link as LinkIcon } from "lucide-react";
 import { ProductOptionBudgetImpact, ProductSelectionBudgetSummary, RoomObject, getObjectStatus } from "@/types";
@@ -174,7 +176,6 @@ export function ProductOptionsPanel({
     };
   }, [catalogQuery, materialLibraryVersion, roomObject?.id, roomObject?.name, showSearchTools]); // eslint-disable-line react-hooks/exhaustive-deps
 
-
   const rankedOptions = useMemo(() => {
     if (!roomObject) {
       return [];
@@ -237,19 +238,61 @@ export function ProductOptionsPanel({
     }
   }, [roomObject]);
 
+  const trimmedLinkName = linkName.trim();
+  const trimmedLinkSupplier = linkSupplier.trim();
+  const trimmedLinkImageUrl = linkImageUrl.trim();
+  const parsedLinkPrice = linkPrice.trim() ? Number(linkPrice.trim()) : undefined;
+  const hasPreviewPrice = typeof parsedLinkPrice === "number" && Number.isFinite(parsedLinkPrice) && parsedLinkPrice > 0;
+  const showLinkPreview = Boolean(
+    linkUrl.trim() || trimmedLinkName || trimmedLinkSupplier || linkPrice.trim() || trimmedLinkImageUrl || isFetchingLinkPreview || linkPreviewMessage
+  );
+
   if (!roomObject) {
     return (
       <Card className="h-full border-slate-200 shadow-sm">
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle>Product options</CardTitle>
-          <CardDescription>Select an object to view options.</CardDescription>
+          <CardDescription>Search for products or paste a link to add your first item once you select an object.</CardDescription>
         </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add product</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">Search products or paste a link</p>
+            <p className="mt-1 text-xs text-slate-500">Search helps you explore. Paste a supplier, Lazada, or Shopee link for a fast import.</p>
+            <div className="mt-4 space-y-3">
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-600">Search products</p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input disabled placeholder="Select an object to search your library" className="h-10 border-slate-300 bg-white pl-8 text-sm" />
+                  </div>
+                  <Button type="button" disabled className="h-10 sm:min-w-[140px]">
+                    Search Library
+                  </Button>
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <LinkIcon className="h-4 w-4" />
+                  Paste product link
+                </p>
+                <p className="mt-1 text-xs text-slate-500">Paste link to quickly add from supplier / Lazada / Shopee.</p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <Input disabled placeholder="Select an object to paste a product link" className="h-10 bg-white text-sm" />
+                  <Button type="button" disabled variant="outline" className="h-10 sm:min-w-[140px]">
+                    Add from link
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
       </Card>
     );
   }
 
   const objectStatus = getObjectStatus(roomObject);
-  const showLinkOptionalFields = linkUrl.trim().length > 0;
 
   function handleSearchSubmit(event?: FormEvent) {
     event?.preventDefault();
@@ -282,7 +325,6 @@ export function ProductOptionsPanel({
     });
   }
 
-
   async function fetchLinkDetails() {
     const trimmedUrl = linkUrl.trim();
     if (!trimmedUrl) {
@@ -312,27 +354,27 @@ export function ProductOptionsPanel({
         throw new Error(payload.error || "Failed to fetch link details.");
       }
 
-      if (!linkName.trim() && payload.name) {
+      if (!trimmedLinkName && payload.name) {
         setLinkName(payload.name);
       }
-      if (!linkSupplier.trim() && payload.supplier) {
+      if (!trimmedLinkSupplier && payload.supplier) {
         setLinkSupplier(payload.supplier);
       }
       if (!linkPrice.trim() && typeof payload.price === "number" && payload.price > 0) {
         setLinkPrice(String(payload.price));
       }
-      if (!linkImageUrl.trim() && payload.imageUrl) {
+      if (!trimmedLinkImageUrl && payload.imageUrl) {
         setLinkImageUrl(payload.imageUrl);
       }
 
       if (payload.priceFound && payload.imageFound) {
-        setLinkPreviewMessage("Fetched price and image from link.");
+        setLinkPreviewMessage("Fetched product preview with image and price.");
       } else if (payload.priceFound) {
-        setLinkPreviewMessage("Fetched price from link. Add image optionally.");
+        setLinkPreviewMessage("Fetched product price. Add or adjust the image if you want.");
       } else if (payload.imageFound) {
-        setLinkPreviewMessage("Fetched image from link. Add price manually.");
+        setLinkPreviewMessage("Fetched product image. Enter the price to add it.");
       } else {
-        setLinkPreviewMessage(payload.warning ?? "Could not auto-fetch details. Enter manually.");
+        setLinkPreviewMessage(payload.warning ?? "Could not auto-fetch details. Enter them manually.");
       }
 
       return true;
@@ -362,16 +404,15 @@ export function ProductOptionsPanel({
       return;
     }
 
-    const parsedPrice = linkPrice.trim() ? Number(linkPrice.trim()) : undefined;
-    if (parsedPrice === undefined || !Number.isFinite(parsedPrice) || parsedPrice <= 0) {
-      setLinkError("Price is required. Click Fetch details or enter it manually.");
+    const nextPrice = linkPrice.trim() ? Number(linkPrice.trim()) : undefined;
+    if (nextPrice === undefined || !Number.isFinite(nextPrice) || nextPrice <= 0) {
+      setLinkError("Price is required. Click Fetch product or enter it manually.");
       return;
     }
 
-    const trimmedImageUrl = linkImageUrl.trim();
-    if (trimmedImageUrl) {
+    if (trimmedLinkImageUrl) {
       try {
-        new URL(trimmedImageUrl);
+        new URL(trimmedLinkImageUrl);
       } catch {
         setLinkError("Please enter a valid image URL.");
         return;
@@ -380,10 +421,10 @@ export function ProductOptionsPanel({
 
     onAddFromLink(roomObject.id, {
       url: trimmedUrl,
-      name: linkName.trim() || undefined,
-      supplier: linkSupplier.trim() || undefined,
-      price: parsedPrice,
-      imageUrl: trimmedImageUrl || undefined,
+      name: trimmedLinkName || undefined,
+      supplier: trimmedLinkSupplier || undefined,
+      price: nextPrice,
+      imageUrl: trimmedLinkImageUrl || undefined,
       tags: parseMaterialTagsInput(linkTagsInput),
     });
 
@@ -487,9 +528,12 @@ export function ProductOptionsPanel({
         {selectedOption ? (
           <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 shadow-sm">
             <div className="flex items-start justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Selected material</p>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Selected material</p>
+                <p className="mt-1 text-xs text-emerald-800">Search products or paste another link if you want a faster replacement.</p>
+              </div>
               <Button type="button" size="sm" variant="outline" onClick={handleShowSearchAlternatives}>
-                Search alternatives
+                Search or paste another link
               </Button>
             </div>
             <ProductOptionCard
@@ -502,123 +546,151 @@ export function ProductOptionsPanel({
           </div>
         ) : null}
 
-        <form
-          onSubmit={handleSearchSubmit}
-          className={`rounded-xl border border-slate-200 bg-white p-3 shadow-sm ${showSearchTools ? "" : "hidden"}`}
-        >
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Material search query</p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-              <Input
-                ref={searchInputRef}
-                value={catalogQuery}
-                onChange={(event) => setCatalogQuery(event.target.value)}
-                placeholder="Refine search (e.g. white oak matte, brushed brass)"
-                className="h-10 border-slate-300 bg-slate-50 pl-8 text-sm text-slate-900 placeholder:text-slate-500 focus-visible:bg-white"
-              />
+        {showSearchTools ? (
+          <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add product</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">Search products or paste a link</p>
+              <p className="mt-1 text-xs text-slate-500">Search helps you explore your private library. Paste a link to quickly add from supplier / Lazada / Shopee.</p>
             </div>
-            <Button type="submit" size="sm" className="h-10 px-3 text-sm font-medium sm:min-w-[140px]">
-              Search Library
-            </Button>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {suggestionChips.map((chip) => {
-              const nextQuery = `${roomObject.name} ${chip}`.trim();
-              return (
-                <Button
-                  key={chip}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-2 text-[11px]"
-                  onClick={() => setCatalogQuery(nextQuery)}
-                >
-                  {chip}
-                </Button>
-              );
-            })}
-          </div>
-        </form>
 
-        <form
-          onSubmit={handleAddFromLink}
-          className={`space-y-2 rounded-lg border border-slate-200 bg-white p-3 ${showSearchTools ? "" : "hidden"}`}
-        >
-          <p className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
-            <LinkIcon className="h-3.5 w-3.5" />
-            Add material from link
-          </p>
-          <Input
-            value={linkUrl}
-            onChange={(event) => {
-              setLinkUrl(event.target.value);
-              setLinkError("");
-              setLinkPreviewMessage("");
-            }}
-            placeholder="https://supplier-site.com/product"
-            onBlur={() => {
-              if (linkUrl.trim()) {
-                void fetchLinkDetails();
-              }
-            }}
-          />
-          {showLinkOptionalFields ? (
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full"
-                onClick={() => void fetchLinkDetails()}
-                disabled={isFetchingLinkPreview}
-              >
-                {isFetchingLinkPreview ? "Fetching details..." : "Fetch details from link"}
-              </Button>
-              <Input
-                value={linkName}
-                onChange={(event) => setLinkName(event.target.value)}
-                placeholder="Product name (optional)"
-              />
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <Input
-                  value={linkSupplier}
-                  onChange={(event) => setLinkSupplier(event.target.value)}
-                  placeholder="Supplier (optional)"
-                />
-                <Input
-                  value={linkPrice}
-                  onChange={(event) => setLinkPrice(event.target.value)}
-                  placeholder="Price (required if not found)"
-                  inputMode="decimal"
-                />
+            <form onSubmit={handleSearchSubmit} className="space-y-3">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-slate-700">Search products</p>
+                  <p className="text-[11px] text-slate-500">Primary: explore your saved materials</p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      ref={searchInputRef}
+                      value={catalogQuery}
+                      onChange={(event) => setCatalogQuery(event.target.value)}
+                      placeholder="Search products or paste a link"
+                      className="h-10 border-slate-300 bg-slate-50 pl-8 text-sm text-slate-900 placeholder:text-slate-500 focus-visible:bg-white"
+                    />
+                  </div>
+                  <Button type="submit" className="h-10 px-3 text-sm font-medium sm:min-w-[140px]">
+                    Search Library
+                  </Button>
+                </div>
               </div>
-              <Input
-                value={linkImageUrl}
-                onChange={(event) => setLinkImageUrl(event.target.value)}
-                placeholder="Image URL (auto-filled, optional override)"
-              />
-              <Input
-                value={linkTagsInput}
-                onChange={(event) => setLinkTagsInput(event.target.value)}
-                placeholder="Optional tags, e.g. material:oak, finish:matte, room:bathroom"
-              />
-            </>
-          ) : (
-            <p className="text-xs text-slate-500">Optional fields will appear after you paste a link.</p>
-          )}
-          {linkPreviewMessage ? <p className="text-xs text-emerald-700">{linkPreviewMessage}</p> : null}
-          {linkError ? <p className="text-xs text-red-600">{linkError}</p> : null}
-          <Button type="submit" variant="outline" className="w-full">
-            Add from link
-          </Button>
-        </form>
+              <div className="flex flex-wrap gap-2">
+                {suggestionChips.map((chip) => {
+                  const nextQuery = `${roomObject.name} ${chip}`.trim();
+                  return (
+                    <Button
+                      key={chip}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[11px]"
+                      onClick={() => setCatalogQuery(nextQuery)}
+                    >
+                      {chip}
+                    </Button>
+                  );
+                })}
+              </div>
+            </form>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <LinkIcon className="h-4 w-4" />
+                    Paste product link
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">Secondary fast path: paste link, fetch product, and add it to this object.</p>
+                </div>
+                {hasPreviewPrice ? <Badge variant="outline">{formatMoney(parsedLinkPrice, projectCurrency)}</Badge> : null}
+              </div>
+
+              <form onSubmit={handleAddFromLink} className="mt-3 space-y-3">
+                <div className="flex flex-col gap-2 lg:flex-row">
+                  <Input
+                    value={linkUrl}
+                    onChange={(event) => {
+                      setLinkUrl(event.target.value);
+                      setLinkError("");
+                      setLinkPreviewMessage("");
+                    }}
+                    placeholder="Paste product link"
+                    className="h-10 bg-white text-sm"
+                    onBlur={() => {
+                      if (linkUrl.trim()) {
+                        void fetchLinkDetails();
+                      }
+                    }}
+                  />
+                  <div className="flex gap-2 lg:w-auto">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-10 flex-1 lg:min-w-[140px]"
+                      onClick={() => void fetchLinkDetails()}
+                      disabled={isFetchingLinkPreview}
+                    >
+                      {isFetchingLinkPreview ? "Fetching product..." : "Fetch product"}
+                    </Button>
+                    <Button type="submit" variant="outline" className="h-10 flex-1 lg:min-w-[140px]" disabled={isFetchingLinkPreview}>
+                      Add from link
+                    </Button>
+                  </div>
+                </div>
+
+                {showLinkPreview ? (
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="grid gap-3 md:grid-cols-[112px_minmax(0,1fr)]">
+                      <div className="flex h-28 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                        {trimmedLinkImageUrl ? (
+                          <img src={trimmedLinkImageUrl} alt={trimmedLinkName || "Link preview"} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="px-3 text-center text-xs text-slate-500">Preview image will appear here</div>
+                        )}
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Preview</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{trimmedLinkName || "Product name will appear here"}</p>
+                          <p className="mt-1 text-xs text-slate-500">{trimmedLinkSupplier || "Supplier will be derived from the link if available."}</p>
+                          <p className="mt-2 text-sm font-medium text-slate-900">
+                            {hasPreviewPrice ? formatMoney(parsedLinkPrice, projectCurrency) : "Price needed before adding"}
+                          </p>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Input value={linkName} onChange={(event) => setLinkName(event.target.value)} placeholder="Product name (optional)" />
+                          <Input value={linkSupplier} onChange={(event) => setLinkSupplier(event.target.value)} placeholder="Supplier (optional)" />
+                          <Input value={linkPrice} onChange={(event) => setLinkPrice(event.target.value)} placeholder="Price" inputMode="decimal" />
+                          <Input value={linkImageUrl} onChange={(event) => setLinkImageUrl(event.target.value)} placeholder="Image URL (optional override)" />
+                        </div>
+                        <Input
+                          value={linkTagsInput}
+                          onChange={(event) => setLinkTagsInput(event.target.value)}
+                          placeholder="Optional tags, e.g. material:oak, finish:matte, room:bathroom"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">Paste link to quickly add from supplier / Lazada / Shopee.</p>
+                )}
+
+                {linkPreviewMessage ? <p className="text-xs text-emerald-700">{linkPreviewMessage}</p> : null}
+                {linkError ? <p className="text-xs text-red-600">{linkError}</p> : null}
+              </form>
+            </div>
+          </div>
+        ) : null}
 
         {showSearchTools ? (
           visibleOptions.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-              {catalogQuery.trim()
-                ? `No options match "${catalogQuery.trim()}" yet. Try changing the search words or add from link.`
-                : "No options found for this query yet. Try changing search words or add from link."}
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-800">
+                {catalogQuery.trim() ? `No library results for "${catalogQuery.trim()}" yet.` : "No library results yet for this object."}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">Search for products or paste a link to add your first item.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -639,4 +711,3 @@ export function ProductOptionsPanel({
     </Card>
   );
 }
-
