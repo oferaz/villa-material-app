@@ -336,7 +336,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
       : materials.filter((material) => !focusedConfig.optionMaterialIds.includes(material.id));
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
@@ -368,7 +368,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
               <span className="text-sm font-medium text-slate-700">Expiry</span>
               <Input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
             </label>
-            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div>
                 <p className="text-sm font-medium text-slate-700">Client summary snapshots</p>
                 <p className="text-xs text-slate-500">Show a frozen progress and budget snapshot alongside the published review cards.</p>
@@ -392,17 +392,17 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
               <p className="text-xs text-slate-500">These summaries are frozen at publish time so clients see the same snapshot you shared.</p>
             </div>
           </div>
-          <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="space-y-1 text-sm text-slate-600">
               <p>Guests can open the share link.</p>
               <p>Only invited, signed-in emails can submit responses.</p>
               <p>Responses stay separate until you explicitly apply them.</p>
             </div>
             {publishedLink ? (
-              <div className="space-y-2">
+              <div className="min-w-0 space-y-2">
                 <p className="text-sm font-medium text-slate-700">Latest share link</p>
                 <Input readOnly value={publishedLink} />
-                <div className="flex gap-2">
+                <div className="flex min-w-0 gap-2">
                   <Button type="button" variant="outline" onClick={() => void navigator.clipboard.writeText(publishedLink)}>
                     Copy link
                   </Button>
@@ -446,7 +446,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
           <CardTitle>Objects to share</CardTitle>
           <CardDescription>Use the project map on the left, then configure the selected object on the right just like the Rooms workflow.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <CardContent className="grid min-w-0 gap-4 overflow-hidden xl:grid-cols-[0.9fr_1.1fr]">
           <div className="space-y-4">
             {project.houses.map((house) => {
               const houseSelectedCount = house.rooms.reduce(
@@ -548,21 +548,21 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
             })}
           </div>
 
-          <div>
+          <div className="min-w-0">
             {!focusedObjectEntry || !focusedConfig ? (
               <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
                 Choose an object from the map to configure what the client will see.
               </div>
             ) : (
-              <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="min-w-0 space-y-4 overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-semibold text-slate-900">{focusedObjectEntry.objectItem.name}</h3>
+                      <h3 className="min-w-0 break-words text-lg font-semibold text-slate-900">{focusedObjectEntry.objectItem.name}</h3>
                       <Badge variant="outline">{focusedObjectEntry.room.name}</Badge>
                       <Badge variant="outline">{focusedObjectEntry.house.name}</Badge>
                     </div>
-                    <p className="text-sm text-slate-500">
+                    <p className="break-words text-sm text-slate-500">
                       {focusedObjectEntry.objectItem.category} - Qty {focusedObjectEntry.objectItem.quantity}
                       {focusedSelectedMaterial ? ` - Current: ${focusedSelectedMaterial.name}` : " - No current selection"}
                     </p>
@@ -581,8 +581,8 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
                   Include this object in the client view
                 </label>
 
-                <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
-                  <div className="space-y-3">
+                <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+                  <div className="min-w-0 space-y-3">
                     <label className="block space-y-1.5">
                       <span className="text-sm font-medium text-slate-700">Card mode</span>
                       <select
@@ -626,17 +626,17 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
                   </div>
 
                   {focusedConfig.cardMode === "material_choice" ? (
-                    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="flex items-center justify-between gap-2">
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-sm font-medium text-slate-800">Published options</p>
-                          <p className="text-xs text-slate-500">Choose up to 3 explicit materials from your private library.</p>
+                          <p className="break-words text-xs text-slate-500">Choose up to 3 explicit materials from your private library.</p>
                         </div>
                         <Badge variant="outline">{focusedConfig.optionMaterialIds.length}/3</Badge>
                       </div>
                       <div className="flex gap-2">
                         <select
-                          className="h-10 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
+                          className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
                           value={optionPickerByObjectId[focusedObjectEntry.objectItem.id] ?? ""}
                           onChange={(event) =>
                             setOptionPickerByObjectId((current) => ({
@@ -655,6 +655,7 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
                         <Button
                           type="button"
                           variant="outline"
+                          className="shrink-0"
                           disabled={!optionPickerByObjectId[focusedObjectEntry.objectItem.id] || focusedConfig.optionMaterialIds.length >= 3}
                           onClick={() => {
                             const materialId = optionPickerByObjectId[focusedObjectEntry.objectItem.id];
@@ -670,24 +671,25 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
                           Add
                         </Button>
                       </div>
-                      <div className="grid gap-2 md:grid-cols-2">
+                      <div className="grid min-w-0 gap-2 md:grid-cols-2">
                         {focusedConfig.optionMaterialIds.map((materialId) => {
                           const material = materials.find((entry) => entry.id === materialId);
                           if (!material) {
                             return null;
                           }
                           return (
-                            <div key={material.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                            <div key={material.id} className="min-w-0 rounded-lg border border-slate-200 bg-white p-3 text-sm">
                               <div className="flex items-start justify-between gap-2">
-                                <div>
-                                  <p className="font-medium text-slate-900">{material.name}</p>
-                                  <p className="text-slate-500">{material.supplier}</p>
-                                  <p className="mt-1 text-slate-700">{formatCurrencyAmount(material.price, project.currency)}</p>
+                                <div className="min-w-0">
+                                  <p className="break-words font-medium text-slate-900">{material.name}</p>
+                                  <p className="break-words text-slate-500">{material.supplier}</p>
+                                  <p className="mt-1 break-words text-slate-700">{formatCurrencyAmount(material.price, project.currency)}</p>
                                 </div>
                                 <Button
                                   type="button"
                                   size="sm"
                                   variant="ghost"
+                                  className="shrink-0"
                                   onClick={() =>
                                     updateConfig(focusedObjectEntry.objectItem.id, {
                                       optionMaterialIds: focusedConfig.optionMaterialIds.filter((entry) => entry !== material.id),
