@@ -608,36 +608,34 @@ export function ProductOptionsPanel({
               </div>
 
               <form onSubmit={handleAddFromLink} className="mt-3 space-y-3">
-                <div className="flex flex-col gap-2 lg:flex-row">
-                  <Input
-                    value={linkUrl}
-                    onChange={(event) => {
-                      setLinkUrl(event.target.value);
-                      setLinkError("");
-                      setLinkPreviewMessage("");
-                    }}
-                    placeholder="Paste product link"
-                    className="h-10 bg-white text-sm"
-                    onBlur={() => {
-                      if (linkUrl.trim()) {
-                        void fetchLinkDetails();
-                      }
-                    }}
-                  />
-                  <div className="flex gap-2 lg:w-auto">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="h-10 flex-1 lg:min-w-[140px]"
-                      onClick={() => void fetchLinkDetails()}
-                      disabled={isFetchingLinkPreview}
-                    >
-                      {isFetchingLinkPreview ? "Fetching product..." : "Fetch product"}
-                    </Button>
-                    <Button type="submit" variant="outline" className="h-10 flex-1 lg:min-w-[140px]" disabled={isFetchingLinkPreview}>
-                      Add from link
-                    </Button>
-                  </div>
+                <Input
+                  value={linkUrl}
+                  onChange={(event) => {
+                    setLinkUrl(event.target.value);
+                    setLinkError("");
+                    setLinkPreviewMessage("");
+                  }}
+                  placeholder="Paste product link"
+                  className="h-11 bg-white text-sm"
+                  onBlur={() => {
+                    if (linkUrl.trim()) {
+                      void fetchLinkDetails();
+                    }
+                  }}
+                />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-10 w-full"
+                    onClick={() => void fetchLinkDetails()}
+                    disabled={isFetchingLinkPreview}
+                  >
+                    {isFetchingLinkPreview ? "Fetching product..." : "Fetch product"}
+                  </Button>
+                  <Button type="submit" variant="outline" className="h-10 w-full" disabled={isFetchingLinkPreview}>
+                    Add from link
+                  </Button>
                 </div>
 
                 {showLinkPreview ? (
