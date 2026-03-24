@@ -2,7 +2,7 @@ import { normalizeCurrencyCode } from "@/lib/currency";
 import { budgetCategoryOrder, createMockProjectBudget, resolveBudgetCategory } from "@/lib/mock/budget";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { BudgetCategoryName, House, ProductOption, Project, ProjectBudget, Room, RoomObject, RoomType } from "@/types";
-import { ClientViewApplyResult, ClientViewDetail, ClientViewItem, ClientViewItemOption, ClientViewPublishInput, ClientViewResponse, ClientViewStatus, ClientViewSummary } from "@/types";
+import { ClientViewApplyResult, ClientViewDetail, ClientViewHouseOverview, ClientViewItem, ClientViewItemOption, ClientViewProjectOverview, ClientViewPublishInput, ClientViewResponse, ClientViewStatus, ClientViewSummary } from "@/types";
 
 interface ProjectRow {
   id: string;
@@ -1540,6 +1540,10 @@ interface ClientViewRow {
   published_version: number | null;
   published_at: string | null;
   expires_at: string | null;
+  show_project_overview?: boolean | null;
+  show_house_overviews?: boolean | null;
+  project_overview?: ClientViewProjectOverview | null;
+  house_overviews?: ClientViewHouseOverview[] | null;
 }
 
 interface ClientViewRecipientRow {
@@ -1616,6 +1620,10 @@ function toClientViewSummary(row: ClientViewRow): ClientViewSummary {
     publishedVersion: Math.max(0, Math.round(row.published_version ?? 0)),
     publishedAt: row.published_at,
     expiresAt: row.expires_at,
+    showProjectOverview: Boolean(row.show_project_overview),
+    showHouseOverviews: Boolean(row.show_house_overviews),
+    projectOverview: row.project_overview ?? null,
+    houseOverviews: row.house_overviews ?? [],
   };
 }
 
@@ -1667,7 +1675,7 @@ async function loadClientViewRowsByProjectId(projectId: string): Promise<ClientV
 
   const { data: clientViewRows, error: clientViewError } = await supabase
     .from("client_views")
-    .select("id,project_id,title,status,published_version,published_at,expires_at")
+    .select("id,project_id,title,status,published_version,published_at,expires_at,show_project_overview,show_house_overviews,project_overview,house_overviews")
     .eq("project_id", normalizedProjectId)
     .order("updated_at", { ascending: false })
     .limit(1);
@@ -1787,6 +1795,8 @@ export async function publishClientView(
     p_expires_at: input.expiresAt?.trim() || null,
     p_recipient_emails: normalizedRecipientEmails,
     p_items: normalizedItems,
+    p_show_project_overview: Boolean(input.showProjectOverview),
+    p_show_house_overviews: Boolean(input.showHouseOverviews),
   });
 
   if (error) {
@@ -1836,7 +1846,7 @@ export async function listClientViewResponses(clientViewId: string): Promise<Cli
 
   const { data: clientViewRows, error: clientViewError } = await supabase
     .from("client_views")
-    .select("id,project_id,title,status,published_version,published_at,expires_at")
+    .select("id,project_id,title,status,published_version,published_at,expires_at,show_project_overview,show_house_overviews,project_overview,house_overviews")
     .eq("id", normalizedClientViewId)
     .limit(1);
 

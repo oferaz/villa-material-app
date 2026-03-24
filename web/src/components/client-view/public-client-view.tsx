@@ -7,7 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { ClientViewItem, ClientViewScopeDecision, ClientViewStatus, ClientViewSubmissionContext } from "@/types";
+import type {
+  ClientViewBudgetOverview,
+  ClientViewHouseOverview,
+  ClientViewItem,
+  ClientViewProgressOverview,
+  ClientViewProjectOverview,
+  ClientViewScopeDecision,
+  ClientViewStatus,
+  ClientViewSubmissionContext,
+} from "@/types";
 
 interface PublicClientViewData {
   id: string;
@@ -16,6 +25,10 @@ interface PublicClientViewData {
   publishedVersion: number;
   publishedAt?: string | null;
   expiresAt?: string | null;
+  showProjectOverview: boolean;
+  showHouseOverviews: boolean;
+  projectOverview?: ClientViewProjectOverview | null;
+  houseOverviews: ClientViewHouseOverview[];
   items: ClientViewItem[];
 }
 
@@ -28,6 +41,14 @@ interface ItemDraft {
   preferredBudget: string;
   scopeDecision?: ClientViewScopeDecision | null;
   comment: string;
+}
+
+interface OverviewSnapshotCardProps {
+  title: string;
+  subtitle: string;
+  progress: ClientViewProgressOverview;
+  budget: ClientViewBudgetOverview;
+  currency: string;
 }
 
 function buildLoginUrl(token: string) {
@@ -55,6 +76,96 @@ function statusVariant(status: ClientViewStatus): "default" | "outline" | "dange
   return "outline";
 }
 
+function resolveClientViewCurrency(clientView: PublicClientViewData | null): string {
+  if (!clientView) {
+    return "USD";
+  }
+
+  const projectCurrency = clientView.projectOverview?.budget.currency?.trim();
+  if (projectCurrency) {
+    return projectCurrency;
+  }
+
+  const houseCurrency = clientView.houseOverviews.find((overview) => overview.budget.currency?.trim())?.budget.currency?.trim();
+  if (houseCurrency) {
+    return houseCurrency;
+  }
+
+  return "USD";
+}
+
+function OverviewSnapshotCard({ title, subtitle, progress, budget, currency }: OverviewSnapshotCardProps) {
+  return (
+    <Card className="border-slate-200 bg-white/95 shadow-sm backdrop-blur">
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">{progress.completionPercent}% complete</Badge>
+          <Badge variant="outline">{progress.totalItems} tracked items</Badge>
+        </div>
+        <CardTitle className="text-xl">{title}</CardTitle>
+        <CardDescription>{subtitle}</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Progress</p>
+            <p className="mt-2 text-3xl font-semibold text-slate-900">{progress.completionPercent}%</p>
+            <p className="mt-1 text-sm text-slate-600">{progress.actionsCompleted} of {progress.actionsTotal} workflow steps completed</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Budget</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {budget.totalBudget != null ? formatCurrencyAmount(budget.totalBudget, currency) : "Not set"}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">Allocated {formatCurrencyAmount(budget.allocatedAmount, currency)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Remaining steps</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{progress.actionsRemaining}</p>
+            <p className="mt-1 text-sm text-slate-600">Still to complete across material, PO, order, and install</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Remaining budget</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {budget.remainingAmount != null ? formatCurrencyAmount(budget.remainingAmount, currency) : "Not set"}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">Compared with the current published selections</p>
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Workflow stage snapshot</p>
+            <p className="text-xs text-slate-500">This is a frozen summary captured when the designer published this client view.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+              <p className="font-medium text-slate-900">Awaiting material</p>
+              <p className="mt-1">{progress.stages.materialMissing}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+              <p className="font-medium text-slate-900">Material assigned</p>
+              <p className="mt-1">{progress.stages.materialAssigned}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+              <p className="font-medium text-slate-900">PO approved</p>
+              <p className="mt-1">{progress.stages.poApproved}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+              <p className="font-medium text-slate-900">Ordered</p>
+              <p className="mt-1">{progress.stages.ordered}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 sm:col-span-2">
+              <p className="font-medium text-slate-900">Installed</p>
+              <p className="mt-1">{progress.stages.installed}</p>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function PublicClientView({ token }: PublicClientViewProps) {
   const [clientView, setClientView] = useState<PublicClientViewData | null>(null);
   const [context, setContext] = useState<ClientViewSubmissionContext | null>(null);
@@ -74,7 +185,13 @@ export function PublicClientView({ token }: PublicClientViewProps) {
       if (!response.ok || !payload.ok || !payload.clientView) {
         throw new Error(payload.error || "Client view could not be loaded.");
       }
-      setClientView(payload.clientView);
+      setClientView({
+        ...payload.clientView,
+        showProjectOverview: Boolean(payload.clientView.showProjectOverview),
+        showHouseOverviews: Boolean(payload.clientView.showHouseOverviews),
+        projectOverview: payload.clientView.projectOverview ?? null,
+        houseOverviews: payload.clientView.houseOverviews ?? [],
+      });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Client view could not be loaded.");
       setClientView(null);
@@ -157,6 +274,7 @@ export function PublicClientView({ token }: PublicClientViewProps) {
   const itemResponsesById = useMemo(() => {
     return new Map((context?.responses ?? []).map((response) => [response.itemId, response]));
   }, [context]);
+  const overviewCurrency = useMemo(() => resolveClientViewCurrency(clientView), [clientView]);
 
   async function handleSubmit(item: ClientViewItem) {
     if (!isSupabaseConfigured) {
@@ -245,6 +363,38 @@ export function PublicClientView({ token }: PublicClientViewProps) {
           </CardHeader>
         </Card>
 
+        {clientView.showProjectOverview || clientView.showHouseOverviews ? (
+          <section className="space-y-4">
+            <div className="space-y-1 px-1">
+              <h2 className="text-lg font-semibold text-slate-900">Project status and budget</h2>
+              <p className="text-sm text-slate-600">The designer chose to share this frozen snapshot alongside the review items.</p>
+            </div>
+            {clientView.showProjectOverview && clientView.projectOverview ? (
+              <OverviewSnapshotCard
+                title={clientView.projectOverview.projectName}
+                subtitle={`${clientView.projectOverview.housesCount} houses, ${clientView.projectOverview.roomsCount} rooms, ${clientView.projectOverview.itemsCount} tracked items`}
+                progress={clientView.projectOverview.progress}
+                budget={clientView.projectOverview.budget}
+                currency={clientView.projectOverview.budget.currency?.trim() || overviewCurrency}
+              />
+            ) : null}
+            {clientView.showHouseOverviews && clientView.houseOverviews.length > 0 ? (
+              <div className="grid gap-4 xl:grid-cols-2">
+                {clientView.houseOverviews.map((houseOverview) => (
+                  <OverviewSnapshotCard
+                    key={houseOverview.houseId ?? houseOverview.houseName}
+                    title={houseOverview.houseName}
+                    subtitle={`${houseOverview.roomsCount} rooms, ${houseOverview.itemsCount} tracked items`}
+                    progress={houseOverview.progress}
+                    budget={houseOverview.budget}
+                    currency={houseOverview.budget.currency?.trim() || overviewCurrency}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         <Card className="border-slate-200">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-5">
             <div className="space-y-1 text-sm text-slate-600">
@@ -288,12 +438,19 @@ export function PublicClientView({ token }: PublicClientViewProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {(item.currentSelectedMaterialName || item.budgetAllowance != null) ? (
+                  {item.currentSelectedMaterialName || item.budgetAllowance != null ? (
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
                       {item.currentSelectedMaterialName ? (
-                        <p>Current selection: <span className="font-medium text-slate-900">{item.currentSelectedMaterialName}</span>{item.currentSelectedPrice != null ? ` (${formatCurrencyAmount(item.currentSelectedPrice, "USD")})` : ""}</p>
+                        <p>
+                          Current selection: <span className="font-medium text-slate-900">{item.currentSelectedMaterialName}</span>
+                          {item.currentSelectedPrice != null ? ` (${formatCurrencyAmount(item.currentSelectedPrice, overviewCurrency)})` : ""}
+                        </p>
                       ) : null}
-                      {item.budgetAllowance != null ? <p>Object budget target: <span className="font-medium text-slate-900">{formatCurrencyAmount(item.budgetAllowance, "USD")}</span></p> : null}
+                      {item.budgetAllowance != null ? (
+                        <p>
+                          Object budget target: <span className="font-medium text-slate-900">{formatCurrencyAmount(item.budgetAllowance, overviewCurrency)}</span>
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -314,7 +471,7 @@ export function PublicClientView({ token }: PublicClientViewProps) {
                             {option.imageUrl ? <img src={option.imageUrl} alt={option.name} className="mb-3 h-40 w-full rounded-lg object-cover" /> : null}
                             <p className="font-medium text-slate-900">{option.name}</p>
                             {option.supplierName ? <p className="text-sm text-slate-500">{option.supplierName}</p> : null}
-                            {option.price != null ? <p className="mt-2 text-sm text-slate-700">{formatCurrencyAmount(option.price, "USD")}</p> : null}
+                            {option.price != null ? <p className="mt-2 text-sm text-slate-700">{formatCurrencyAmount(option.price, overviewCurrency)}</p> : null}
                             {option.description ? <p className="mt-2 line-clamp-3 text-sm text-slate-600">{option.description}</p> : null}
                             {option.sourceUrl ? <p className="mt-2 text-xs text-blue-700">Source link included</p> : null}
                           </button>
@@ -387,4 +544,3 @@ export function PublicClientView({ token }: PublicClientViewProps) {
     </main>
   );
 }
-

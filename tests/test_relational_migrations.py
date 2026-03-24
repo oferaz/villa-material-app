@@ -76,3 +76,17 @@ def test_client_view_hash_fix_migration_qualifies_digest_function():
     assert "create extension if not exists pgcrypto" in sql
     assert "create or replace function public.client_view_token_hash" in sql
     assert "extensions.digest" in sql
+
+def test_client_view_overview_migration_adds_publish_time_progress_and_budget_snapshots():
+    sql = _read("db/migrations/20260324_add_client_view_overviews.sql")
+
+    assert "add column if not exists show_project_overview boolean not null default false" in sql
+    assert "add column if not exists show_house_overviews boolean not null default false" in sql
+    assert "add column if not exists project_overview jsonb not null default '{}'::jsonb" in sql
+    assert "add column if not exists house_overviews jsonb not null default '[]'::jsonb" in sql
+    assert "p_show_project_overview boolean default false" in sql
+    assert "p_show_house_overviews boolean default false" in sql
+    assert "'showprojectoverview', v_client_view.show_project_overview" in sql
+    assert "'showhouseoverviews', v_client_view.show_house_overviews" in sql
+    assert "'projectoverview', case when v_client_view.show_project_overview then v_client_view.project_overview else null end" in sql
+    assert "'houseoverviews', case when v_client_view.show_house_overviews then v_client_view.house_overviews else '[]'::jsonb end" in sql

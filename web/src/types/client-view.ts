@@ -53,6 +53,46 @@ export interface ClientViewResponse {
   selectedOptionName?: string;
 }
 
+export interface ClientViewBudgetOverview {
+  totalBudget?: number | null;
+  allocatedAmount: number;
+  remainingAmount?: number | null;
+  currency?: string | null;
+}
+
+export interface ClientViewProgressOverview {
+  totalItems: number;
+  completionPercent: number;
+  actionsCompleted: number;
+  actionsTotal: number;
+  actionsRemaining: number;
+  stages: {
+    materialMissing: number;
+    materialAssigned: number;
+    poApproved: number;
+    ordered: number;
+    installed: number;
+  };
+}
+
+export interface ClientViewProjectOverview {
+  projectName: string;
+  housesCount: number;
+  roomsCount: number;
+  itemsCount: number;
+  budget: ClientViewBudgetOverview;
+  progress: ClientViewProgressOverview;
+}
+
+export interface ClientViewHouseOverview {
+  houseId?: string;
+  houseName: string;
+  roomsCount: number;
+  itemsCount: number;
+  budget: ClientViewBudgetOverview;
+  progress: ClientViewProgressOverview;
+}
+
 export interface ClientViewSummary {
   id: string;
   projectId: string;
@@ -61,6 +101,10 @@ export interface ClientViewSummary {
   publishedVersion: number;
   publishedAt?: string | null;
   expiresAt?: string | null;
+  showProjectOverview: boolean;
+  showHouseOverviews: boolean;
+  projectOverview?: ClientViewProjectOverview | null;
+  houseOverviews: ClientViewHouseOverview[];
 }
 
 export interface ClientViewDetail extends ClientViewSummary {
@@ -80,6 +124,8 @@ export interface ClientViewPublishInput {
   title: string;
   expiresAt?: string | null;
   recipientEmails: string[];
+  showProjectOverview?: boolean;
+  showHouseOverviews?: boolean;
   items: ClientViewPublishItemInput[];
 }
 
@@ -109,4 +155,3 @@ export interface ClientViewSubmissionContext {
   canSubmit: boolean;
   responses: ClientViewSubmissionContextResponse[];
 }
-

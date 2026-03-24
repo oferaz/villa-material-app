@@ -112,11 +112,13 @@ The external client review model includes:
 - `client_view_items` for frozen object-level review cards
 - `client_view_item_options` for published material-choice option snapshots
 - `client_view_responses` for invited-recipient submissions and owner apply tracking
+- publish-time project and house overview snapshots for client-visible progress and budget summaries
 
 Important behavioral rules:
 
 - public pages load through `get_published_client_view`, not direct reads from private project tables
 - published items are versioned and frozen so later workspace edits do not alter the client payload retroactively
+- designers can optionally expose project-level and house-level progress and budget snapshots captured at publish time
 - approvals require authentication plus invited email membership
 - response apply-back is explicit and updates workspace state only when an owner or editor chooses to apply it
 

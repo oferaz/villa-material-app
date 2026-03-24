@@ -449,7 +449,7 @@ export function WorkspaceShell({
               <TabsTrigger value="rooms">Rooms</TabsTrigger>
               <TabsTrigger value="materials">Materials</TabsTrigger>
               <TabsTrigger value="budget">Budget</TabsTrigger>
-              <TabsTrigger value="client">Client View</TabsTrigger>
+              <TabsTrigger value="client" className="gap-2">Client View <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-700">Beta</span></TabsTrigger>
             </TabsList>
 
             <TabsContent value="rooms">{roomsContent}</TabsContent>

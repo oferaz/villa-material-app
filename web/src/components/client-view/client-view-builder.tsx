@@ -95,6 +95,8 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
   const [title, setTitle] = useState(`${project.name} Client Review`);
   const [recipientInput, setRecipientInput] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
+  const [showProjectOverview, setShowProjectOverview] = useState(true);
+  const [showHouseOverviews, setShowHouseOverviews] = useState(true);
   const [configsByObjectId, setConfigsByObjectId] = useState<Record<string, BuilderItemConfig>>({});
   const [optionPickerByObjectId, setOptionPickerByObjectId] = useState<Record<string, string>>({});
   const [publishedLink, setPublishedLink] = useState("");
@@ -138,6 +140,8 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
       setTitle(detail?.title ?? `${project.name} Client Review`);
       setRecipientInput((detail?.recipients ?? []).map((recipient) => recipient.email).join("\n"));
       setExpiresAt(toDatetimeLocalValue(detail?.expiresAt));
+      setShowProjectOverview(detail?.showProjectOverview ?? true);
+      setShowHouseOverviews(detail?.showHouseOverviews ?? true);
       setResponses(detail ? await listClientViewResponses(detail.id) : []);
       setConfigsByObjectId(() => {
         const next: Record<string, BuilderItemConfig> = {};
@@ -218,6 +222,8 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
       title,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       recipientEmails: parseRecipientInput(recipientInput),
+      showProjectOverview,
+      showHouseOverviews,
       items,
     };
 
@@ -305,6 +311,29 @@ export function ClientViewBuilder({ project, materials, onProjectDataChanged }: 
               <span className="text-sm font-medium text-slate-700">Expiry</span>
               <Input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
             </label>
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Client summary snapshots</p>
+                <p className="text-xs text-slate-500">Show a frozen progress and budget snapshot alongside the published review cards.</p>
+              </div>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={showProjectOverview}
+                  onChange={(event) => setShowProjectOverview(event.target.checked)}
+                />
+                Show project progress and budget
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={showHouseOverviews}
+                  onChange={(event) => setShowHouseOverviews(event.target.checked)}
+                />
+                Show house progress and budget
+              </label>
+              <p className="text-xs text-slate-500">These summaries are frozen at publish time so clients see the same snapshot you shared.</p>
+            </div>
           </div>
           <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="space-y-1 text-sm text-slate-600">
