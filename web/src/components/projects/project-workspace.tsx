@@ -919,6 +919,12 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
 
     const selectedStageSet = new Set(workflowStageFilters);
+    const hasRoomFilters = selectedStageSet.size > 0 || Boolean(budgetFocusSelection);
+
+    if (!hasRoomFilters) {
+      return project.houses;
+    }
+
     return project.houses
       .map((house) => ({
         ...house,
@@ -926,8 +932,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
           .map((room) => ({
             ...room,
             objects: room.objects.filter((objectItem) => {
-              const matchesWorkflow =
-                selectedStageSet.size === 0 || selectedStageSet.has(getObjectWorkflowStage(objectItem));
+              const matchesWorkflow = selectedStageSet.has(getObjectWorkflowStage(objectItem));
               if (!matchesWorkflow) {
                 return false;
               }
