@@ -143,6 +143,17 @@ export const suggestedObjectsByRoomType: Record<RoomType, SuggestedObjectTemplat
   ],
 };
 
+export const roomStarterTemplatesByRoomType: Record<RoomType, SuggestedObjectTemplate[]> = {
+  living_room: suggestedObjectsByRoomType.living_room.slice(0, 4),
+  kitchen: suggestedObjectsByRoomType.kitchen.slice(0, 5),
+  bathroom: suggestedObjectsByRoomType.bathroom.slice(0, 4),
+  bedroom: suggestedObjectsByRoomType.bedroom.slice(0, 4),
+  dining_room: suggestedObjectsByRoomType.dining_room.slice(0, 4),
+  entry: suggestedObjectsByRoomType.entry.slice(0, 4),
+  office: suggestedObjectsByRoomType.office.slice(0, 4),
+  laundry: suggestedObjectsByRoomType.laundry.slice(0, 4),
+  outdoor: suggestedObjectsByRoomType.outdoor.slice(0, 4),
+};
 const projectSeeds: ProjectSeed[] = [
   {
     id: "project-palm-heights",
@@ -262,6 +273,9 @@ function buildProductOptions(
 export function getSuggestedObjectsForRoomType(roomType: RoomType): SuggestedObjectTemplate[] {
   return suggestedObjectsByRoomType[roomType] ?? [];
 }
+export function getRoomStarterTemplate(roomType: RoomType): SuggestedObjectTemplate[] {
+  return roomStarterTemplatesByRoomType[roomType] ?? [];
+}
 
 export function createMockRoomObject(
   roomId: string,
@@ -348,4 +362,5 @@ export const mockProjects: Project[] = buildProjects();
 export function getProjectById(projectId: string): Project | undefined {
   return mockProjects.find((project) => project.id === projectId);
 }
+
 

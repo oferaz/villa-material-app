@@ -1,7 +1,7 @@
 "use client";
 
-import { ComponentType, useEffect, useMemo, useState } from "react";
-import { Boxes, Info, Presentation, X } from "lucide-react";
+import { ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import { Boxes, ChevronLeft, ChevronRight, Info, Presentation, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import {
@@ -18,6 +18,7 @@ import { MaterialsGallery } from "@/components/materials/materials-gallery";
 import { HouseRoomTree } from "@/components/rooms/house-room-tree";
 import { ProjectRoomsStack } from "@/components/rooms/project-rooms-stack";
 import { AddObjectDialog } from "@/components/rooms/add-object-dialog";
+import { AddRoomDialog, type AddRoomDialogCreateInput } from "@/components/rooms/add-room-dialog";
 import { ProductOptionsPanel } from "@/components/products/product-options-panel";
 import { applyLinkProductOption, mergeObjectOptionsAfterSearch } from "@/components/products/product-options-state";
 import { WorkflowOverview } from "@/components/workflow/workflow-overview";
@@ -36,12 +37,13 @@ import {
   resolveBudgetCategory,
 } from "@/lib/mock/budget";
 import { buildProductOptionFromLink, searchMockCatalogOptions } from "@/lib/mock/material-search";
-import { createMockRoomObject } from "@/lib/mock/projects";
+import { createMockRoomObject, getRoomStarterTemplate } from "@/lib/mock/projects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { addLinkMaterialForCurrentUser, listMaterialsForCurrentUser, UserMaterial } from "@/lib/supabase/materials-repository";
 import {
   createProjectSnapshotByProjectId,
   createRoomObjectForRoom,
+  createRoomObjectsForRoom,
   createHouseForProject,
   createRoomForHouse,
   deleteRoomObjectById,
@@ -53,6 +55,8 @@ import {
   loadProjectsForWorkspace,
   renameHouseById,
   renameProjectById,
+  reorderRoomObjectsInRoom,
+  reorderRoomsInHouse,
   renameRoomById,
   saveProjectBudgetByProjectId,
   restoreProjectSnapshotById,
@@ -68,6 +72,8 @@ import { createProjectWithWizard } from "@/lib/supabase/projects-wizard";
 import { exportProjectToExcel } from "@/lib/export/project-excel";
 import { rankMaterialsForObject } from "@/lib/material-search";
 import { defaultUserPreferences, loadUserPreferences, USER_PREFERENCES_EVENT } from "@/lib/user-preferences";
+import { MoveDirection, moveListItem } from "@/lib/ordering";
+import { loadWorkspaceSelection, resolveWorkspaceSelection, saveWorkspaceSelection } from "@/lib/workspace-selection";
 import {
   BudgetCategoryName,
   getObjectWorkflowStage,
@@ -509,7 +515,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [selectedRoomId, setSelectedRoomId] = useState<string>("");
   const [selectedObjectId, setSelectedObjectId] = useState<string>("");
   const [addObjectRoomId, setAddObjectRoomId] = useState<string | null>(null);
+  const [addRoomHouseId, setAddRoomHouseId] = useState<string | null>(null);
   const [pendingScrollRoomId, setPendingScrollRoomId] = useState<string | null>(null);
+  const [selectionNotice, setSelectionNotice] = useState<{ objectId: string; message: string } | null>(null);
   const [showDefaultStructureNotice, setShowDefaultStructureNotice] = useState(false);
   const [preferences, setPreferences] = useState(defaultUserPreferences);
   const [workflowStageFilters, setWorkflowStageFilters] = useState<WorkflowStage[]>([]);
@@ -518,6 +526,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   const [materialLibrary, setMaterialLibrary] = useState<UserMaterial[]>([]);
   const [materialLibraryVersion, setMaterialLibraryVersion] = useState(0);
   const [pendingMaterialAssignment, setPendingMaterialAssignment] = useState<ProductOption | null>(null);
+  const restoredSelectionProjectIdRef = useRef<string | null>(null);
   const [pendingAssignmentSelection, setPendingAssignmentSelection] = useState<{
     houseId: string;
     roomId: string;
@@ -746,9 +755,115 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     return selectedRoom?.objects.find((obj) => obj.id === selectedObjectId) ?? selectedRoom?.objects[0];
   }, [selectedRoom, selectedObjectId]);
 
+  useEffect(() => {
+    if (!selectionNotice) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSelectionNotice((current) => (current?.objectId === selectionNotice.objectId ? null : current));
+    }, 2800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [selectionNotice]);
+
+  useEffect(() => {
+    if (!project || restoredSelectionProjectIdRef.current === project.id) {
+      return;
+    }
+
+    restoredSelectionProjectIdRef.current = project.id;
+    const resolvedSelection = resolveWorkspaceSelection(project, loadWorkspaceSelection(project.id));
+    if (!resolvedSelection) {
+      return;
+    }
+
+    setSelectedHouseId(resolvedSelection.houseId);
+    setSelectedRoomId(resolvedSelection.roomId);
+    setSelectedObjectId(resolvedSelection.objectId);
+  }, [project]);
+
+  useEffect(() => {
+    if (!project || !selectedHouseId) {
+      return;
+    }
+
+    saveWorkspaceSelection(project.id, {
+      houseId: selectedHouseId,
+      roomId: selectedRoomId,
+      objectId: selectedObjectId,
+    });
+  }, [project, selectedHouseId, selectedRoomId, selectedObjectId]);
+
   const addObjectRoom = useMemo(() => {
     return findRoomInProject(project, addObjectRoomId ?? "")?.room;
   }, [project, addObjectRoomId]);
+
+  const quickReuseOptions = useMemo(() => {
+    if (!project || !selectedObject) {
+      return [] as Array<{
+        id: string;
+        option: ProductOption;
+        source: "project" | "recent";
+        label: string;
+        usageCount?: number;
+      }>;
+    }
+
+    const preferredCategory = resolveBudgetCategory(selectedObject.name, selectedObject.category);
+    const selectedOptionId = selectedObject.selectedProductId ?? "";
+    const projectUsageMap = new Map<string, { option: ProductOption; usageCount: number }>();
+
+    for (const house of project.houses) {
+      for (const room of house.rooms) {
+        for (const objectItem of room.objects) {
+          const selectedOption = objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId);
+          if (!selectedOption || selectedOption.id === selectedOptionId) {
+            continue;
+          }
+          const current = projectUsageMap.get(selectedOption.id);
+          projectUsageMap.set(selectedOption.id, {
+            option: selectedOption,
+            usageCount: (current?.usageCount ?? 0) + Math.max(1, objectItem.quantity),
+          });
+        }
+      }
+    }
+
+    const projectOptions = [...projectUsageMap.entries()]
+      .sort((a, b) => {
+        const aCategoryScore = a[1].option.budgetCategory === preferredCategory ? 1 : 0;
+        const bCategoryScore = b[1].option.budgetCategory === preferredCategory ? 1 : 0;
+        if (bCategoryScore !== aCategoryScore) {
+          return bCategoryScore - aCategoryScore;
+        }
+        if (b[1].usageCount !== a[1].usageCount) {
+          return b[1].usageCount - a[1].usageCount;
+        }
+        return a[1].option.name.localeCompare(b[1].option.name);
+      })
+      .slice(0, 4)
+      .map(([id, item]) => ({
+        id: `project-${id}`,
+        option: item.option,
+        source: "project" as const,
+        label: `${item.usageCount} item${item.usageCount === 1 ? "" : "s"} using this product`,
+        usageCount: item.usageCount,
+      }));
+
+    const recentLibraryOptions = materialLibrary
+      .filter((material) => material.id !== selectedOptionId && !projectUsageMap.has(material.id))
+      .sort((a, b) => Date.parse(b.updatedAt ?? "") - Date.parse(a.updatedAt ?? ""))
+      .slice(0, 2)
+      .map((material) => ({
+        id: `recent-${material.id}`,
+        option: material,
+        source: "recent" as const,
+        label: material.updatedAt ? `Updated ${new Date(material.updatedAt).toLocaleDateString()}` : "Recently added",
+      }));
+
+    return [...projectOptions, ...recentLibraryOptions];
+  }, [materialLibrary, project, selectedObject]);
 
   const baseProjectBudget = useMemo(() => {
     if (!project) {
@@ -1530,8 +1645,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
   }
 
-  async function handleAddRoom(houseId: string, roomName: string, roomType: RoomType, roomSizeSqm?: number) {
-    const normalizedName = roomName.trim();
+  async function handleAddRoom(houseId: string, input: AddRoomDialogCreateInput) {
+    const normalizedName = input.roomName.trim();
     if (!normalizedName) {
       return;
     }
@@ -1541,9 +1656,15 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         const createdRoom = await createRoomForHouse({
           houseId,
           name: normalizedName,
-          roomType,
-          sizeSqm: roomSizeSqm,
+          roomType: input.roomType,
+          sizeSqm: input.roomSizeSqm,
         });
+
+        const optimisticStarterObjects = input.useStarterTemplate ? buildStarterObjects(createdRoom.id, input.roomType) : [];
+        const roomWithStarterObjects: Room = {
+          ...createdRoom,
+          objects: optimisticStarterObjects,
+        };
 
         updateCurrentProject((targetProject) => ({
           ...targetProject,
@@ -1551,7 +1672,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
             house.id === houseId
               ? {
                   ...house,
-                  rooms: [...house.rooms, createdRoom],
+                  rooms: [...house.rooms, roomWithStarterObjects],
                 }
               : house
           ),
@@ -1560,8 +1681,57 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         setActiveTab("rooms");
         setSelectedHouseId(houseId);
         setSelectedRoomId(createdRoom.id);
-        setSelectedObjectId("");
+        setSelectedObjectId(optimisticStarterObjects[0]?.id ?? "");
         setPendingScrollRoomId(createdRoom.id);
+
+        if (input.useStarterTemplate && optimisticStarterObjects.length > 0) {
+          void createRoomObjectsForRoom(
+            createdRoom.id,
+            getRoomStarterTemplate(input.roomType).map((item) => ({
+              name: item.name,
+              category: item.category,
+              quantity: 1,
+            }))
+          )
+            .then((savedObjects) => {
+              updateCurrentProject((targetProject) => ({
+                ...targetProject,
+                houses: targetProject.houses.map((house) => ({
+                  ...house,
+                  rooms: house.rooms.map((room) =>
+                    room.id === createdRoom.id
+                      ? {
+                          ...room,
+                          objects: savedObjects,
+                        }
+                      : room
+                  ),
+                })),
+              }));
+              setSelectedObjectId((currentSelectedId) => {
+                const optimisticIds = new Set(optimisticStarterObjects.map((item) => item.id));
+                return optimisticIds.has(currentSelectedId) ? savedObjects[0]?.id ?? "" : currentSelectedId;
+              });
+            })
+            .catch((error) => {
+              updateCurrentProject((targetProject) => ({
+                ...targetProject,
+                houses: targetProject.houses.map((house) => ({
+                  ...house,
+                  rooms: house.rooms.map((room) =>
+                    room.id === createdRoom.id
+                      ? {
+                          ...room,
+                          objects: [],
+                        }
+                      : room
+                  ),
+                })),
+              }));
+              setSelectedObjectId("");
+              window.alert(error instanceof Error ? `${error.message} The room was created without starter items.` : "Room created, but starter items could not be added.");
+            });
+        }
       } catch (error) {
         window.alert(error instanceof Error ? error.message : "Failed to add room.");
       }
@@ -1573,9 +1743,11 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       id: newRoomId,
       houseId,
       name: normalizedName,
-      sizeSqm: roomSizeSqm,
-      type: roomType,
-      objects: [],
+      sizeSqm: input.roomSizeSqm,
+      type: input.roomType,
+      objects: input.useStarterTemplate
+        ? buildStarterObjects(newRoomId, input.roomType).map((item) => ({ ...item, roomId: newRoomId }))
+        : [],
     };
 
     updateCurrentProject((targetProject) => ({
@@ -1593,10 +1765,9 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     setActiveTab("rooms");
     setSelectedHouseId(houseId);
     setSelectedRoomId(newRoomId);
-    setSelectedObjectId("");
+    setSelectedObjectId(newRoom.objects[0]?.id ?? "");
     setPendingScrollRoomId(newRoomId);
   }
-
   async function handleAddHouse(houseName: string, houseSizeSqm?: number) {
     const normalizedName = houseName.trim();
     if (!project || !normalizedName) {
@@ -1767,6 +1938,112 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     };
   }
 
+  function buildStarterObjects(roomId: string, roomType: RoomType): RoomObject[] {
+    return getRoomStarterTemplate(roomType).map((item, index) =>
+      buildObjectInstance(roomId, item.name, item.category, item.basePrice, `starter-${index}`)
+    );
+  }
+
+  function showSelectionFeedback(targetObject: RoomObject, product: ProductOption, isReplacement: boolean) {
+    setSelectionNotice({
+      objectId: targetObject.id,
+      message: isReplacement
+        ? `${product.name} updated for ${targetObject.name}.`
+        : `${product.name} added to ${targetObject.name}.`,
+    });
+  }
+
+  function handleReorderRoom(houseId: string, roomId: string, direction: MoveDirection) {
+    const house = project?.houses.find((item) => item.id === houseId);
+    if (!house) {
+      return;
+    }
+
+    const currentIndex = house.rooms.findIndex((room) => room.id === roomId);
+    const nextRooms = moveListItem(house.rooms, currentIndex, direction);
+    if (nextRooms === house.rooms) {
+      return;
+    }
+
+    const previousRooms = house.rooms;
+    updateCurrentProject((targetProject) => ({
+      ...targetProject,
+      houses: targetProject.houses.map((item) =>
+        item.id === houseId
+          ? {
+              ...item,
+              rooms: nextRooms,
+            }
+          : item
+      ),
+    }));
+
+    if (isSupabaseConfigured) {
+      void reorderRoomsInHouse(houseId, nextRooms.map((room) => room.id)).catch((error) => {
+        updateCurrentProject((targetProject) => ({
+          ...targetProject,
+          houses: targetProject.houses.map((item) =>
+            item.id === houseId
+              ? {
+                  ...item,
+                  rooms: previousRooms,
+                }
+              : item
+          ),
+        }));
+        window.alert(error instanceof Error ? error.message : "Failed to reorder rooms.");
+      });
+    }
+  }
+
+  function handleMoveObject(roomId: string, objectId: string, direction: MoveDirection) {
+    const target = findRoomInProject(project, roomId);
+    if (!target) {
+      return;
+    }
+
+    const currentIndex = target.room.objects.findIndex((item) => item.id === objectId);
+    const nextObjects = moveListItem(target.room.objects, currentIndex, direction);
+    if (nextObjects === target.room.objects) {
+      return;
+    }
+
+    const previousObjects = target.room.objects;
+    updateCurrentProject((targetProject) => ({
+      ...targetProject,
+      houses: targetProject.houses.map((house) => ({
+        ...house,
+        rooms: house.rooms.map((room) =>
+          room.id === roomId
+            ? {
+                ...room,
+                objects: nextObjects,
+              }
+            : room
+        ),
+      })),
+    }));
+
+    if (isSupabaseConfigured) {
+      void reorderRoomObjectsInRoom(roomId, nextObjects.map((item) => item.id)).catch((error) => {
+        updateCurrentProject((targetProject) => ({
+          ...targetProject,
+          houses: targetProject.houses.map((house) => ({
+            ...house,
+            rooms: house.rooms.map((room) =>
+              room.id === roomId
+                ? {
+                    ...room,
+                    objects: previousObjects,
+                  }
+                : room
+            ),
+          })),
+        }));
+        window.alert(error instanceof Error ? error.message : "Failed to reorder room items.");
+      });
+    }
+  }
   function handleAddObject(
     roomId: string,
     objectName: string,
@@ -2164,6 +2441,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }
 
     const previousObjectState = { ...selectedObject };
+    const selectedProduct = selectedObject.productOptions.find((option) => option.id === productId);
     const isMaterialChanged = selectedObject.selectedProductId !== productId;
 
     updateObjectById(selectedObject.id, (objectItem) => ({
@@ -2173,6 +2451,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       ordered: isMaterialChanged ? false : Boolean(objectItem.ordered),
       installed: isMaterialChanged ? false : Boolean(objectItem.installed),
     }));
+
+    if (selectedProduct) {
+      showSelectionFeedback(selectedObject, selectedProduct, Boolean(previousObjectState.selectedProductId) && isMaterialChanged);
+    }
 
     if (isSupabaseConfigured) {
       void updateRoomObjectSelectedMaterialById(selectedObject.id, productId)
@@ -2191,7 +2473,13 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         });
     }
   }
+  function handleApplyReusableProduct(product: ProductOption) {
+    if (!selectedObject) {
+      return;
+    }
 
+    applyMaterialToObject(selectedObject, product);
+  }
   function applyMaterialToObject(targetObject: RoomObject, material: ProductOption) {
     const targetObjectId = targetObject.id;
     const previousObjectState: RoomObject = {
@@ -2199,6 +2487,8 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       productOptions: [...targetObject.productOptions],
     };
     const isMaterialChanged = targetObject.selectedProductId !== material.id;
+
+    showSelectionFeedback(targetObject, material, Boolean(previousObjectState.selectedProductId) && isMaterialChanged);
 
     updateObjectById(targetObjectId, (objectItem) => ({
       ...objectItem,
@@ -2226,7 +2516,6 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         });
     }
   }
-
   function handleAssignMaterialFromGallery(material: ProductOption) {
     const defaultHouseId = selectedHouse?.id ?? "";
     const defaultRoomId = selectedRoom?.id ?? "";
@@ -2562,6 +2851,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     0
   );
 
+  const visibleHouseRooms = visibleSelectedHouse?.rooms ?? [];
+  const visibleRoomIndex = visibleHouseRooms.findIndex((room) => room.id === visibleSelectedRoom?.id);
+  const previousVisibleRoom = visibleRoomIndex > 0 ? visibleHouseRooms[visibleRoomIndex - 1] : null;
+  const nextVisibleRoom = visibleRoomIndex >= 0 && visibleRoomIndex < visibleHouseRooms.length - 1 ? visibleHouseRooms[visibleRoomIndex + 1] : null;
   const topNav = (
     <TopNav
       title="Materia Workspace"
@@ -2588,18 +2881,77 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       onRenameRoom={handleRenameRoom}
       onAddHouse={handleAddHouse}
       onDuplicateHouse={handleDuplicateHouse}
-      onAddRoom={handleAddRoom}
+      onRequestAddRoom={(houseId) => setAddRoomHouseId(houseId)}
+      onReorderRoom={handleReorderRoom}
     />
   );
 
   const roomsContent = (
     <div className="space-y-4 pb-20">
       <div className="sticky top-2 z-10 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur md:top-[122px]">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current house</p>
-        <p className="text-sm font-semibold text-slate-800">{visibleSelectedHouse?.name ?? "No house selected"}</p>
-        <p className="text-xs text-slate-500">{visibleSelectedRoom?.name ?? "No room selected"}</p>
-      </div>
-      {showDefaultStructureNotice ? (
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current workspace</p>
+            <p className="text-sm font-semibold text-slate-800">{project.name}</p>
+            <p className="text-xs text-slate-500">
+              {visibleSelectedHouse?.name ?? "No house selected"} / {visibleSelectedRoom?.name ?? "No room selected"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!previousVisibleRoom || !visibleSelectedHouse}
+              onClick={() => {
+                if (!previousVisibleRoom || !visibleSelectedHouse) {
+                  return;
+                }
+                handleSelectRoom(visibleSelectedHouse.id, previousVisibleRoom.id);
+              }}
+            >
+              <ChevronLeft className="mr-1.5 h-4 w-4" />
+              Previous room
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!nextVisibleRoom || !visibleSelectedHouse}
+              onClick={() => {
+                if (!nextVisibleRoom || !visibleSelectedHouse) {
+                  return;
+                }
+                handleSelectRoom(visibleSelectedHouse.id, nextVisibleRoom.id);
+              }}
+            >
+              Next room
+              <ChevronRight className="ml-1.5 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        {visibleHouseRooms.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {visibleHouseRooms.map((room) => (
+              <Button
+                key={room.id}
+                type="button"
+                size="sm"
+                variant={room.id === visibleSelectedRoom?.id ? "default" : "outline"}
+                className="h-7 px-2 text-[11px]"
+                onClick={() => {
+                  if (!visibleSelectedHouse) {
+                    return;
+                  }
+                  handleSelectRoom(visibleSelectedHouse.id, room.id);
+                }}
+              >
+                {room.name}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+      </div>      {showDefaultStructureNotice ? (
         <Card className="border-blue-200 bg-blue-50 shadow-sm">
           <CardHeader className="pb-2">
             <div className="flex items-start justify-between gap-3">
@@ -2676,11 +3028,29 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onDecreaseSuggestion={handleDecreaseSuggestedObject}
         onSelectObject={handleSelectObject}
         onDeleteObject={handleDeleteObject}
+        onMoveObject={handleMoveObject}
         onUpdateBudgetAllowance={handleUpdateBudgetAllowance}
         onUpdateWorkflow={handleUpdateObjectWorkflow}
         overBudgetObjectIdsByRoomId={overBudgetObjectIdsByRoomId}
         roomBudgetByRoomId={calculatedProjectBudget.rooms}
         onOpenAddCustomObject={(roomId) => setAddObjectRoomId(roomId)}
+      />
+      <AddRoomDialog
+        open={Boolean(addRoomHouseId)}
+        houseName={project.houses.find((house) => house.id === addRoomHouseId)?.name ?? selectedHouse?.name ?? "house"}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAddRoomHouseId(null);
+          }
+        }}
+        onCreateRoom={(input) => {
+          const targetHouseId = addRoomHouseId ?? selectedHouse?.id;
+          if (!targetHouseId) {
+            return;
+          }
+          handleAddRoom(targetHouseId, input);
+          setAddRoomHouseId(null);
+        }}
       />
       <AddObjectDialog
         open={Boolean(addObjectRoomId)}
@@ -2772,7 +3142,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         materialLibraryVersion={materialLibraryVersion}
         budgetSelectionSummary={budgetSelectionSummary}
         budgetImpactByOptionId={budgetImpactByOptionId}
+        quickReuseOptions={quickReuseOptions}
+        selectionNotice={selectionNotice && selectionNotice.objectId === visibleSelectedObject?.id ? selectionNotice.message : null}
         onSelectProduct={handleSelectProduct}
+        onApplyReusableProduct={handleApplyReusableProduct}
         onSearchCatalog={handleSearchCatalog}
         onAddFromLink={handleAddFromLink}
       />
@@ -2850,6 +3223,19 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
 
   return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} activeWorkspaceTab={activeTab} />;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

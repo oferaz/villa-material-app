@@ -3,9 +3,11 @@ import { RoomHeader } from "@/components/rooms/room-header";
 import { SuggestedObjects } from "@/components/rooms/suggested-objects";
 import { RoomObjectsList } from "@/components/rooms/room-objects-list";
 import { WorkflowOverview } from "@/components/workflow/workflow-overview";
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { getHouseColor } from "@/lib/ui/house-colors";
 import { summarizeWorkflowForHouse, summarizeWorkflowForRoom } from "@/lib/workflow/summary";
+import { MoveDirection } from "@/lib/ordering";
 
 interface ProjectRoomsStackProps {
   houses: House[];
@@ -19,6 +21,7 @@ interface ProjectRoomsStackProps {
   onDecreaseSuggestion: (roomId: string, objectName: string, category: string) => void;
   onSelectObject: (houseId: string, roomId: string, objectId: string) => void;
   onDeleteObject: (roomId: string, objectId: string) => void;
+  onMoveObject: (roomId: string, objectId: string, direction: MoveDirection) => void;
   onUpdateBudgetAllowance: (objectId: string, budgetAllowance: number | null) => void;
   onUpdateWorkflow: (
     objectId: string,
@@ -41,12 +44,24 @@ export function ProjectRoomsStack({
   onDecreaseSuggestion,
   onSelectObject,
   onDeleteObject,
+  onMoveObject,
   onUpdateBudgetAllowance,
   onUpdateWorkflow,
   overBudgetObjectIdsByRoomId,
   roomBudgetByRoomId,
   onOpenAddCustomObject,
 }: ProjectRoomsStackProps) {
+  if (houses.length === 0) {
+    return (
+      <Card className="border-slate-200 shadow-sm">
+        <CardContent className="px-4 py-5 text-sm text-slate-600">
+          <p className="font-medium text-slate-800">This project does not have any houses yet.</p>
+          <p className="mt-1 text-xs text-slate-500">Add a house from the project map to start creating rooms and organizing products.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {houses.map((house, houseIndex) => {
@@ -63,6 +78,15 @@ export function ProjectRoomsStack({
               {house.sizeSqm ? <p className="text-xs text-slate-500">{house.sizeSqm} m2</p> : null}
             </div>
             <WorkflowOverview title={`${house.name} progress`} summary={houseWorkflowSummary} compact />
+
+            {house.rooms.length === 0 ? (
+              <Card className="border-slate-200 shadow-sm">
+                <CardContent className="px-4 py-5 text-sm text-slate-600">
+                  <p className="font-medium text-slate-800">No rooms in {house.name} yet.</p>
+                  <p className="mt-1 text-xs text-slate-500">Add the first room from the project map to start searching products and building the room structure.</p>
+                </CardContent>
+              </Card>
+            ) : null}
 
             {house.rooms.map((room) => {
               const roomWorkflowSummary = summarizeWorkflowForRoom(room);
@@ -120,6 +144,8 @@ export function ProjectRoomsStack({
                     projectCurrency={projectCurrency}
                     onSelectObject={(objectId) => onSelectObject(house.id, room.id, objectId)}
                     onDeleteObject={(objectId) => onDeleteObject(room.id, objectId)}
+                    onMoveObject={(objectId, direction) => onMoveObject(room.id, objectId, direction)}
+                    onOpenAddCustomObject={() => onOpenAddCustomObject(room.id)}
                     onUpdateBudgetAllowance={onUpdateBudgetAllowance}
                     onUpdateWorkflow={onUpdateWorkflow}
                   />
@@ -132,5 +158,3 @@ export function ProjectRoomsStack({
     </div>
   );
 }
-
-

@@ -3,8 +3,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Search, Link as LinkIcon } from "lucide-react";
-import { ProductOptionBudgetImpact, ProductSelectionBudgetSummary, RoomObject, getObjectStatus } from "@/types";
+import { CheckCircle2, Search, Link as LinkIcon } from "lucide-react";
+import { ProductOption, ProductOptionBudgetImpact, ProductSelectionBudgetSummary, RoomObject, getObjectStatus } from "@/types";
 import { formatCurrencyAmount } from "@/lib/currency";
 import {
   getBudgetHealthLabel,
@@ -43,13 +43,23 @@ interface LinkPreviewResult {
 
 type BudgetFilter = "recommended" | "object_budget" | "room_plan" | "all";
 
+type QuickReuseOption = {
+  id: string;
+  option: ProductOption;
+  source: "project" | "recent";
+  label: string;
+  usageCount?: number;
+};
 interface ProductOptionsPanelProps {
   roomObject: RoomObject | undefined;
   projectCurrency: string;
   materialLibraryVersion: number;
   budgetSelectionSummary?: ProductSelectionBudgetSummary;
   budgetImpactByOptionId?: Record<string, ProductOptionBudgetImpact>;
+  quickReuseOptions?: QuickReuseOption[];
+  selectionNotice?: string | null;
   onSelectProduct: (productId: string) => void;
+  onApplyReusableProduct: (product: ProductOption) => void;
   onSearchCatalog: (objectId: string, query: string) => void;
   onAddFromLink: (objectId: string, payload: AddFromLinkPayload) => void;
 }
@@ -113,7 +123,10 @@ export function ProductOptionsPanel({
   materialLibraryVersion,
   budgetSelectionSummary,
   budgetImpactByOptionId,
+  quickReuseOptions = [],
+  selectionNotice,
   onSelectProduct,
+  onApplyReusableProduct,
   onSearchCatalog,
   onAddFromLink,
 }: ProductOptionsPanelProps) {
@@ -452,6 +465,61 @@ export function ProductOptionsPanel({
         </div>
       </CardHeader>
       <CardContent className="flex-1 space-y-4 overflow-y-auto pb-5">
+        {selectionNotice ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-800">
+            <p className="inline-flex items-center gap-2 font-semibold">
+              <CheckCircle2 className="h-4 w-4" />
+              {selectionNotice}
+            </p>
+            <p className="mt-1 text-xs text-emerald-700">This product is now committed to this room item.</p>
+          </div>
+        ) : null}
+
+        {quickReuseOptions.length > 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick reuse</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">Reuse products already active in your workflow</p>
+              </div>
+              <Badge variant="outline">Fastest path</Badge>
+            </div>
+            <div className="mt-3 space-y-2">
+              {quickReuseOptions.map((item) => (
+                <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-800">{item.option.name}</p>
+                      <p className="mt-1 text-xs text-slate-500">{item.option.supplier}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {item.option.price > 0 ? formatMoney(item.option.price, projectCurrency) : "Price unavailable"}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">{item.label}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <Badge variant={item.source === "project" ? "secondary" : "outline"}>
+                      {item.source === "project" ? `Used in project${item.usageCount ? ` (${item.usageCount})` : ""}` : "Recent library item"}
+                    </Badge>
+                    <Badge variant="outline">{item.option.budgetCategory}</Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => onApplyReusableProduct(item.option)}>
+                      Add to room
+                    </Button>
+                    {item.option.sourceUrl ? (
+                      <a href={item.option.sourceUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">
+                        Open source
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {budgetSelectionSummary ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
             <div className="flex items-start justify-between gap-3">
@@ -531,8 +599,8 @@ export function ProductOptionsPanel({
           <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 shadow-sm">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Selected material</p>
-                <p className="mt-1 text-xs text-emerald-800">Search products or paste another link if you want a faster replacement.</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Added to room</p>
+                <p className="mt-1 text-xs text-emerald-800">This product is currently committed to the selected room item. Search or paste another link to replace it.</p>
               </div>
               <Button type="button" size="sm" variant="outline" onClick={handleShowSearchAlternatives}>
                 Search or paste another link
@@ -553,7 +621,7 @@ export function ProductOptionsPanel({
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add product</p>
               <p className="mt-1 text-sm font-semibold text-slate-900">Search products or paste a link</p>
-              <p className="mt-1 text-xs text-slate-500">Search helps you explore your private library. Paste a link to quickly add from supplier / Lazada / Shopee.</p>
+              <p className="mt-1 text-xs text-slate-500">Search is the main path. Paste a link as a fast secondary option when you already know the product.</p>
             </div>
 
             <form onSubmit={handleSearchSubmit} className="space-y-3">
@@ -604,7 +672,7 @@ export function ProductOptionsPanel({
                     <LinkIcon className="h-4 w-4" />
                     Paste product link
                   </p>
-                  <p className="mt-1 text-xs text-slate-500">Secondary fast path: paste link, fetch product, and add it to this object.</p>
+                  <p className="mt-1 text-xs text-slate-500">Secondary fast path: paste link, fetch product, and add it to this room item.</p>
                 </div>
                 {hasPreviewPrice ? (
                   <Badge variant="outline">{formatMoney(parsedLinkPrice, projectCurrency)}</Badge>
@@ -711,7 +779,7 @@ export function ProductOptionsPanel({
               <p className="text-sm font-semibold text-slate-800">
                 {catalogQuery.trim() ? `No library results for "${catalogQuery.trim()}" yet.` : "No library results yet for this object."}
               </p>
-              <p className="mt-1 text-xs text-slate-500">Search for products or paste a link to add your first item.</p>
+              <p className="mt-1 text-xs text-slate-500">Start by searching for products, or paste a product link if you already know what you want.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -732,3 +800,6 @@ export function ProductOptionsPanel({
     </Card>
   );
 }
+
+
+

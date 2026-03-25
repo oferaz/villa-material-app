@@ -1,15 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Copy, Home, Pencil, Plus, X } from "lucide-react";
-import { House, RoomType } from "@/types";
+import { useState } from "react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Copy, Home, Pencil, Plus, X } from "lucide-react";
+import { House } from "@/types";
 import { Sidebar } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { getHouseColor } from "@/lib/ui/house-colors";
-import { AddRoomDialog } from "@/components/rooms/add-room-dialog";
 import { AddHouseDialog } from "@/components/rooms/add-house-dialog";
+import { MoveDirection } from "@/lib/ordering";
 
 interface HouseRoomTreeProps {
   houses: House[];
@@ -20,7 +20,8 @@ interface HouseRoomTreeProps {
   onRenameRoom: (roomId: string, nextName: string) => void;
   onAddHouse: (houseName: string, houseSizeSqm?: number) => void;
   onDuplicateHouse: (houseId: string, duplicateName?: string) => void;
-  onAddRoom: (houseId: string, roomName: string, roomType: RoomType, roomSizeSqm?: number) => void;
+  onRequestAddRoom: (houseId: string) => void;
+  onReorderRoom: (houseId: string, roomId: string, direction: MoveDirection) => void;
 }
 
 type EditingTarget =
@@ -39,17 +40,13 @@ export function HouseRoomTree({
   onRenameRoom,
   onAddHouse,
   onDuplicateHouse,
-  onAddRoom,
+  onRequestAddRoom,
+  onReorderRoom,
 }: HouseRoomTreeProps) {
   const [collapsedHouses, setCollapsedHouses] = useState<Record<string, boolean>>({});
   const [editingTarget, setEditingTarget] = useState<EditingTarget>(null);
   const [draftName, setDraftName] = useState("");
-  const [roomDialogHouseId, setRoomDialogHouseId] = useState<string | null>(null);
   const [isAddHouseOpen, setIsAddHouseOpen] = useState(false);
-
-  const selectedHouse = useMemo(() => {
-    return houses.find((house) => house.id === selectedHouseId) ?? houses[0];
-  }, [houses, selectedHouseId]);
 
   function toggleHouse(houseId: string) {
     setCollapsedHouses((prev) => ({ ...prev, [houseId]: !prev[houseId] }));
@@ -108,6 +105,13 @@ export function HouseRoomTree({
             </Button>
           </div>
         </div>
+
+        {houses.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
+            <p className="font-medium text-slate-800">No houses in this project yet.</p>
+            <p className="mt-1 text-xs text-slate-500">Add the first house to create a clear room structure and start organizing products.</p>
+          </div>
+        ) : null}
 
         <div className="space-y-3">
           {houses.map((house, houseIndex) => {
@@ -207,88 +211,140 @@ export function HouseRoomTree({
 
                 {!isCollapsed ? (
                   <div className="space-y-2 border-t border-slate-200 px-2 pb-2 pt-2">
-                    <ul className="space-y-1">
-                      {house.rooms.map((room) => {
-                        const isSelected = room.id === selectedRoomId;
-                        const isEditingRoom = editingTarget?.kind === "room" && editingTarget.id === room.id;
+                    {house.rooms.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-600">
+                        <p className="font-medium text-slate-800">No rooms in {house.name} yet.</p>
+                        <p className="mt-1 text-slate-500">Add the first room to start searching products and building the layout.</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="mt-3 h-7 px-2 text-[11px]"
+                          onClick={() => onRequestAddRoom(house.id)}
+                        >
+                          <Plus className="mr-1.5 h-3.5 w-3.5" />
+                          Add first room
+                        </Button>
+                      </div>
+                    ) : (
+                      <ul className="space-y-1">
+                        {house.rooms.map((room, roomIndex) => {
+                          const isSelected = room.id === selectedRoomId;
+                          const isEditingRoom = editingTarget?.kind === "room" && editingTarget.id === room.id;
 
-                        return (
-                          <li key={room.id}>
-                            <div
-                              className={cn(
-                                "flex items-center gap-2 rounded-md border-y border-r border-l-4 px-2 py-1.5 transition",
-                                isSelected
-                                  ? `${houseColor.softBorder} ${houseColor.softBg}`
-                                  : "border-r-slate-200 border-y-slate-200 bg-white hover:bg-slate-50",
-                                houseColor.roomRail
-                              )}
-                              onClick={() => onSelectRoom(house.id, room.id)}
-                            >
-                              {isEditingRoom ? (
-                                <div className="flex min-w-0 flex-1 items-center gap-2">
-                                  <Input
-                                    autoFocus
-                                    value={draftName}
-                                    className="h-8"
-                                    onChange={(event) => setDraftName(event.target.value)}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter") {
-                                        event.preventDefault();
-                                        saveRename();
-                                      }
-                                      if (event.key === "Escape") {
-                                        event.preventDefault();
-                                        cancelRename();
-                                      }
-                                    }}
-                                  />
-                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={saveRename}>
-                                    <Check className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={cancelRename}>
-                                    <X className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="inline-flex min-w-0 flex-1 items-center gap-2 truncate text-left text-sm text-slate-700"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      onSelectRoom(house.id, room.id);
-                                    }}
-                                  >
-                                    <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", houseColor.dot)} />
-                                    {room.name}
-                                  </button>
-                                  {room.sizeSqm ? <span className="text-[11px] text-slate-500">{room.sizeSqm} m2</span> : null}
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 text-slate-500"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      onSelectRoom(house.id, room.id);
-                                      startRenameRoom(room.id, room.name);
-                                    }}
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                </>
-                              )}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                          return (
+                            <li key={room.id}>
+                              <div
+                                className={cn(
+                                  "flex items-center gap-2 rounded-md border-y border-r border-l-4 px-2 py-1.5 transition",
+                                  isSelected
+                                    ? `${houseColor.softBorder} ${houseColor.softBg}`
+                                    : "border-r-slate-200 border-y-slate-200 bg-white hover:bg-slate-50",
+                                  houseColor.roomRail
+                                )}
+                                onClick={() => onSelectRoom(house.id, room.id)}
+                              >
+                                {isEditingRoom ? (
+                                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <Input
+                                      autoFocus
+                                      value={draftName}
+                                      className="h-8"
+                                      onChange={(event) => setDraftName(event.target.value)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter") {
+                                          event.preventDefault();
+                                          saveRename();
+                                        }
+                                        if (event.key === "Escape") {
+                                          event.preventDefault();
+                                          cancelRename();
+                                        }
+                                      }}
+                                    />
+                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={saveRename}>
+                                      <Check className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={cancelRename}>
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="inline-flex min-w-0 flex-1 items-center gap-2 truncate text-left text-sm text-slate-700"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        onSelectRoom(house.id, room.id);
+                                      }}
+                                    >
+                                      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", houseColor.dot)} />
+                                      <span className="truncate">{room.name}</span>
+                                    </button>
+                                    {isSelected ? (
+                                      <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                                        Selected
+                                      </span>
+                                    ) : null}
+                                    <span className="text-[11px] text-slate-500">{room.objects.length} items</span>
+                                    <div className="flex items-center gap-0.5">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-slate-500"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          onReorderRoom(house.id, room.id, "up");
+                                        }}
+                                        disabled={roomIndex === 0}
+                                        aria-label={`Move ${room.name} up`}
+                                      >
+                                        <ArrowUp className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-slate-500"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          onReorderRoom(house.id, room.id, "down");
+                                        }}
+                                        disabled={roomIndex === house.rooms.length - 1}
+                                        aria-label={`Move ${room.name} down`}
+                                      >
+                                        <ArrowDown className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-slate-500"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          onSelectRoom(house.id, room.id);
+                                          startRenameRoom(room.id, room.name);
+                                        }}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       className="w-full justify-start text-slate-600 hover:text-slate-900"
-                      onClick={() => setRoomDialogHouseId(house.id)}
+                      onClick={() => onRequestAddRoom(house.id)}
                     >
                       <Plus className="mr-1.5 h-4 w-4" />
                       Add room
@@ -300,23 +356,6 @@ export function HouseRoomTree({
           })}
         </div>
       </Sidebar>
-
-      <AddRoomDialog
-        open={Boolean(roomDialogHouseId)}
-        houseName={houses.find((house) => house.id === roomDialogHouseId)?.name ?? selectedHouse?.name ?? "house"}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRoomDialogHouseId(null);
-          }
-        }}
-        onCreateRoom={(roomName, roomType, roomSizeSqm) => {
-          const targetHouseId = roomDialogHouseId ?? selectedHouse?.id;
-          if (!targetHouseId) {
-            return;
-          }
-          onAddRoom(targetHouseId, roomName, roomType, roomSizeSqm);
-        }}
-      />
 
       <AddHouseDialog
         open={isAddHouseOpen}

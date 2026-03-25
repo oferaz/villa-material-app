@@ -29,6 +29,11 @@ function formatObjectBudgetDelta(value: number | null, currency: string): string
   return `${formatCurrencyAmount(Math.abs(rounded), currency)} under object budget`;
 }
 
+function normalizeDescription(value?: string): string | null {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  return normalized ? normalized : null;
+}
+
 export function ProductOptionCard({ option, isSelected, onSelect, projectCurrency, budgetImpact }: ProductOptionCardProps) {
   const roomHealth = budgetImpact
     ? getBudgetHealthStatus(
@@ -36,6 +41,7 @@ export function ProductOptionCard({ option, isSelected, onSelect, projectCurrenc
         budgetImpact.nextRoomRemaining
       )
     : "not_planned";
+  const normalizedDescription = normalizeDescription(option.description);
 
   return (
     <article
@@ -55,16 +61,46 @@ export function ProductOptionCard({ option, isSelected, onSelect, projectCurrenc
           />
         ) : null}
       </div>
-      <div className="space-y-1">
+      <div className="space-y-3">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-semibold text-slate-800">{option.name}</p>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">{option.name}</p>
+            <p className="mt-1 text-xs text-slate-500">Supplier: {option.supplier || "Unknown supplier"}</p>
+          </div>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
-            {budgetImpact ? <Badge variant={budgetImpact.fitTone === "danger" ? "danger" : budgetImpact.fitTone === "warn" ? "secondary" : budgetImpact.fitTone === "good" ? "success" : "outline"}>{budgetImpact.primaryReasonLabel}</Badge> : null}
+            {budgetImpact ? (
+              <Badge variant={budgetImpact.fitTone === "danger" ? "danger" : budgetImpact.fitTone === "warn" ? "secondary" : budgetImpact.fitTone === "good" ? "success" : "outline"}>
+                {budgetImpact.primaryReasonLabel}
+              </Badge>
+            ) : null}
             {budgetImpact?.secondaryReasonLabel ? <Badge variant="outline">{budgetImpact.secondaryReasonLabel}</Badge> : null}
-            {isSelected ? <Badge variant="success">Selected</Badge> : null}
+            {isSelected ? <Badge variant="success">Added to room</Badge> : null}
           </div>
         </div>
-        <p className="text-xs text-slate-500">{option.supplier}</p>
+
+        <div className="grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+            <p className="font-semibold uppercase tracking-wide text-slate-500">Price</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">
+              {option.price > 0 ? `${formatCurrencyAmount(option.price, projectCurrency)} per unit` : "Price unavailable"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+            <p className="font-semibold uppercase tracking-wide text-slate-500">Category</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{option.budgetCategory}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+            <p className="font-semibold uppercase tracking-wide text-slate-500">Lead time</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">
+              {option.leadTimeDays > 0 ? `${option.leadTimeDays} days` : "Pending"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+            <p className="font-semibold uppercase tracking-wide text-slate-500">Supplier</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{option.supplier || "Unknown supplier"}</p>
+          </div>
+        </div>
+
         {option.searchMatchLabels?.length ? (
           <div className="flex flex-wrap gap-1">
             {option.searchMatchLabels.map((label) => (
@@ -74,21 +110,28 @@ export function ProductOptionCard({ option, isSelected, onSelect, projectCurrenc
             ))}
           </div>
         ) : null}
-        <p className="text-xs text-slate-500">
-          {option.price > 0 ? `${formatCurrencyAmount(option.price, projectCurrency)} per unit` : "Price on request"} - {" "}
-          {option.leadTimeDays > 0 ? `${option.leadTimeDays} days lead time` : "Lead time pending"}
-        </p>
-        {option.sourceUrl ? (
-          <a
-            href={option.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-          >
-            Source link
-            <ExternalLink className="h-3 w-3" />
-          </a>
+
+        {normalizedDescription ? (
+          <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-600">
+            <p className="font-semibold uppercase tracking-wide text-slate-500">Description</p>
+            <p className="mt-1 leading-5 text-slate-700">{normalizedDescription}</p>
+          </div>
         ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {option.sku ? <Badge variant="outline">SKU: {option.sku}</Badge> : null}
+          {option.sourceUrl ? (
+            <a
+              href={option.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              Open supplier link
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          ) : null}
+        </div>
       </div>
       {budgetImpact ? (
         <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-[11px] text-slate-600">
@@ -98,28 +141,22 @@ export function ProductOptionCard({ option, isSelected, onSelect, projectCurrenc
           </div>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <p>
-              Object budget:{" "}
-              <span className="font-medium text-slate-800">{formatObjectBudgetDelta(budgetImpact.objectBudgetDelta, projectCurrency)}</span>
+              Object budget: <span className="font-medium text-slate-800">{formatObjectBudgetDelta(budgetImpact.objectBudgetDelta, projectCurrency)}</span>
             </p>
             <p>
-              Change vs current:{" "}
-              <span className="font-medium text-slate-800">{formatSignedCurrencyDelta(budgetImpact.deltaAmount, projectCurrency)}</span>
+              Change vs current: <span className="font-medium text-slate-800">{formatSignedCurrencyDelta(budgetImpact.deltaAmount, projectCurrency)}</span>
             </p>
             <p>
-              Room remaining:{" "}
-              <span className="font-medium text-slate-800">{formatCurrencyAmount(budgetImpact.nextRoomRemaining, projectCurrency)}</span>
+              Room remaining: <span className="font-medium text-slate-800">{formatCurrencyAmount(budgetImpact.nextRoomRemaining, projectCurrency)}</span>
             </p>
             <p>
-              House remaining:{" "}
-              <span className="font-medium text-slate-800">{formatCurrencyAmount(budgetImpact.nextHouseRemaining, projectCurrency)}</span>
+              House remaining: <span className="font-medium text-slate-800">{formatCurrencyAmount(budgetImpact.nextHouseRemaining, projectCurrency)}</span>
             </p>
             <p>
-              Budget category remaining:{" "}
-              <span className="font-medium text-slate-800">{formatCurrencyAmount(budgetImpact.nextCategoryRemaining, projectCurrency)}</span>
+              Budget category remaining: <span className="font-medium text-slate-800">{formatCurrencyAmount(budgetImpact.nextCategoryRemaining, projectCurrency)}</span>
             </p>
             <p>
-              Project remaining:{" "}
-              <span className="font-medium text-slate-800">{formatCurrencyAmount(budgetImpact.nextProjectRemaining, projectCurrency)}</span>
+              Project remaining: <span className="font-medium text-slate-800">{formatCurrencyAmount(budgetImpact.nextProjectRemaining, projectCurrency)}</span>
             </p>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -140,7 +177,7 @@ export function ProductOptionCard({ option, isSelected, onSelect, projectCurrenc
         </div>
       ) : null}
       <Button type="button" className="mt-3 w-full" variant={isSelected ? "secondary" : "outline"} onClick={onSelect}>
-        {isSelected ? "Selected" : "Select"}
+        {isSelected ? "Added to room" : "Add to room"}
       </Button>
     </article>
   );

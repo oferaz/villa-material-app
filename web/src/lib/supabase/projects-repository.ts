@@ -785,6 +785,58 @@ export async function createRoomForHouse({ houseId, name, roomType, sizeSqm }: C
   };
 }
 
+async function persistSortOrderUpdates(
+  tableName: "rooms" | "room_objects",
+  scopeColumn: "house_id" | "room_id",
+  scopeId: string,
+  orderedIds: string[]
+): Promise<void> {
+  for (const [index, id] of orderedIds.entries()) {
+    const { error } = await supabase
+      .from(tableName)
+      .update({ sort_order: index })
+      .eq("id", id)
+      .eq(scopeColumn, scopeId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+}
+
+export async function reorderRoomsInHouse(houseId: string, orderedRoomIds: string[]): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedHouseId = houseId.trim();
+  const normalizedRoomIds = orderedRoomIds.map((id) => id.trim()).filter(Boolean);
+  if (!normalizedHouseId) {
+    throw new Error("House ID is required.");
+  }
+  if (normalizedRoomIds.length === 0) {
+    return;
+  }
+
+  await persistSortOrderUpdates("rooms", "house_id", normalizedHouseId, normalizedRoomIds);
+}
+
+export async function reorderRoomObjectsInRoom(roomId: string, orderedObjectIds: string[]): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedRoomId = roomId.trim();
+  const normalizedObjectIds = orderedObjectIds.map((id) => id.trim()).filter(Boolean);
+  if (!normalizedRoomId) {
+    throw new Error("Room ID is required.");
+  }
+  if (normalizedObjectIds.length === 0) {
+    return;
+  }
+
+  await persistSortOrderUpdates("room_objects", "room_id", normalizedRoomId, normalizedObjectIds);
+}
 export async function renameRoomById(roomId: string, nextName: string): Promise<void> {
   if (!isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
@@ -1426,6 +1478,122 @@ export async function createRoomObjectForRoom({
   };
 }
 
+export async function createRoomObjectsForRoom(
+  roomId: string,
+  items: Array<Omit<CreateRoomObjectInput, "roomId">>
+): Promise<RoomObject[]> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const normalizedRoomId = roomId.trim();
+  if (!normalizedRoomId) {
+    throw new Error("Room ID is required.");
+  }
+
+  const normalizedItems = items
+    .map((item) => ({
+      name: item.name.trim(),
+      category: item.category.trim() || "Custom",
+      quantity: Math.max(1, Math.min(999, Math.round(item.quantity || 1))),
+    }))
+    .filter((item) => item.name.length > 0);
+
+  if (normalizedItems.length === 0) {
+    return [];
+  }
+
+  const { data: latestRows, error: latestError } = await supabase
+    .from("room_objects")
+    .select("sort_order")
+    .eq("room_id", normalizedRoomId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  if (latestError) {
+    throw new Error(latestError.message);
+  }
+
+  const startingSortOrder = ((latestRows?.[0]?.sort_order as number | null | undefined) ?? -1) + 1;
+  const payload = normalizedItems.map((item, index) => ({
+    room_id: normalizedRoomId,
+    name: item.name,
+    category: item.category,
+    quantity: item.quantity,
+    selected_material_id: null,
+    po_approved: false,
+    is_ordered: false,
+    is_installed: false,
+    sort_order: startingSortOrder + index,
+  }));
+
+  let insertResult: {
+    data: Partial<RoomObjectRow>[] | null;
+    error: { code?: string; message: string } | null;
+  } = (await supabase
+    .from("room_objects")
+    .insert(payload)
+    .select("id,room_id,name,category,quantity,selected_material_id,po_approved,is_ordered,is_installed,sort_order")
+    .order("sort_order", { ascending: true })) as {
+    data: Partial<RoomObjectRow>[] | null;
+    error: { code?: string; message: string } | null;
+  };
+
+  if (insertResult.error && hasMissingWorkflowColumnsError(insertResult.error.code, insertResult.error.message)) {
+    insertResult = (await supabase
+      .from("room_objects")
+      .insert(
+        payload.map((item) => ({
+          room_id: item.room_id,
+          name: item.name,
+          category: item.category,
+          quantity: item.quantity,
+          selected_material_id: item.selected_material_id,
+          sort_order: item.sort_order,
+        }))
+      )
+      .select("id,room_id,name,category,quantity,selected_material_id,sort_order")
+      .order("sort_order", { ascending: true })) as typeof insertResult;
+  }
+
+  if (insertResult.error && hasMissingQuantityColumnError(insertResult.error.code, insertResult.error.message)) {
+    insertResult = (await supabase
+      .from("room_objects")
+      .insert(
+        payload.map((item) => ({
+          room_id: item.room_id,
+          name: item.name,
+          category: item.category,
+          selected_material_id: item.selected_material_id,
+          sort_order: item.sort_order,
+        }))
+      )
+      .select("id,room_id,name,category,selected_material_id,sort_order")
+      .order("sort_order", { ascending: true })) as typeof insertResult;
+  }
+
+  if (insertResult.error) {
+    throw new Error(insertResult.error.message);
+  }
+
+  const rows = ((insertResult.data ?? []) as unknown as RoomObjectRow[]).sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
+
+  return rows.map((row, index) => ({
+    id: row.id,
+    roomId: row.room_id,
+    name: row.name,
+    category: row.category,
+    quantity: Math.max(1, Math.round(row.quantity ?? normalizedItems[index]?.quantity ?? 1)),
+    budgetAllowance: normalizeBudgetAllowance(row.budget_allowance) ?? null,
+    materialSearchQuery: row.material_search_query ?? undefined,
+    selectedProductId: row.selected_material_id ?? undefined,
+    poApproved: Boolean(row.po_approved),
+    ordered: Boolean(row.is_ordered),
+    installed: Boolean(row.is_installed),
+    productOptions: [],
+  }));
+}
 export async function updateRoomObjectQuantityById(roomObjectId: string, quantity: number): Promise<void> {
   if (!isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
@@ -1950,4 +2118,5 @@ export async function applyClientViewResponseById(projectId: string, responseId:
     appliedAt: String(payload.appliedAt ?? new Date().toISOString()),
   };
 }
+
 

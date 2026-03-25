@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ExternalLink, Trash2 } from "lucide-react";
 import { Room, RoomBudget, getObjectWorkflowStage, getWorkflowStageLabel } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   getRoomObjectSelectedLineCost,
 } from "@/lib/mock/budget";
 import { cn } from "@/lib/utils";
+import { MoveDirection } from "@/lib/ordering";
 
 interface RoomObjectsListProps {
   room?: Room;
@@ -26,6 +27,8 @@ interface RoomObjectsListProps {
   projectCurrency: string;
   onSelectObject: (objectId: string) => void;
   onDeleteObject: (objectId: string) => void;
+  onMoveObject: (objectId: string, direction: MoveDirection) => void;
+  onOpenAddCustomObject: () => void;
   onUpdateBudgetAllowance: (objectId: string, budgetAllowance: number | null) => void;
   onUpdateWorkflow: (
     objectId: string,
@@ -116,6 +119,8 @@ export function RoomObjectsList({
   projectCurrency,
   onSelectObject,
   onDeleteObject,
+  onMoveObject,
+  onOpenAddCustomObject,
   onUpdateBudgetAllowance,
   onUpdateWorkflow,
 }: RoomObjectsListProps) {
@@ -205,19 +210,30 @@ export function RoomObjectsList({
       </CardHeader>
       <CardContent>
         {room.objects.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-            <p className="font-medium text-slate-800">No products in this room yet.</p>
-            <p className="mt-1 text-xs text-slate-500">Add a suggested or custom object, then search products or paste a link to add your first item.</p>
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+            <p className="font-medium text-slate-800">This room is ready for its first item.</p>
+            <p className="mt-1 text-xs text-slate-500">Organize your room by adding the first item. Then search for products or paste a product link.</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-white px-2 py-1">Start by searching for products</span>
+              <span className="rounded-full border border-slate-200 bg-white px-2 py-1">You can also paste a product link</span>
+              <span className="rounded-full border border-slate-200 bg-white px-2 py-1">Add the first item to unlock product choices</span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={onOpenAddCustomObject}>
+                Add first item
+              </Button>
+              <p className="self-center text-[11px] text-slate-500">Starter suggestions are listed just above.</p>
+            </div>
           </div>
         ) : null}
         <ul className="space-y-2">
-          {room.objects.map((objectItem) => {
+          {room.objects.map((objectItem, objectIndex) => {
             const workflowStage = getObjectWorkflowStage(objectItem);
             const isSelected = selectedObjectId === objectItem.id;
             const hasMaterial = Boolean(objectItem.selectedProductId);
             const isPushingRoomOverBudget = overBudgetObjectIdSet.has(objectItem.id);
-            const selectedMaterialName =
-              objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId)?.name ?? "";
+            const selectedOption = objectItem.productOptions.find((option) => option.id === objectItem.selectedProductId);
+            const selectedMaterialName = selectedOption?.name ?? "";
             const showWorkflowActions = showWorkflowHints || isSelected;
             const budgetBadge = resolveBudgetBadge(objectItem, roomBudget);
             const objectBudget = normalizeObjectBudget(objectItem.budgetAllowance);
@@ -247,13 +263,49 @@ export function RoomObjectsList({
                   )}
                 >
                   <div className="min-w-0 flex-1">
-                    <button type="button" className="min-w-0 w-full text-left" onClick={() => onSelectObject(objectItem.id)}>
-                      <p className="truncate text-sm font-medium text-slate-800">
-                        {objectItem.name}
-                        {objectItem.quantity > 1 ? ` x${objectItem.quantity}` : ""}
-                      </p>
-                      <p className="text-xs text-slate-500">{objectItem.category}</p>
-                    </button>
+                    <div className="flex items-start justify-between gap-2">
+                      <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelectObject(objectItem.id)}>
+                        <p className="truncate text-sm font-medium text-slate-800">
+                          {objectItem.name}
+                          {objectItem.quantity > 1 ? ` x${objectItem.quantity}` : ""}
+                        </p>
+                        <p className="text-xs text-slate-500">{objectItem.category}</p>
+                      </button>
+                      <div className="flex items-center gap-0.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-slate-500"
+                          onClick={() => onMoveObject(objectItem.id, "up")}
+                          disabled={objectIndex === 0}
+                          aria-label={`Move ${objectItem.name} up`}
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-slate-500"
+                          onClick={() => onMoveObject(objectItem.id, "down")}
+                          disabled={objectIndex === room.objects.length - 1}
+                          aria-label={`Move ${objectItem.name} down`}
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-slate-500 hover:text-red-600"
+                          onClick={() => onDeleteObject(objectItem.id)}
+                          aria-label={`Delete ${objectItem.name}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
 
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <Badge variant="outline">{`Workflow: ${getWorkflowStageLabel(workflowStage)}`}</Badge>
@@ -267,9 +319,38 @@ export function RoomObjectsList({
                       )}
                     >
                       {hasMaterial
-                        ? `Selected material: ${selectedMaterialName || "Assigned material"}`
-                        : "No material selected yet. Tap to assign."}
+                        ? `Added product: ${selectedMaterialName || "Assigned material"}`
+                        : "No product added yet. Add an item, then search or paste a link."}
                     </p>
+
+                    {hasMaterial ? (
+                      <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+                        <p>
+                          Supplier: <span className="font-medium text-slate-800">{selectedOption?.supplier || "Unknown supplier"}</span>
+                        </p>
+                        <p>
+                          Selected cost: <span className="font-medium text-slate-800">{formatCurrencyAmount(selectedLineCost, projectCurrency)}</span>
+                        </p>
+                        <p>
+                          Object budget: <span className="font-medium text-slate-800">{objectBudget === null ? "Not set" : formatCurrencyAmount(objectBudget, projectCurrency)}</span>
+                        </p>
+                        <p>
+                          Description: <span className="font-medium text-slate-800">{selectedOption?.description?.trim() || "Not provided"}</span>
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {selectedOption?.sourceUrl ? (
+                      <a
+                        href={selectedOption.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        Open supplier link
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
 
                     {isSelected ? (
                       <form onSubmit={(event) => handleBudgetSave(event, objectItem.id)} className="mt-2 rounded-lg border border-slate-200 bg-white/90 p-2.5">
@@ -307,7 +388,7 @@ export function RoomObjectsList({
                       </form>
                     ) : objectBudget !== null || hasMaterial ? (
                       <div className="mt-1 grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
-                        <p>Selected cost: {hasMaterial ? formatCurrencyAmount(selectedLineCost, projectCurrency) : "No material selected"}</p>
+                        <p>Selected cost: {hasMaterial ? formatCurrencyAmount(selectedLineCost, projectCurrency) : "No product added"}</p>
                         <p>Object budget: {objectBudget === null ? "Not set" : formatCurrencyAmount(objectBudget, projectCurrency)}</p>
                       </div>
                     ) : null}
@@ -327,7 +408,7 @@ export function RoomObjectsList({
                           <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2">
                             <p className="font-semibold uppercase tracking-wide text-slate-500">Selected cost</p>
                             <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {hasMaterial ? formatCurrencyAmount(selectedLineCost, projectCurrency) : "No material selected"}
+                              {hasMaterial ? formatCurrencyAmount(selectedLineCost, projectCurrency) : "No product added"}
                             </p>
                           </div>
                           <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2">
@@ -344,7 +425,7 @@ export function RoomObjectsList({
                                 budgetDelta !== null && budgetDelta > 0 ? "text-red-700" : budgetDelta !== null && budgetDelta < 0 ? "text-emerald-700" : "text-slate-900"
                               )}
                             >
-                              {hasMaterial ? formatBudgetDelta(budgetDelta, projectCurrency) : "Select a material to compare"}
+                              {hasMaterial ? formatBudgetDelta(budgetDelta, projectCurrency) : "Select a product to compare"}
                             </p>
                           </div>
                         </div>
@@ -402,19 +483,9 @@ export function RoomObjectsList({
                         ) : null}
                       </div>
                     ) : (
-                      <p className="mt-2 text-xs text-slate-400">Select this object to update workflow and object budget</p>
+                      <p className="mt-2 text-xs text-slate-400">Select this object to update workflow, budget, or ordering.</p>
                     )}
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-slate-500 hover:text-red-600"
-                    onClick={() => onDeleteObject(objectItem.id)}
-                    aria-label={`Delete ${objectItem.name}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
               </li>
             );

@@ -37,6 +37,7 @@ describe("ProductOptionsPanel", () => {
         projectCurrency="THB"
         materialLibraryVersion={1}
         onSelectProduct={() => {}}
+        onApplyReusableProduct={() => {}}
         onSearchCatalog={() => {}}
         onAddFromLink={() => {}}
       />
@@ -57,6 +58,7 @@ describe("ProductOptionsPanel", () => {
         projectCurrency="THB"
         materialLibraryVersion={1}
         onSelectProduct={() => {}}
+        onApplyReusableProduct={() => {}}
         onSearchCatalog={onSearchCatalog}
         onAddFromLink={() => {}}
       />
@@ -66,7 +68,7 @@ describe("ProductOptionsPanel", () => {
 
     expect(screen.getByRole("button", { name: /search library/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^add from link$/i })).toBeTruthy();
-    expect(screen.getByText("Search for products or paste a link to add your first item.")).toBeTruthy();
+    expect(screen.getByText("Search is the main path. Paste a link as a fast secondary option when you already know the product.")).toBeTruthy();
   });
 
   it("keeps the search flow working", async () => {
@@ -79,6 +81,7 @@ describe("ProductOptionsPanel", () => {
         projectCurrency="THB"
         materialLibraryVersion={1}
         onSelectProduct={() => {}}
+        onApplyReusableProduct={() => {}}
         onSearchCatalog={onSearchCatalog}
         onAddFromLink={() => {}}
       />
@@ -118,6 +121,7 @@ describe("ProductOptionsPanel", () => {
         projectCurrency="THB"
         materialLibraryVersion={1}
         onSelectProduct={() => {}}
+        onApplyReusableProduct={() => {}}
         onSearchCatalog={() => {}}
         onAddFromLink={onAddFromLink}
       />
@@ -171,6 +175,7 @@ describe("ProductOptionsPanel", () => {
         projectCurrency="THB"
         materialLibraryVersion={1}
         onSelectProduct={() => {}}
+        onApplyReusableProduct={() => {}}
         onSearchCatalog={() => {}}
         onAddFromLink={() => {}}
       />
@@ -187,7 +192,7 @@ describe("ProductOptionsPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the selected product price once an item has been added", () => {
+  it("shows the selected product price and committed state once an item has been added", () => {
     render(
       <ProductOptionsPanel
         roomObject={createRoomObject({
@@ -196,12 +201,50 @@ describe("ProductOptionsPanel", () => {
         })}
         projectCurrency="THB"
         materialLibraryVersion={1}
+        selectionNotice="Walnut dining table added to Dining table."
         onSelectProduct={() => {}}
+        onApplyReusableProduct={() => {}}
         onSearchCatalog={() => {}}
         onAddFromLink={() => {}}
       />
     );
 
-    expect(screen.getByText(/9,900 per unit/)).toBeTruthy();
+    expect(screen.getAllByText(/9,900/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Walnut dining table added to Dining table.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /added to room/i })).toBeTruthy();
+  });
+
+  it("lets the user reuse an existing workflow product quickly", async () => {
+    const user = userEvent.setup();
+    const onApplyReusableProduct = vi.fn();
+    const reusableOption = createOption({ id: "reuse-1", name: "Quick reuse sofa", supplier: "Urban Foundry", price: 12000 });
+
+    render(
+      <ProductOptionsPanel
+        roomObject={createRoomObject()}
+        projectCurrency="THB"
+        materialLibraryVersion={1}
+        quickReuseOptions={[
+          {
+            id: "project-reuse-1",
+            option: reusableOption,
+            source: "project",
+            label: "3 items using this product",
+            usageCount: 3,
+          },
+        ]}
+        onSelectProduct={() => {}}
+        onApplyReusableProduct={onApplyReusableProduct}
+        onSearchCatalog={() => {}}
+        onAddFromLink={() => {}}
+      />
+    );
+
+    expect(screen.getByText("Quick reuse")).toBeTruthy();
+    expect(screen.getByText("3 items using this product")).toBeTruthy();
+
+    await user.click(screen.getAllByRole("button", { name: /^add to room$/i })[0]);
+
+    expect(onApplyReusableProduct).toHaveBeenCalledWith(reusableOption);
   });
 });
