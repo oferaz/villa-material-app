@@ -75,6 +75,6 @@ describe("HouseRoomTree", () => {
     fireEvent.dragEnd(livingRoomItem!);
 
     expect(onReorderRoom).toHaveBeenCalledWith("house-1", ["room-2", "room-1"]);
-    expect(screen.getAllByText(/drag to reorder/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/drag to reorder/i)).toBeNull();
   });
 });

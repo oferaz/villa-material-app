@@ -358,7 +358,6 @@ export function HouseRoomTree({
                                     ) : null}
                                     <span className="text-[11px] text-slate-500">{room.objects.length} items</span>
                                     <div className="flex items-center gap-0.5">
-                                      <span className="hidden text-[10px] text-slate-400 lg:inline">Drag to reorder</span>
                                       <Button
                                         type="button"
                                         variant="ghost"
