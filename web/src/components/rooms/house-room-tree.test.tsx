@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { HouseRoomTree } from "./house-room-tree";
@@ -41,5 +41,40 @@ describe("HouseRoomTree", () => {
     await user.click(screen.getByRole("button", { name: "Kitchen" }));
 
     expect(onSelectRoom).toHaveBeenCalledWith("house-1", "room-2");
+  });
+
+  it("reorders rooms through drag and drop without showing arrow controls", () => {
+    const onReorderRoom = vi.fn();
+
+    render(
+      <HouseRoomTree
+        houses={houses}
+        selectedHouseId="house-1"
+        selectedRoomId="room-1"
+        onSelectRoom={() => {}}
+        onRenameHouse={() => {}}
+        onRenameRoom={() => {}}
+        onAddHouse={() => {}}
+        onDuplicateHouse={() => {}}
+        onRequestAddRoom={() => {}}
+        onReorderRoom={onReorderRoom}
+      />
+    );
+
+    const livingRoomItem = document.querySelector('[data-room-id="room-1"]');
+    const kitchenItem = document.querySelector('[data-room-id="room-2"]');
+
+    expect(livingRoomItem).toBeTruthy();
+    expect(kitchenItem).toBeTruthy();
+    expect(screen.queryByLabelText(/move living room/i)).toBeNull();
+    expect(screen.queryByLabelText(/move kitchen/i)).toBeNull();
+
+    fireEvent.dragStart(livingRoomItem!);
+    fireEvent.dragOver(kitchenItem!);
+    fireEvent.drop(kitchenItem!);
+    fireEvent.dragEnd(livingRoomItem!);
+
+    expect(onReorderRoom).toHaveBeenCalledWith("house-1", ["room-2", "room-1"]);
+    expect(screen.getAllByText(/drag to reorder/i).length).toBeGreaterThan(0);
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Copy, Home, Pencil, Plus, X } from "lucide-react";
+import { DragEvent, useState } from "react";
+import { Check, ChevronDown, ChevronRight, Copy, GripVertical, Home, Pencil, Plus, X } from "lucide-react";
 import { House } from "@/types";
 import { Sidebar } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { getHouseColor } from "@/lib/ui/house-colors";
 import { AddHouseDialog } from "@/components/rooms/add-house-dialog";
-import { MoveDirection } from "@/lib/ordering";
+import { reorderListItem } from "@/lib/ordering";
 
 interface HouseRoomTreeProps {
   houses: House[];
@@ -21,7 +21,7 @@ interface HouseRoomTreeProps {
   onAddHouse: (houseName: string, houseSizeSqm?: number) => void;
   onDuplicateHouse: (houseId: string, duplicateName?: string) => void;
   onRequestAddRoom: (houseId: string) => void;
-  onReorderRoom: (houseId: string, roomId: string, direction: MoveDirection) => void;
+  onReorderRoom: (houseId: string, orderedRoomIds: string[]) => void;
 }
 
 type EditingTarget =
@@ -47,6 +47,8 @@ export function HouseRoomTree({
   const [editingTarget, setEditingTarget] = useState<EditingTarget>(null);
   const [draftName, setDraftName] = useState("");
   const [isAddHouseOpen, setIsAddHouseOpen] = useState(false);
+  const [draggingRoom, setDraggingRoom] = useState<{ houseId: string; roomId: string } | null>(null);
+  const [dragOverRoom, setDragOverRoom] = useState<{ houseId: string; roomId: string } | null>(null);
 
   function toggleHouse(houseId: string) {
     setCollapsedHouses((prev) => ({ ...prev, [houseId]: !prev[houseId] }));
@@ -81,6 +83,51 @@ export function HouseRoomTree({
     }
 
     cancelRename();
+  }
+
+  function handleRoomDragStart(houseId: string, roomId: string) {
+    if (editingTarget) {
+      return;
+    }
+
+    setDraggingRoom({ houseId, roomId });
+    setDragOverRoom({ houseId, roomId });
+  }
+
+  function handleRoomDragOver(event: DragEvent<HTMLLIElement>, houseId: string, roomId: string) {
+    if (!draggingRoom || draggingRoom.houseId !== houseId || draggingRoom.roomId === roomId) {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+    setDragOverRoom({ houseId, roomId });
+  }
+
+  function handleRoomDrop(house: House, targetRoomId: string) {
+    if (!draggingRoom || draggingRoom.houseId !== house.id || draggingRoom.roomId === targetRoomId) {
+      setDraggingRoom(null);
+      setDragOverRoom(null);
+      return;
+    }
+
+    const sourceIndex = house.rooms.findIndex((room) => room.id === draggingRoom.roomId);
+    const targetIndex = house.rooms.findIndex((room) => room.id === targetRoomId);
+    const nextRooms = reorderListItem(house.rooms, sourceIndex, targetIndex);
+
+    if (nextRooms !== house.rooms) {
+      onReorderRoom(house.id, nextRooms.map((room) => room.id));
+    }
+
+    setDraggingRoom(null);
+    setDragOverRoom(null);
+  }
+
+  function clearRoomDragState() {
+    setDraggingRoom(null);
+    setDragOverRoom(null);
   }
 
   return (
@@ -228,19 +275,40 @@ export function HouseRoomTree({
                       </div>
                     ) : (
                       <ul className="space-y-1">
-                        {house.rooms.map((room, roomIndex) => {
+                        {house.rooms.map((room) => {
                           const isSelected = room.id === selectedRoomId;
                           const isEditingRoom = editingTarget?.kind === "room" && editingTarget.id === room.id;
+                          const isDragging = draggingRoom?.houseId === house.id && draggingRoom.roomId === room.id;
+                          const isDropTarget = dragOverRoom?.houseId === house.id && dragOverRoom.roomId === room.id && !isDragging;
 
                           return (
-                            <li key={room.id}>
+                            <li
+                              key={room.id}
+                              draggable={!isEditingRoom}
+                              onDragStart={(event) => {
+                                if (event.dataTransfer) {
+                                  event.dataTransfer.effectAllowed = "move";
+                                  event.dataTransfer.setData("text/plain", room.id);
+                                }
+                                handleRoomDragStart(house.id, room.id);
+                              }}
+                              onDragOver={(event) => handleRoomDragOver(event, house.id, room.id)}
+                              onDrop={(event) => {
+                                event.preventDefault();
+                                handleRoomDrop(house, room.id);
+                              }}
+                              onDragEnd={clearRoomDragState}
+                              className={cn("rounded-md", isDragging ? "opacity-65" : "")}
+                              data-room-id={room.id}
+                            >
                               <div
                                 className={cn(
                                   "flex items-center gap-2 rounded-md border-y border-r border-l-4 px-2 py-1.5 transition",
                                   isSelected
                                     ? `${houseColor.softBorder} ${houseColor.softBg}`
                                     : "border-r-slate-200 border-y-slate-200 bg-white hover:bg-slate-50",
-                                  houseColor.roomRail
+                                  houseColor.roomRail,
+                                  isDropTarget ? "border-blue-300 bg-blue-50 shadow-sm" : ""
                                 )}
                                 onClick={() => onSelectRoom(house.id, room.id)}
                               >
@@ -279,6 +347,7 @@ export function HouseRoomTree({
                                         onSelectRoom(house.id, room.id);
                                       }}
                                     >
+                                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
                                       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", houseColor.dot)} />
                                       <span className="truncate">{room.name}</span>
                                     </button>
@@ -289,34 +358,7 @@ export function HouseRoomTree({
                                     ) : null}
                                     <span className="text-[11px] text-slate-500">{room.objects.length} items</span>
                                     <div className="flex items-center gap-0.5">
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7 text-slate-500"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          onReorderRoom(house.id, room.id, "up");
-                                        }}
-                                        disabled={roomIndex === 0}
-                                        aria-label={`Move ${room.name} up`}
-                                      >
-                                        <ArrowUp className="h-3.5 w-3.5" />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7 text-slate-500"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          onReorderRoom(house.id, room.id, "down");
-                                        }}
-                                        disabled={roomIndex === house.rooms.length - 1}
-                                        aria-label={`Move ${room.name} down`}
-                                      >
-                                        <ArrowDown className="h-3.5 w-3.5" />
-                                      </Button>
+                                      <span className="hidden text-[10px] text-slate-400 lg:inline">Drag to reorder</span>
                                       <Button
                                         type="button"
                                         variant="ghost"

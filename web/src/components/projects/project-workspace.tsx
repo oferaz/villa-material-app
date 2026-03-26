@@ -1953,15 +1953,29 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     });
   }
 
-  function handleReorderRoom(houseId: string, roomId: string, direction: MoveDirection) {
+  function handleReorderRoom(houseId: string, orderedRoomIds: string[]) {
     const house = project?.houses.find((item) => item.id === houseId);
     if (!house) {
       return;
     }
 
-    const currentIndex = house.rooms.findIndex((room) => room.id === roomId);
-    const nextRooms = moveListItem(house.rooms, currentIndex, direction);
-    if (nextRooms === house.rooms) {
+    const currentRoomIds = house.rooms.map((room) => room.id);
+    if (
+      orderedRoomIds.length !== currentRoomIds.length ||
+      orderedRoomIds.some((roomId) => !currentRoomIds.includes(roomId))
+    ) {
+      return;
+    }
+
+    const roomById = new Map(house.rooms.map((room) => [room.id, room]));
+    const nextRooms = orderedRoomIds
+      .map((roomId) => roomById.get(roomId))
+      .filter((room): room is NonNullable<typeof room> => Boolean(room));
+
+    if (
+      nextRooms.length !== house.rooms.length ||
+      nextRooms.every((room, index) => room.id === house.rooms[index]?.id)
+    ) {
       return;
     }
 
@@ -1979,7 +1993,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }));
 
     if (isSupabaseConfigured) {
-      void reorderRoomsInHouse(houseId, nextRooms.map((room) => room.id)).catch((error) => {
+      void reorderRoomsInHouse(houseId, orderedRoomIds).catch((error) => {
         updateCurrentProject((targetProject) => ({
           ...targetProject,
           houses: targetProject.houses.map((item) =>
