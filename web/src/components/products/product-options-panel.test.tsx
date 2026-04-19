@@ -127,7 +127,9 @@ describe("ProductOptionsPanel", () => {
       />
     );
 
-    await user.type(screen.getAllByRole("textbox")[1], "https://shopee.co.th/product");
+    const linkInput = await screen.findByPlaceholderText("Paste product link");
+    await user.click(linkInput);
+    await user.type(linkInput, "https://shopee.co.th/product");
     await user.click(screen.getByRole("button", { name: /fetch product/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -181,7 +183,9 @@ describe("ProductOptionsPanel", () => {
       />
     );
 
-    await user.type(screen.getAllByRole("textbox")[1], "https://shopee.co.th/product");
+    const linkInput = await screen.findByPlaceholderText("Paste product link");
+    await user.click(linkInput);
+    await user.type(linkInput, "https://shopee.co.th/product");
     await user.click(screen.getByRole("button", { name: /fetch product/i }));
 
     await waitFor(() => expect(screen.getByText("Price missing")).toBeTruthy());
