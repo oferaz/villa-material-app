@@ -50,10 +50,10 @@ Use the Python app for:
 
 Common locations:
 
-- `app.py`
-- `project_manager.py`
-- `project_items_manager.py`
-- `materials_manager.py`
+- `legacy/app.py`
+- `legacy/project_manager.py`
+- `legacy/project_items_manager.py`
+- `legacy/materials_manager.py`
 
 ### Database contract
 
@@ -103,6 +103,7 @@ When making a structural decision, add or update an entry in `docs/DECISIONS.md`
 - Treat `tmp/` as local scratch space for generated import metadata, CSV exports, and workbook intermediates.
 - Keep machine-specific paths out of scripts when a repo-relative path or CLI argument will work.
 - If an operational script writes generated output, prefer `tmp/` or another documented local-only directory over the repo root.
+- Legacy Python modules live in `legacy/` — do not move them back to the repo root.
 
 ## Testing Expectations
 

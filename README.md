@@ -26,19 +26,17 @@ Read these first before making non-trivial changes:
 
 - `web/`
   The active Next.js workspace for the current product direction.
-- `app.py` and Python modules in the repo root
-  The legacy Streamlit surface and compatibility tooling.
-- `pages/`, `assets/`, and root Python helpers
-  Supporting files for the legacy Streamlit surface.
+- `legacy/`
+  The legacy Streamlit surface, Python managers, supporting assets, and compatibility tooling.
 - `db/migrations/`
   Database schema, RLS policies, views, triggers, and RPC functions.
 - `db/manual/`
   Manual SQL scripts for one-off or operational work.
-- `scripts/` and `web/scripts/`
+- `legacy/scripts/` and `web/scripts/`
   Migration, import, and operational helper scripts.
 - `docs/`
   Architecture, decisions, workflows, and contributor guidance.
-- `tests/`
+- `legacy/tests/`
   Lightweight Python and migration contract tests.
 - `tmp/`
   Local-only scratch space for generated import metadata, ad hoc exports, and operational working files.
@@ -46,7 +44,7 @@ Read these first before making non-trivial changes:
 ## Which Surface To Use
 
 - New workspace product work usually belongs in `web/` plus matching `db/migrations/`.
-- Legacy-only support or compatibility fixes usually belong in the Python surface.
+- Legacy-only support or compatibility fixes usually belong in `legacy/`.
 - Data integrity and permission-sensitive rules should usually live in the database.
 
 ## Quick Start
@@ -63,9 +61,14 @@ Typical flow:
 
 ### Python / Streamlit surface
 
-The repo also contains a Python app with Supabase-backed managers and older workflows.
+The repo also contains a Python app with Supabase-backed managers and older workflows, located in `legacy/`.
 
-Typical setup depends on your local Python environment and project secrets.
+Typical flow:
+
+1. `cd legacy`
+2. `pip install -r requirements.txt`
+3. `streamlit run app.py`
+
 Before changing that surface, read `docs/ARCHITECTURE.md` and `docs/CONTRIBUTING.md`.
 
 ## Current Backend Shape

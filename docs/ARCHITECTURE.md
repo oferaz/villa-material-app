@@ -9,10 +9,10 @@ It describes what exists today, how the main parts fit together, and where new w
 
 The repo currently contains two application surfaces that share a broad product domain but represent different stages of the product:
 
-- `app.py` and the Python modules around it are the legacy Streamlit application.
+- `legacy/` contains the legacy Streamlit application (`app.py`), Python managers, supporting assets, and compatibility tooling.
 - `web/` is the newer Next.js workspace built around a fresh Supabase-backed editing model.
 - `db/migrations/` contains the database contract for the current workspace and some legacy relational work.
-- `tests/` contains lightweight unit tests for Python data-access logic and migration-level assertions.
+- `legacy/tests/` contains lightweight unit tests for Python data-access logic and migration-level assertions.
 
 This is intentionally a transitional repository, not a clean-slate monolith.
 
@@ -49,17 +49,17 @@ Shared backend
 
 Primary entrypoint:
 
-- `app.py`
+- `legacy/app.py`
 
 Supporting modules:
 
-- `auth_ui.py`
-- `project_manager.py`
-- `project_items_manager.py`
-- `materials_manager.py`
-- `user_template_manager.py`
-- `ui_utils.py`
-- `supabase_client.py`
+- `legacy/auth_ui.py`
+- `legacy/project_manager.py`
+- `legacy/project_items_manager.py`
+- `legacy/materials_manager.py`
+- `legacy/user_template_manager.py`
+- `legacy/ui_utils.py`
+- `legacy/supabase_client.py`
 
 Responsibilities:
 
@@ -278,10 +278,10 @@ Current tests are intentionally lightweight:
 
 Primary test files:
 
-- `tests/test_project_manager.py`
-- `tests/test_project_items_manager.py`
-- `tests/test_relational_migrations.py`
-- `tests/test_user_template_manager.py`
+- `legacy/tests/test_project_manager.py`
+- `legacy/tests/test_project_items_manager.py`
+- `legacy/tests/test_relational_migrations.py`
+- `legacy/tests/test_user_template_manager.py`
 
 This means:
 
