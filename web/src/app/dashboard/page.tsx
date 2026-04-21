@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Building2, Home, MessageSquareText, Sparkles } from "lucide-react";
+import { ArrowUpRight, Building2, Home, Loader2, MessageSquareText, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { NewProjectWizardPayload, TopNav } from "@/components/layout/top-nav";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isAuthChecked, setIsAuthChecked] = useState(!isSupabaseConfigured);
   const [isSignedIn, setIsSignedIn] = useState(!isSupabaseConfigured);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(isSupabaseConfigured);
   const [isCreatingDemoProject, setIsCreatingDemoProject] = useState(false);
   const feedbackUrl = process.env.NEXT_PUBLIC_FEEDBACK_URL?.trim() || "";
 
@@ -42,6 +43,7 @@ export default function DashboardPage() {
 
         if (!signedIn) {
           setProjects([]);
+          setIsLoadingProjects(false);
           return;
         }
       }
@@ -49,6 +51,7 @@ export default function DashboardPage() {
       const loadedProjects = await loadProjectsForWorkspace();
       if (!isCancelled) {
         setProjects(loadedProjects);
+        setIsLoadingProjects(false);
       }
     }
 
@@ -134,8 +137,37 @@ export default function DashboardPage() {
     />
   );
 
-  if (isSupabaseConfigured && !isAuthChecked) {
-    return <main className="p-6">Checking session...</main>;
+  if (isSupabaseConfigured && (!isAuthChecked || isLoadingProjects)) {
+    return (
+      <AppShell
+        topNav={topNav}
+        main={
+          <div className="flex min-h-[60vh] flex-col items-center justify-center gap-8 px-6">
+            <div className="flex flex-col items-center gap-4">
+              <div className="relative flex items-center justify-center">
+                <div className="h-16 w-16 rounded-full border-4 border-slate-100" />
+                <Loader2 className="absolute h-10 w-10 animate-spin text-slate-400" />
+              </div>
+              <div className="text-center">
+                <p className="text-base font-semibold text-slate-700">Loading your projects</p>
+                <p className="mt-1 text-sm text-slate-400">Fetching your workspace, hang tight…</p>
+              </div>
+            </div>
+            <div className="w-full max-w-2xl space-y-3">
+              {[200, 140, 180, 120, 160].map((w, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="h-8 w-8 animate-pulse rounded-md bg-slate-200" style={{ animationDelay: `${i * 80}ms` }} />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 animate-pulse rounded bg-slate-200" style={{ width: w, animationDelay: `${i * 80}ms` }} />
+                    <div className="h-2 animate-pulse rounded bg-slate-100" style={{ width: w * 0.6, animationDelay: `${i * 80 + 40}ms` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        }
+      />
+    );
   }
 
   if (isSupabaseConfigured && isAuthChecked && !isSignedIn) {
