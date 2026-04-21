@@ -1,5 +1,43 @@
 # Materia — Agent Instructions
 
+## Multi-Agent System
+
+This project uses a 4-agent development system. For any non-trivial task, use the Orchestrator.
+
+### How to start
+
+Write your task in plain English. The Orchestrator will classify it, plan it, and dispatch to specialists.
+
+### Agent files
+
+| Agent | File | Role |
+|---|---|---|
+| **Orchestrator** | `.claude/agents/orchestrator.md` | Entry point — reads task, builds plan, dispatches |
+| **Frontend** | `.claude/agents/frontend.md` | `web/src/` — Next.js, React, Tailwind, Radix UI |
+| **Database** | `.claude/agents/database.md` | `db/migrations/` — schema, RLS, RPC, views |
+| **QA** | `.claude/agents/qa.md` | Tests, type-check, RLS audit, isolation checks |
+
+### Coordination flow
+
+```
+Your task (plain English)
+  → Orchestrator: classify + plan → user approves
+  → [FRONTEND] agent  ┐  (run in parallel when both needed)
+  → [DATABASE] agent  ┘
+  → QA gate (always last)
+  → Diffs shown for user review — no auto-commit
+```
+
+### Hard rules (apply to all agents)
+
+- Agents present diffs — no git commits, no pushes without user approval
+- Applied DB migrations are immutable — new file always
+- Client-view pages never query `projects`, `room_objects`, or `materials` directly
+- No global auth-bearing Supabase clients
+
+---
+
+
 ## Repository Layout
 
 ```

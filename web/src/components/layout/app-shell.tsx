@@ -11,7 +11,7 @@ interface AppShellProps {
   main: ReactNode;
   sidebar?: ReactNode;
   rightPanel?: ReactNode;
-  activeWorkspaceTab?: "rooms" | "materials" | "budget" | "client";
+  activeWorkspaceTab?: "rooms" | "materials" | "budget" | "client" | "spreadsheet";
   className?: string;
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
-import { Check, Download, History, Pencil, RotateCcw, Save, Trash2, UserPlus, X } from "lucide-react";
+import { Check, Download, History, Pencil, RotateCcw, Save, Table2, Trash2, UserPlus, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -24,8 +24,8 @@ interface WorkspaceShellProps {
   housesCount: number;
   roomsCount: number;
   objectsCount: number;
-  activeTab: "rooms" | "materials" | "budget" | "client";
-  onTabChange: (value: "rooms" | "materials" | "budget" | "client") => void;
+  activeTab: "rooms" | "materials" | "budget" | "client" | "spreadsheet";
+  onTabChange: (value: "rooms" | "materials" | "budget" | "client" | "spreadsheet") => void;
   onRenameProject?: (nextName: string) => Promise<void> | void;
   onExportProject?: () => Promise<void> | void;
   onDeleteProject?: () => Promise<void> | void;
@@ -41,6 +41,7 @@ interface WorkspaceShellProps {
   materialsContent: ReactNode;
   budgetContent: ReactNode;
   clientContent: ReactNode;
+  spreadsheetContent: ReactNode;
 }
 
 function looksLikeEmail(value: string): boolean {
@@ -91,6 +92,7 @@ export function WorkspaceShell({
   materialsContent,
   budgetContent,
   clientContent,
+  spreadsheetContent,
 }: WorkspaceShellProps) {
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(projectName);
@@ -413,6 +415,15 @@ export function WorkspaceShell({
                       {isExportingProject ? "Exporting..." : "Export Excel"}
                     </Button>
                   ) : null}
+                  <Button
+                    type="button"
+                    variant={activeTab === "spreadsheet" ? "default" : "outline"}
+                    className={actionButtonClassName}
+                    onClick={() => onTabChange("spreadsheet")}
+                  >
+                    <Table2 className="h-4 w-4" />
+                    Spreadsheet
+                  </Button>
                   {onDeleteProject ? (
                     <Button
                       type="button"
@@ -444,18 +455,20 @@ export function WorkspaceShell({
 
       <Card className="border-slate-200 shadow-sm">
         <CardContent className="pt-5">
-          <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as "rooms" | "materials" | "budget" | "client")}>
+          <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as "rooms" | "materials" | "budget" | "client" | "spreadsheet")}>
             <TabsList className="z-20 w-full justify-start overflow-x-auto border border-slate-200 bg-white/95 shadow-sm backdrop-blur md:sticky md:top-[72px]">
               <TabsTrigger value="rooms">Rooms</TabsTrigger>
               <TabsTrigger value="materials">Materials</TabsTrigger>
               <TabsTrigger value="budget">Budget</TabsTrigger>
               <TabsTrigger value="client" className="gap-2">Client View <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-700">Beta</span></TabsTrigger>
+              <TabsTrigger value="spreadsheet">Spreadsheet</TabsTrigger>
             </TabsList>
 
             <TabsContent value="rooms">{roomsContent}</TabsContent>
             <TabsContent value="materials">{materialsContent}</TabsContent>
             <TabsContent value="budget">{budgetContent}</TabsContent>
             <TabsContent value="client">{clientContent}</TabsContent>
+            <TabsContent value="spreadsheet">{spreadsheetContent}</TabsContent>
           </Tabs>
         </CardContent>
       </Card>

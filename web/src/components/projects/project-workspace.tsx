@@ -22,6 +22,7 @@ import { AddRoomDialog, type AddRoomDialogCreateInput } from "@/components/rooms
 import { ProductOptionsPanel } from "@/components/products/product-options-panel";
 import { applyLinkProductOption, mergeObjectOptionsAfterSearch } from "@/components/products/product-options-state";
 import { WorkflowOverview } from "@/components/workflow/workflow-overview";
+import { SpreadsheetView } from "@/components/projects/spreadsheet-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,7 +94,7 @@ interface ProjectWorkspaceProps {
   initialProjectId: string;
 }
 
-type WorkspaceTab = "rooms" | "materials" | "budget" | "client";
+type WorkspaceTab = "rooms" | "materials" | "budget" | "client" | "spreadsheet";
 const ROOM_SPY_OFFSET = 190;
 const GLOBAL_SEARCH_RESULT_LIMIT = 8;
 
@@ -3148,6 +3149,10 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     />
   );
 
+  const spreadsheetContent = (
+    <SpreadsheetView project={project} budget={calculatedProjectBudget} />
+  );
+
   const rightPanel =
     activeTab === "rooms" ? (
       <ProductOptionsPanel
@@ -3232,10 +3237,20 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
       materialsContent={materialsContent}
       budgetContent={budgetContent}
       clientContent={clientContent}
+      spreadsheetContent={spreadsheetContent}
     />
   );
 
-  return <AppShell topNav={topNav} sidebar={sidebar} main={main} rightPanel={rightPanel} activeWorkspaceTab={activeTab} />;
+  const isSpreadsheetTab = activeTab === "spreadsheet";
+  return (
+    <AppShell
+      topNav={topNav}
+      sidebar={isSpreadsheetTab ? undefined : sidebar}
+      main={main}
+      rightPanel={isSpreadsheetTab ? undefined : rightPanel}
+      activeWorkspaceTab={activeTab}
+    />
+  );
 }
 
 
