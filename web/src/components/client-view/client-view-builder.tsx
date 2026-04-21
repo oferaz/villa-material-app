@@ -469,136 +469,189 @@ export function ClientViewBuilder({ project, materials, focusedRoomId, focusedOb
   const focusedObjectManagerPortal = portalHost && portalHost.isConnected ? createPortal(focusedObjectManager, portalHost) : null;
 
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="min-w-0 space-y-6">
       {focusedObjectManagerPortal}
+
+      {/* Step progress indicator */}
+      <div className="flex items-center gap-0">
+        {/* Step 1 */}
+        <div className="flex flex-col items-center gap-1">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">1</div>
+          <span className="text-xs font-medium text-blue-700">Curate objects</span>
+        </div>
+        <div className={cn("mb-5 h-px flex-1", selectedCount > 0 ? "bg-blue-400" : "bg-slate-200")} />
+        {/* Step 2 */}
+        <div className="flex flex-col items-center gap-1">
+          <div className={cn("flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold", selectedCount > 0 ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-500")}>2</div>
+          <span className={cn("text-xs font-medium", selectedCount > 0 ? "text-blue-700" : "text-slate-400")}>Publish</span>
+        </div>
+        <div className={cn("mb-5 h-px flex-1", clientView?.status === "published" ? "bg-blue-400" : "bg-slate-200")} />
+        {/* Step 3 */}
+        <div className="flex flex-col items-center gap-1">
+          <div className={cn("flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold", clientView?.status === "published" ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-500")}>3</div>
+          <span className={cn("text-xs font-medium", clientView?.status === "published" ? "text-blue-700" : "text-slate-400")}>Client responses</span>
+        </div>
+      </div>
+
+      {/* Publish card */}
       <Card className="border-slate-200 shadow-sm">
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={clientView?.status === "published" ? "success" : "outline"}>{clientView?.status ?? "draft"}</Badge>
-            <Badge variant="outline">{selectedCount} selected objects</Badge>
-            {clientView?.publishedVersion ? <Badge variant="outline">Version {clientView.publishedVersion}</Badge> : null}
+        <CardHeader className="pb-4">
+          {/* Top row: status badges + big publish button */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={clientView?.status === "published" ? "success" : "outline"}>
+                {clientView?.status ?? "draft"}
+              </Badge>
+              <Badge variant="outline">{selectedCount} selected objects</Badge>
+              {clientView?.publishedVersion ? <Badge variant="outline">Version {clientView.publishedVersion}</Badge> : null}
+            </div>
+            <Button
+              type="button"
+              size="lg"
+              disabled={isPublishing || isLoading || selectedCount === 0}
+              onClick={() => void handlePublish()}
+              className="gap-2"
+            >
+              {isPublishing ? "Publishing..." : clientView ? "Republish view" : "Publish view \u2192"}
+            </Button>
           </div>
-          <CardTitle>Client view builder</CardTitle>
-          <CardDescription>
-            Publish a curated, frozen client-facing review page without exposing the full project workspace or materials database.
-          </CardDescription>
+          <CardTitle className="text-lg">Share with client</CardTitle>
+          <CardDescription>Fill in the details below, then publish to generate a private share link.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-4">
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium text-slate-700">Client-facing title</span>
-              <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Client review title" />
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium text-slate-700">Invited recipient emails</span>
-              <textarea
-                className="min-h-28 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none ring-offset-white focus:ring-2 focus:ring-slate-300"
-                value={recipientInput}
-                onChange={(event) => setRecipientInput(event.target.value)}
-                placeholder="client@example.com&#10;pm@example.com"
-              />
-            </label>
-            <label className="block max-w-sm space-y-1.5">
-              <span className="text-sm font-medium text-slate-700">Expiry</span>
-              <Input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
-            </label>
-            <div className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div>
-                <p className="text-sm font-medium text-slate-700">Client summary snapshots</p>
-                <p className="text-xs text-slate-500">Show a frozen progress and budget snapshot alongside the published review cards.</p>
+
+        <CardContent>
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* LEFT: form fields */}
+            <div className="space-y-4">
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-slate-700">Review title</span>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Villa Uzi — Material Choices" />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-slate-700">Recipient emails</span>
+                <p className="text-xs text-slate-400">Only these emails can submit responses. One per line or comma-separated.</p>
+                <textarea
+                  className="min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300"
+                  value={recipientInput}
+                  onChange={(e) => setRecipientInput(e.target.value)}
+                  placeholder={"client@example.com\npm@example.com"}
+                />
+              </label>
+
+              <label className="block max-w-xs space-y-1.5">
+                <span className="text-sm font-medium text-slate-700">Expiry date</span>
+                <Input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+              </label>
+
+              {/* Snapshot toggles */}
+              <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Show client</p>
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
+                  <input type="checkbox" checked={showProjectOverview} onChange={(e) => setShowProjectOverview(e.target.checked)} className="rounded" />
+                  Project progress &amp; budget snapshot
+                </label>
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
+                  <input type="checkbox" checked={showHouseOverviews} onChange={(e) => setShowHouseOverviews(e.target.checked)} className="rounded" />
+                  Per-house progress &amp; budget snapshots
+                </label>
+                <p className="text-xs text-slate-400">Frozen at publish time — clients always see the same numbers you sent.</p>
               </div>
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={showProjectOverview}
-                  onChange={(event) => setShowProjectOverview(event.target.checked)}
-                />
-                Show project progress and budget
-              </label>
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={showHouseOverviews}
-                  onChange={(event) => setShowHouseOverviews(event.target.checked)}
-                />
-                Show house progress and budget
-              </label>
-              <p className="text-xs text-slate-500">These summaries are frozen at publish time so clients see the same snapshot you shared.</p>
             </div>
-          </div>
-          <div className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="space-y-1 text-sm text-slate-600">
-              <p>Guests can open the share link.</p>
-              <p>Only invited, signed-in emails can submit responses.</p>
-              <p>Responses stay separate until you explicitly apply them.</p>
-            </div>
-            {publishedLink ? (
-              <div className="min-w-0 space-y-2">
-                <p className="text-sm font-medium text-slate-700">Latest share link</p>
-                <Input readOnly value={publishedLink} />
-                <div className="flex min-w-0 gap-2">
-                  <Button type="button" variant="outline" onClick={() => void navigator.clipboard.writeText(publishedLink)}>
-                    Copy link
+
+            {/* RIGHT: share link + privacy info + close/revoke */}
+            <div className="flex flex-col gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+              {publishedLink ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-700">Share link ready ✓</p>
+                  <Input readOnly value={publishedLink} className="bg-white text-xs" />
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void navigator.clipboard.writeText(publishedLink)}
+                    >
+                      Copy link
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" asChild>
+                      <a href={publishedLink} target="_blank" rel="noreferrer">Preview ↗</a>
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-sm font-semibold text-slate-700">How it works</p>
+                  <ul className="space-y-1.5 text-sm text-slate-500">
+                    <li className="flex items-start gap-2"><span className="mt-0.5 text-blue-400">→</span> Anyone with the link can view</li>
+                    <li className="flex items-start gap-2"><span className="mt-0.5 text-blue-400">→</span> Only invited emails can submit responses</li>
+                    <li className="flex items-start gap-2"><span className="mt-0.5 text-blue-400">→</span> Responses stay separate until you apply them</li>
+                    <li className="flex items-start gap-2"><span className="mt-0.5 text-blue-400">→</span> Your materials library is never exposed</li>
+                  </ul>
+                </div>
+              )}
+
+              {clientView ? (
+                <div className="mt-auto flex flex-wrap gap-2 border-t border-slate-200 pt-4">
+                  <Button type="button" variant="outline" size="sm" disabled={isUpdatingStatus} onClick={() => void handleUpdateStatus("closed")}>
+                    Close view
                   </Button>
-                  <Button type="button" variant="outline" asChild>
-                    <a href={publishedLink} target="_blank" rel="noreferrer">
-                      Open
-                    </a>
+                  <Button type="button" variant="outline" size="sm" disabled={isUpdatingStatus} onClick={() => void handleUpdateStatus("revoked")}>
+                    Revoke access
                   </Button>
                 </div>
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">Publish to generate a new share link.</p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={() => void handlePublish()} disabled={isPublishing || isLoading}>
-                {isPublishing ? "Publishing..." : clientView ? "Republish view" : "Publish view"}
-              </Button>
-              {clientView ? (
-                <>
-                  <Button type="button" variant="outline" disabled={isUpdatingStatus} onClick={() => void handleUpdateStatus("closed")}>
-                    Close
-                  </Button>
-                  <Button type="button" variant="outline" disabled={isUpdatingStatus} onClick={() => void handleUpdateStatus("revoked")}>
-                    Revoke
-                  </Button>
-                </>
               ) : null}
             </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* Error message */}
       {errorMessage ? (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-5 text-sm text-red-700">{errorMessage}</CardContent>
-        </Card>
+        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span className="mt-0.5 font-bold">!</span>
+          <p>{errorMessage}</p>
+        </div>
       ) : null}
 
+      {/* Curate objects card */}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader>
-          <CardTitle>Objects to share</CardTitle>
-          <CardDescription>Use the project map here, then manage card mode, prompt, and material options from the right panel in Client View.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-sm text-slate-700">
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Focused object</p>
-            {focusedObjectEntry ? (
-              <>
-                <p className="mt-1 font-semibold text-slate-900">{focusedObjectEntry.objectItem.name}</p>
-                <p className="mt-1 text-slate-600">{focusedObjectEntry.room.name} - {focusedObjectEntry.house.name}</p>
-                <p className="mt-2 text-slate-600">
-                  {portalHost && portalHost.isConnected
-                    ? "Use the right panel to edit card mode, prompt, source links, and material options for this object."
-                    : "Use the editor below to edit card mode, prompt, source links, and material options for this object."}
-                </p>
-              </>
-            ) : (
-              <p className="mt-1 text-slate-600">Choose an object from the map to start configuring what the client will see.</p>
-            )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>Curate objects to share</CardTitle>
+              <CardDescription>
+                Check each object you want the client to review. Click any row to configure its card type and material options in the right panel.
+              </CardDescription>
+            </div>
+            <Badge variant={selectedCount > 0 ? "success" : "outline"} className="text-sm">
+              {selectedCount} / {allObjects.length} selected
+            </Badge>
           </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Focused object hint */}
+          {focusedObjectEntry ? (
+            <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
+              <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+              <div>
+                <p className="font-semibold text-slate-800">{focusedObjectEntry.objectItem.name}</p>
+                <p className="text-slate-500">{focusedObjectEntry.room.name} · {focusedObjectEntry.house.name}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {portalHost?.isConnected
+                    ? "Edit card type, prompt, and material options in the right panel →"
+                    : "Use the editor below to configure this object."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              Click any object row to configure what the client will see for it.
+            </div>
+          )}
 
-          <div className="space-y-4">
+          {/* House → Room → Object tree */}
+          <div className="space-y-6">
             {project.houses.map((house) => {
               const houseSelectedCount = house.rooms.reduce(
                 (total, room) =>
@@ -608,40 +661,50 @@ export function ClientViewBuilder({ project, materials, focusedRoomId, focusedOb
 
               return (
                 <section key={house.id} className="space-y-3">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">House</p>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-base font-semibold text-slate-900">{house.name}</h3>
-                      <Badge variant="outline">{houseSelectedCount} selected</Badge>
+                  {/* House header */}
+                  <div className="flex items-center justify-between rounded-lg bg-slate-800 px-4 py-2.5 text-white">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">House</p>
+                      <h3 className="font-semibold">{house.name}{house.sizeSqm ? <span className="ml-2 text-xs font-normal text-slate-400">{house.sizeSqm} m²</span> : null}</h3>
                     </div>
-                    {house.sizeSqm ? <p className="text-xs text-slate-500">{house.sizeSqm} m2</p> : null}
+                    <Badge variant="outline" className="border-slate-600 text-slate-300">{houseSelectedCount} selected</Badge>
                   </div>
 
+                  {/* Rooms */}
                   {house.rooms.map((room) => {
-                    const roomSelectedCount = room.objects.filter((objectItem) => (configsByObjectId[objectItem.id] ?? defaultConfigForObject()).selected).length;
+                    const roomSelectedCount = room.objects.filter(
+                      (objectItem) => (configsByObjectId[objectItem.id] ?? defaultConfigForObject()).selected
+                    ).length;
                     const isRoomFocused = room.id === focusedRoomEntry?.room.id;
 
                     return (
                       <div
                         key={room.id}
                         className={cn(
-                          "space-y-2.5 rounded-xl border p-3 transition",
-                          isRoomFocused ? "border-blue-200 bg-blue-50/60 shadow-sm" : "border-slate-200 bg-white"
+                          "overflow-hidden rounded-xl border transition",
+                          isRoomFocused ? "border-blue-200 shadow-sm" : "border-slate-200"
                         )}
                       >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleFocusRoom(house.id, room.id, room.objects[0]?.id ?? "")}
-                            className="min-w-0 text-left"
-                          >
-                            <p className="font-medium text-slate-900">{room.name}</p>
-                            <p className="text-xs text-slate-500">{room.objects.length} object{room.objects.length === 1 ? "" : "s"}</p>
-                          </button>
-                          <Badge variant="outline">{roomSelectedCount} selected</Badge>
-                        </div>
+                        {/* Room header row */}
+                        <button
+                          type="button"
+                          onClick={() => handleFocusRoom(house.id, room.id, room.objects[0]?.id ?? "")}
+                          className={cn(
+                            "flex w-full items-center justify-between px-4 py-2.5 text-left transition",
+                            isRoomFocused ? "bg-blue-50" : "bg-slate-50 hover:bg-slate-100"
+                          )}
+                        >
+                          <div>
+                            <p className={cn("text-sm font-semibold", isRoomFocused ? "text-blue-800" : "text-slate-800")}>{room.name}</p>
+                            <p className="text-xs text-slate-400">{room.objects.length} object{room.objects.length === 1 ? "" : "s"}</p>
+                          </div>
+                          <Badge variant={roomSelectedCount > 0 ? "success" : "outline"} className="text-xs">
+                            {roomSelectedCount} included
+                          </Badge>
+                        </button>
 
-                        <div className="space-y-2">
+                        {/* Object rows */}
+                        <div className="divide-y divide-slate-100">
                           {room.objects.map((objectItem) => {
                             const config =
                               configsByObjectId[objectItem.id] ??
@@ -651,7 +714,10 @@ export function ClientViewBuilder({ project, materials, focusedRoomId, focusedOb
                                   : undefined
                               );
                             const isFocused = focusedObjectEntry?.objectItem.id === objectItem.id;
-                            const selectedMaterial = materials.find((material) => material.id === objectItem.selectedProductId);
+                            const selectedMaterial = materials.find((m) => m.id === objectItem.selectedProductId);
+
+                            // Readiness check for material_choice
+                            const isReady = !config.selected || config.cardMode !== "material_choice" || config.optionMaterialIds.length > 0;
 
                             return (
                               <button
@@ -659,37 +725,57 @@ export function ClientViewBuilder({ project, materials, focusedRoomId, focusedOb
                                 type="button"
                                 onClick={() => handleFocusObject(house.id, room.id, objectItem.id)}
                                 className={cn(
-                                  "w-full rounded-lg border px-3 py-2 text-left transition",
-                                  isFocused ? "border-blue-300 bg-blue-50 shadow-sm" : "border-slate-200 bg-white hover:bg-slate-50",
-                                  config.selected ? "ring-1 ring-emerald-200" : ""
+                                  "group flex w-full items-start gap-3 px-4 py-3 text-left transition",
+                                  isFocused ? "bg-blue-50" : "bg-white hover:bg-slate-50"
                                 )}
                               >
-                                <div className="flex items-start gap-3">
+                                {/* Checkbox */}
+                                <div className="mt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                                   <input
                                     type="checkbox"
                                     checked={config.selected}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onChange={(event) => updateConfig(objectItem.id, { selected: event.target.checked })}
-                                    className="mt-1"
+                                    onChange={(e) => updateConfig(objectItem.id, { selected: e.target.checked })}
+                                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-blue-600"
                                   />
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <p className="truncate text-sm font-medium text-slate-900">
-                                        {objectItem.name}
-                                        {objectItem.quantity > 1 ? ` x${objectItem.quantity}` : ""}
-                                      </p>
-                                      {config.selected ? <Badge variant="success">Included</Badge> : null}
-                                      <Badge variant="outline">{formatCardModeLabel(config.cardMode)}</Badge>
-                                    </div>
-                                    <p className="mt-1 text-xs text-slate-500">
-                                      {objectItem.category}
-                                      {selectedMaterial ? ` - Current: ${selectedMaterial.name}` : " - No current selection"}
-                                    </p>
-                                    <p className="mt-1 text-xs text-slate-500">{summarizeConfig(config)}</p>
+                                </div>
+
+                                {/* Object info */}
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="truncate text-sm font-medium text-slate-900">
+                                      {objectItem.name}
+                                      {objectItem.quantity > 1 ? <span className="ml-1 text-slate-400">×{objectItem.quantity}</span> : null}
+                                    </span>
+                                    {config.selected ? (
+                                      <Badge
+                                        variant={isReady ? "success" : "outline"}
+                                        className={isReady ? undefined : "border-amber-300 bg-amber-50 text-amber-700"}
+                                      >
+                                        {isReady ? "Ready" : "Needs options"}
+                                      </Badge>
+                                    ) : null}
                                   </div>
-                                  {objectItem.budgetAllowance != null ? (
-                                    <Badge variant="outline">{formatCurrencyAmount(objectItem.budgetAllowance, project.currency)}</Badge>
+                                  <p className="mt-0.5 truncate text-xs text-slate-400">
+                                    {objectItem.category}
+                                    {selectedMaterial ? ` · ${selectedMaterial.name}` : " · No material selected"}
+                                  </p>
+                                  {config.selected ? (
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      {formatCardModeLabel(config.cardMode)}
+                                      {config.cardMode === "material_choice" && config.optionMaterialIds.length > 0
+                                        ? ` · ${config.optionMaterialIds.length} option${config.optionMaterialIds.length === 1 ? "" : "s"}`
+                                        : null}
+                                      {config.promptText ? " · Has prompt" : null}
+                                    </p>
                                   ) : null}
+                                </div>
+
+                                {/* Right: budget + focus indicator */}
+                                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                  {objectItem.budgetAllowance != null ? (
+                                    <Badge variant="outline" className="text-xs">{formatCurrencyAmount(objectItem.budgetAllowance, project.currency)}</Badge>
+                                  ) : null}
+                                  {isFocused ? <span className="text-xs font-medium text-blue-500">Editing →</span> : null}
                                 </div>
                               </button>
                             );
@@ -703,108 +789,125 @@ export function ClientViewBuilder({ project, materials, focusedRoomId, focusedOb
             })}
           </div>
 
-
-          {portalHost && portalHost.isConnected ? null : focusedObjectManager}
+          {/* Inline manager fallback (when no right panel) */}
+          {portalHost?.isConnected ? null : focusedObjectManager}
         </CardContent>
       </Card>
 
+      {/* Responses card */}
       <Card className="border-slate-200 shadow-sm">
         <CardHeader>
-          <CardTitle>Review by object</CardTitle>
-          <CardDescription>Review saved client feedback for each published object and apply supported changes back into the project.</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Client responses</CardTitle>
+              <CardDescription>Review feedback and apply changes back to your project.</CardDescription>
+            </div>
+            {clientView ? (
+              <Badge variant="outline">{responses.length} total</Badge>
+            ) : null}
+          </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           {!clientView ? (
-            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-              Publish a client view to start collecting responses.
-            </p>
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+              <p className="font-medium">No responses yet</p>
+              <p className="mt-1">Publish a client view to start collecting feedback.</p>
+            </div>
           ) : clientView.items.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-              This version was shared without any object review cards. Clients can still open the link and see the published project or house summary snapshots.
-            </p>
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+              <p className="font-medium">View published without review cards</p>
+              <p className="mt-1">Clients can see the project overview but there are no items to respond to.</p>
+            </div>
           ) : (
-            clientView.items.map((item) => {
-              const itemResponses = responsesByItemId.get(item.id) ?? [];
-              const appliedCount = itemResponses.filter((response) => Boolean(response.appliedAt)).length;
+            <div className="space-y-4">
+              {clientView.items.map((item) => {
+                const itemResponses = responsesByItemId.get(item.id) ?? [];
+                const appliedCount = itemResponses.filter((r) => Boolean(r.appliedAt)).length;
 
-              return (
-                <div key={item.id} className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-slate-900">{item.objectName}</p>
-                        <Badge variant="outline">{item.roomName}</Badge>
-                        <Badge variant="outline">{item.houseName}</Badge>
-                        <Badge variant="outline">{formatCardModeLabel(item.cardMode)}</Badge>
+                return (
+                  <div key={item.id} className="overflow-hidden rounded-xl border border-slate-200">
+                    {/* Item header */}
+                    <div className="flex flex-wrap items-start justify-between gap-3 bg-slate-50 px-4 py-3">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-900">{item.objectName}</p>
+                          <Badge variant="outline" className="text-xs">{item.roomName}</Badge>
+                          <Badge variant="outline" className="text-xs">{item.houseName}</Badge>
+                          <Badge variant="outline" className="text-xs">{formatCardModeLabel(item.cardMode)}</Badge>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {item.objectCategory} · Qty {item.quantity}
+                          {item.currentSelectedMaterialName ? ` · Current: ${item.currentSelectedMaterialName}` : ""}
+                        </p>
+                        {item.promptText ? <p className="text-xs italic text-slate-500">&ldquo;{item.promptText}&rdquo;</p> : null}
                       </div>
-                      <p className="text-sm text-slate-500">
-                        {item.objectCategory} - Qty {item.quantity}
-                        {item.currentSelectedMaterialName ? ` - Current: ${item.currentSelectedMaterialName}` : ""}
-                      </p>
-                      {item.promptText ? <p className="text-sm text-slate-600">{item.promptText}</p> : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={itemResponses.length > 0 ? "success" : "outline"}>
+                          {itemResponses.length} response{itemResponses.length === 1 ? "" : "s"}
+                        </Badge>
+                        {appliedCount > 0 ? <Badge variant="success">{appliedCount} applied</Badge> : null}
+                        {item.budgetAllowance != null ? (
+                          <Badge variant="outline">Target {formatCurrencyAmount(item.budgetAllowance, project.currency)}</Badge>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline">{itemResponses.length} response{itemResponses.length === 1 ? "" : "s"}</Badge>
-                      {appliedCount > 0 ? <Badge variant="success">{appliedCount} applied</Badge> : null}
-                      {item.budgetAllowance != null ? (
-                        <Badge variant="outline">Target {formatCurrencyAmount(item.budgetAllowance, project.currency)}</Badge>
-                      ) : null}
-                    </div>
-                  </div>
 
-                  {item.cardMode === "material_choice" && item.options.length > 0 ? (
-                    <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                      {item.options.map((option) => (
-                        <div key={option.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                          <p className="font-medium text-slate-900">{option.name}</p>
-                          {option.supplierName ? <p className="text-slate-500">{option.supplierName}</p> : null}
-                          {option.price != null ? (
-                            <p className="mt-1 text-slate-700">{formatCurrencyAmount(option.price, project.currency)}</p>
-                          ) : null}
-                        </div>
-                      ))}
+                    {/* Material options (if any) */}
+                    {item.cardMode === "material_choice" && item.options.length > 0 ? (
+                      <div className="grid gap-2 border-t border-slate-100 px-4 py-3 md:grid-cols-2 xl:grid-cols-3">
+                        {item.options.map((option) => (
+                          <div key={option.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                            <p className="font-medium text-slate-900">{option.name}</p>
+                            {option.supplierName ? <p className="text-xs text-slate-400">{option.supplierName}</p> : null}
+                            {option.price != null ? <p className="mt-1 font-medium text-slate-700">{formatCurrencyAmount(option.price, project.currency)}</p> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {/* Responses */}
+                    <div className="divide-y divide-slate-100">
+                      {itemResponses.length === 0 ? (
+                        <p className="px-4 py-4 text-center text-sm text-slate-400">No responses yet.</p>
+                      ) : (
+                        itemResponses.map((response) => (
+                          <div key={response.id} className="px-4 py-3">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-800">{response.recipientEmail}</p>
+                                <p className="text-xs text-slate-400">{new Date(response.updatedAt).toLocaleString()}</p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {response.selectedOptionName ? <Badge variant="outline">{response.selectedOptionName}</Badge> : null}
+                                {response.scopeDecision ? <Badge variant="outline">{response.scopeDecision.replace("_", " ")}</Badge> : null}
+                                {response.preferredBudget != null ? <Badge variant="outline">{formatCurrencyAmount(response.preferredBudget, project.currency)}</Badge> : null}
+                                {response.appliedAt ? <Badge variant="success">Applied ✓</Badge> : null}
+                              </div>
+                            </div>
+                            {response.comment ? (
+                              <p className="mt-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm italic text-slate-600">
+                                &ldquo;{response.comment}&rdquo;
+                              </p>
+                            ) : null}
+                            <div className="mt-2 flex justify-end">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={Boolean(response.appliedAt) || applyingResponseId === response.id}
+                                onClick={() => void handleApplyResponse(response)}
+                              >
+                                {applyingResponseId === response.id ? "Applying\u2026" : response.appliedAt ? "Applied" : "Apply to project"}
+                              </Button>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
-                  ) : null}
-                  <div className="mt-4 space-y-3">
-                    {itemResponses.length === 0 ? (
-                      <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                        No client responses yet for this object.
-                      </p>
-                    ) : (
-                      itemResponses.map((response) => (
-                        <div key={response.id} className="rounded-lg border border-slate-200 bg-white p-4">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="font-medium text-slate-900">{response.recipientEmail}</p>
-                              <p className="text-xs text-slate-500">Updated {new Date(response.updatedAt).toLocaleString()}</p>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              {response.selectedOptionName ? <Badge variant="outline">{response.selectedOptionName}</Badge> : null}
-                              {response.scopeDecision ? <Badge variant="outline">{response.scopeDecision.replace("_", " ")}</Badge> : null}
-                              {response.preferredBudget != null ? (
-                                <Badge variant="outline">{formatCurrencyAmount(response.preferredBudget, project.currency)}</Badge>
-                              ) : null}
-                              {response.appliedAt ? <Badge variant="success">Applied</Badge> : null}
-                            </div>
-                          </div>
-                          {response.comment ? <p className="mt-3 text-sm text-slate-600">{response.comment}</p> : null}
-                          <div className="mt-3 flex items-center justify-end">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              disabled={Boolean(response.appliedAt) || applyingResponseId === response.id}
-                              onClick={() => void handleApplyResponse(response)}
-                            >
-                              {applyingResponseId === response.id ? "Applying..." : response.appliedAt ? "Applied" : "Apply to project"}
-                            </Button>
-                          </div>
-                        </div>
-                      ))
-                    )}
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>
