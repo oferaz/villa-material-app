@@ -1,7 +1,7 @@
 "use client";
 
 import { ComponentType, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, ChevronLeft, ChevronRight, Info, Presentation, X } from "lucide-react";
+import { Boxes, ChevronLeft, ChevronRight, Info, Loader2, Presentation, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import {
@@ -510,6 +510,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
   );
   const [isAuthChecked, setIsAuthChecked] = useState(!isSupabaseConfigured);
   const [isSignedIn, setIsSignedIn] = useState(!isSupabaseConfigured);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(isSupabaseConfigured);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("rooms");
   const [selectedHouseId, setSelectedHouseId] = useState<string>("");
@@ -575,6 +576,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         }
         return next;
       });
+      setIsLoadingProjects(false);
     };
 
     async function loadProjectsWithRetry() {
@@ -620,6 +622,7 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         if (!signedIn) {
           setProjects([]);
           setProjectBudgets({});
+          setIsLoadingProjects(false);
           return;
         }
       }
@@ -2819,6 +2822,54 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
               </Button>
             </CardContent>
           </Card>
+        }
+      />
+    );
+  }
+
+  if (isLoadingProjects || (isSignedIn && !project && projects.length === 0)) {
+    return (
+      <AppShell
+        topNav={
+          <TopNav
+            title="Materia Workspace"
+            subtitle="Loading project..."
+            projects={[]}
+            searchQuery=""
+            onSearchChange={() => {}}
+          />
+        }
+        main={
+          <div className="flex min-h-[60vh] flex-col items-center justify-center gap-8 px-6">
+            {/* Spinner + label */}
+            <div className="flex flex-col items-center gap-4">
+              <div className="relative flex items-center justify-center">
+                <div className="h-16 w-16 rounded-full border-4 border-slate-100" />
+                <Loader2 className="absolute h-10 w-10 animate-spin text-slate-400" />
+              </div>
+              <div className="text-center">
+                <p className="text-base font-semibold text-slate-700">Loading your workspace</p>
+                <p className="mt-1 text-sm text-slate-400">Fetching project data, hang tight…</p>
+              </div>
+            </div>
+
+            {/* Skeleton rows suggesting a project is incoming */}
+            <div className="w-full max-w-2xl space-y-3">
+              {[160, 120, 200, 140, 180].map((w, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="h-3 w-3 animate-pulse rounded-full bg-slate-200" style={{ animationDelay: `${i * 80}ms` }} />
+                  <div
+                    className="h-3 animate-pulse rounded bg-slate-200"
+                    style={{ width: w, animationDelay: `${i * 80}ms` }}
+                  />
+                  <div
+                    className="h-3 animate-pulse rounded bg-slate-100"
+                    style={{ width: 80, animationDelay: `${i * 80 + 40}ms` }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
         }
       />
     );
