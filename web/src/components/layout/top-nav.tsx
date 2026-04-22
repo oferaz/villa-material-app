@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, MessageSquare, Plus, Search, Trash2, UserCircle2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Home, MessageSquare, Plus, Search, Sparkles, Trash2, UserCircle2 } from "lucide-react";
 import { Project } from "@/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,36 @@ import { loadCurrentUserProfile, saveCurrentUserProfile } from "@/lib/supabase/p
 import { defaultUserPreferences, loadUserPreferences, saveUserPreferences, UserPreferences } from "@/lib/user-preferences";
 
 const INITIAL_HOUSE_NAME = "Main House";
+
+type ProjectPreset = "single-villa" | "compound" | "custom";
+
+interface PresetConfig {
+  id: ProjectPreset;
+  label: string;
+  description: string;
+  houses: { name: string }[];
+}
+
+const PROJECT_PRESETS: PresetConfig[] = [
+  {
+    id: "single-villa",
+    label: "Single villa",
+    description: "1 house · 6 default rooms",
+    houses: [{ name: "Main Villa" }],
+  },
+  {
+    id: "compound",
+    label: "Compound",
+    description: "2 houses · guest house included",
+    houses: [{ name: "Main Villa" }, { name: "Guest House" }],
+  },
+  {
+    id: "custom",
+    label: "Custom",
+    description: "Define your own houses",
+    houses: [],
+  },
+];
 
 export interface NewProjectWizardPayload {
   name: string;
@@ -80,7 +110,8 @@ export function TopNav({
   onCreateProject,
 }: TopNavProps) {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [preset, setPreset] = useState<ProjectPreset>("single-villa");
+  const [showOptional, setShowOptional] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [clientName, setClientName] = useState("");
   const [location, setLocation] = useState("");
@@ -158,7 +189,8 @@ export function TopNav({
   }, [isProfileOpen]);
 
   function resetWizardState() {
-    setWizardStep(1);
+    setPreset("single-villa");
+    setShowOptional(false);
     setProjectName("");
     setClientName("");
     setLocation("");
@@ -166,6 +198,15 @@ export function TopNav({
     setHouseSizesSqmInput([""]);
     setWizardError(null);
     setIsCreatingProject(false);
+  }
+
+  const selectedPreset = PROJECT_PRESETS.find((p) => p.id === preset) ?? PROJECT_PRESETS[0];
+
+  function resolveHouseData() {
+    if (preset === "custom") {
+      return normalizedHouseData;
+    }
+    return selectedPreset.houses.map((house) => ({ name: house.name, sizeSqm: 0 }));
   }
 
   function handleWizardOpenChange(nextOpen: boolean) {
@@ -214,7 +255,8 @@ export function TopNav({
       return;
     }
 
-    if (normalizedHouseData.length === 0) {
+    const houseData = resolveHouseData();
+    if (houseData.length === 0) {
       setWizardError("Add at least one house.");
       return;
     }
@@ -227,8 +269,8 @@ export function TopNav({
         name: normalizedName,
         clientName: clientName.trim(),
         location: location.trim(),
-        houseNames: normalizedHouseData.map((house) => house.name),
-        houseSizesSqm: normalizedHouseData.map((house) => house.sizeSqm),
+        houseNames: houseData.map((house) => house.name),
+        houseSizesSqm: houseData.map((house) => house.sizeSqm),
       });
 
       setIsWizardOpen(false);
@@ -366,48 +408,64 @@ export function TopNav({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create new project</DialogTitle>
-              <DialogDescription>Step {wizardStep} of 3</DialogDescription>
+              <DialogDescription>Name it, pick a starting shape, and you&apos;re in.</DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4">
-              {wizardStep === 1 ? (
-                <div className="space-y-3">
-                  <label className="block space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project name</span>
-                    <Input
-                      placeholder="Palm Heights"
-                      value={projectName}
-                      onChange={(event) => setProjectName(event.target.value)}
-                    />
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client name</span>
-                    <Input
-                      placeholder="Haddad Family"
-                      value={clientName}
-                      onChange={(event) => setClientName(event.target.value)}
-                    />
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</span>
-                    <Input
-                      placeholder="Abu Dhabi"
-                      value={location}
-                      onChange={(event) => setLocation(event.target.value)}
-                    />
-                  </label>
-                </div>
-              ) : null}
+            <form
+              className="space-y-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleSubmitNewProject();
+              }}
+            >
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project name</span>
+                <Input
+                  autoFocus
+                  placeholder="Palm Heights"
+                  value={projectName}
+                  onChange={(event) => {
+                    setProjectName(event.target.value);
+                    if (wizardError) setWizardError(null);
+                  }}
+                />
+              </label>
 
-              {wizardStep === 2 ? (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Houses</p>
+              <div className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Start from</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {PROJECT_PRESETS.map((option) => {
+                    const isSelected = option.id === preset;
+                    const Icon = option.id === "single-villa" ? Home : option.id === "compound" ? Sparkles : Plus;
+                    return (
+                      <button
+                        type="button"
+                        key={option.id}
+                        onClick={() => setPreset(option.id)}
+                        className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition ${
+                          isSelected
+                            ? "border-blue-600 bg-blue-50 ring-1 ring-blue-600"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Icon className={`h-4 w-4 ${isSelected ? "text-blue-600" : "text-slate-500"}`} />
+                        <span className={`text-sm font-semibold ${isSelected ? "text-blue-700" : "text-slate-700"}`}>
+                          {option.label}
+                        </span>
+                        <span className="text-[11px] leading-snug text-slate-500">{option.description}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {preset === "custom" ? (
+                <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">
-                    Each house will start with default rooms: Entry, Living Room, Kitchen, Dining Room, Bedroom,
-                    Bathroom.
+                    Default rooms (Entry, Living, Kitchen, Dining, Bedroom, Bathroom) are added to every house.
                   </p>
                   {houseNames.map((houseName, index) => (
-                    <div key={`house-${index}`} className="grid grid-cols-[1fr_140px_auto] items-center gap-2">
+                    <div key={`house-${index}`} className="grid grid-cols-[1fr_120px_auto] items-center gap-2">
                       <Input
                         placeholder={`House ${index + 1}`}
                         value={houseName}
@@ -417,7 +475,7 @@ export function TopNav({
                         type="number"
                         min={0}
                         step="0.1"
-                        placeholder="Size (m2)"
+                        placeholder="Size m² (opt.)"
                         value={houseSizesSqmInput[index] ?? ""}
                         onChange={(event) => handleHouseSizeChange(index, event.target.value)}
                       />
@@ -433,74 +491,55 @@ export function TopNav({
                       </Button>
                     </div>
                   ))}
-                  <Button type="button" variant="outline" onClick={handleAddHouse}>
+                  <Button type="button" variant="outline" size="sm" onClick={handleAddHouse}>
                     <Plus className="h-4 w-4" />
                     Add house
                   </Button>
                 </div>
               ) : null}
 
-              {wizardStep === 3 ? (
-                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                  <p>
-                    <span className="font-semibold text-slate-700">Project:</span> {projectName.trim()}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-700">Client:</span>{" "}
-                    {clientName.trim() || "Not specified"}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-700">Location:</span>{" "}
-                    {location.trim() || "Not specified"}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-700">Houses:</span>
-                  </p>
-                  <ul className="space-y-1 rounded-md border border-slate-200 bg-white p-2">
-                    {normalizedHouseData.map((house, index) => (
-                      <li key={`${house.name}-${index}`} className="flex items-center justify-between text-xs text-slate-700">
-                        <span>{house.name}</span>
-                        <span>{house.sizeSqm > 0 ? `${house.sizeSqm} m2` : "Size not set"}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowOptional((prev) => !prev)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900"
+                >
+                  <ChevronRight className={`h-3 w-3 transition ${showOptional ? "rotate-90" : ""}`} />
+                  Optional details (client, location)
+                </button>
+                {showOptional ? (
+                  <div className="mt-2 space-y-3">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client name</span>
+                      <Input
+                        placeholder="Haddad Family"
+                        value={clientName}
+                        onChange={(event) => setClientName(event.target.value)}
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</span>
+                      <Input
+                        placeholder="Abu Dhabi"
+                        value={location}
+                        onChange={(event) => setLocation(event.target.value)}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+              </div>
 
               {wizardError ? <p className="text-sm text-red-600">{wizardError}</p> : null}
-            </div>
 
-            <DialogFooter>
-              {wizardStep > 1 ? (
-                <Button type="button" variant="outline" onClick={() => setWizardStep((prev) => (prev - 1) as 1 | 2 | 3)}>
-                  Back
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => handleWizardOpenChange(false)}>
+                  Cancel
                 </Button>
-              ) : null}
-
-              {wizardStep < 3 ? (
-                <Button
-                  type="button"
-                  onClick={() => {
-                    if (wizardStep === 1 && !projectName.trim()) {
-                      setWizardError("Project name is required.");
-                      return;
-                    }
-                    if (wizardStep === 2 && normalizedHouseData.length === 0) {
-                      setWizardError("Add at least one house.");
-                      return;
-                    }
-                    setWizardError(null);
-                    setWizardStep((prev) => (prev + 1) as 1 | 2 | 3);
-                  }}
-                >
-                  Next
-                </Button>
-              ) : (
-                <Button type="button" onClick={handleSubmitNewProject} disabled={!onCreateProject || isCreatingProject}>
+                <Button type="submit" disabled={!onCreateProject || isCreatingProject}>
                   {isCreatingProject ? "Creating..." : "Create project"}
                 </Button>
-              )}
-            </DialogFooter>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
 

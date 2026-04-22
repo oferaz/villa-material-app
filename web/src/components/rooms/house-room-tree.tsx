@@ -134,10 +134,7 @@ export function HouseRoomTree({
     <>
       <Sidebar className="min-h-full space-y-4 border-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project map</p>
-            <h2 className="text-sm font-semibold text-slate-800">Houses and rooms</h2>
-          </div>
+          <h2 className="text-sm font-semibold text-slate-800">Houses &amp; rooms</h2>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{houses.length}</span>
             <Button
@@ -154,10 +151,14 @@ export function HouseRoomTree({
         </div>
 
         {houses.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-            <p className="font-medium text-slate-800">No houses in this project yet.</p>
-            <p className="mt-1 text-xs text-slate-500">Add the first house to create a clear room structure and start organizing products.</p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setIsAddHouseOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-sm font-medium text-slate-600 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+          >
+            <Home className="h-4 w-4" />
+            Add a house
+          </button>
         ) : null}
 
         <div className="space-y-3">
@@ -259,20 +260,14 @@ export function HouseRoomTree({
                 {!isCollapsed ? (
                   <div className="space-y-2 border-t border-slate-200 px-2 pb-2 pt-2">
                     {house.rooms.length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-600">
-                        <p className="font-medium text-slate-800">No rooms in {house.name} yet.</p>
-                        <p className="mt-1 text-slate-500">Add the first room to start searching products and building the layout.</p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="mt-3 h-7 px-2 text-[11px]"
-                          onClick={() => onRequestAddRoom(house.id)}
-                        >
-                          <Plus className="mr-1.5 h-3.5 w-3.5" />
-                          Add first room
-                        </Button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onRequestAddRoom(house.id)}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-xs font-medium text-slate-600 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Add a room
+                      </button>
                     ) : (
                       <ul className="space-y-1">
                         {house.rooms.map((room) => {
@@ -351,11 +346,6 @@ export function HouseRoomTree({
                                       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", houseColor.dot)} />
                                       <span className="truncate">{room.name}</span>
                                     </button>
-                                    {isSelected ? (
-                                      <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                                        Selected
-                                      </span>
-                                    ) : null}
                                     <span className="text-[11px] text-slate-500">{room.objects.length} items</span>
                                     <div className="flex items-center gap-0.5">
                                       <Button

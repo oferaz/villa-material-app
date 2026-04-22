@@ -267,39 +267,13 @@ export function ProductOptionsPanel({
       <Card className="h-full border-slate-200 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle>Product options</CardTitle>
-          <CardDescription>Search for products or paste a link to add your first item once you select an object.</CardDescription>
+          <CardDescription>Select an object to search or paste a link.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add product</p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">Search products or paste a link</p>
-            <p className="mt-1 text-xs text-slate-500">Search helps you explore. Paste a supplier, Lazada, or Shopee link for a fast import.</p>
-            <div className="mt-4 space-y-3">
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-slate-600">Search products</p>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <div className="relative flex-1">
-                    <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                    <Input disabled placeholder="Select an object to search your library" className="h-10 border-slate-300 bg-white pl-8 text-sm" />
-                  </div>
-                  <Button type="button" disabled className="h-10 sm:min-w-[140px]">
-                    Search Library
-                  </Button>
-                </div>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <LinkIcon className="h-4 w-4" />
-                  Paste product link
-                </p>
-                <p className="mt-1 text-xs text-slate-500">Paste link to quickly add from supplier / Lazada / Shopee.</p>
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                  <Input disabled placeholder="Select an object to paste a product link" className="h-10 bg-white text-sm" />
-                  <Button type="button" disabled variant="outline" className="h-10 sm:min-w-[140px]">
-                    Add from link
-                  </Button>
-                </div>
-              </div>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+              <Input disabled placeholder="Search products or paste a link…" className="h-10 border-slate-300 bg-white pl-8 text-sm" />
             </div>
           </div>
         </CardContent>
@@ -314,7 +288,15 @@ export function ProductOptionsPanel({
     if (!roomObject) {
       return;
     }
-    const nextQuery = catalogQuery.trim() || roomObject.name;
+    const trimmed = catalogQuery.trim();
+    // Smart-detect URL → route to link form
+    if (/^https?:\/\//i.test(trimmed)) {
+      setLinkUrl(trimmed);
+      setCatalogQuery("");
+      void fetchLinkDetails(trimmed);
+      return;
+    }
+    const nextQuery = trimmed || roomObject.name;
     onSearchCatalog(roomObject.id, nextQuery);
     setCatalogQuery(nextQuery);
   }
@@ -340,8 +322,8 @@ export function ProductOptionsPanel({
     });
   }
 
-  async function fetchLinkDetails() {
-    const trimmedUrl = linkUrl.trim();
+  async function fetchLinkDetails(overrideUrl?: string) {
+    const trimmedUrl = (overrideUrl ?? linkUrl).trim();
     if (!trimmedUrl) {
       setLinkError("Link is required.");
       return false;
@@ -522,58 +504,71 @@ export function ProductOptionsPanel({
         ) : null}
         {budgetSelectionSummary ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Object budget and impact</p>
-                <p className="text-sm font-semibold text-slate-900">Qty {budgetSelectionSummary.quantity}</p>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-1.5">
-                {budgetSelectionSummary.currentCategoryName ? (
-                  <Badge variant="outline">{`Budget category: ${budgetSelectionSummary.currentCategoryName}`}</Badge>
-                ) : null}
-                <Badge variant={getObjectBudgetFitVariant(budgetSelectionSummary.objectBudgetStatus)}>
-                  {getObjectBudgetFitLabel(budgetSelectionSummary.objectBudgetStatus)}
-                </Badge>
-                <Badge variant={getBudgetHealthVariant(budgetSelectionSummary.currentRoomHealth)}>
-                  {`Room: ${getBudgetHealthLabel(budgetSelectionSummary.currentRoomHealth)}`}
-                </Badge>
-              </div>
-            </div>
-            <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
-              <p>
-                Object budget:{" "}
-                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.objectBudget, projectCurrency)}</span>
-              </p>
-              <p>
-                Current selection:{" "}
-                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentSelectedTotal, projectCurrency)}</span>
-              </p>
-              <p>
-                Object budget status:{" "}
-                <span className="font-medium text-slate-800">
-                  {formatObjectBudgetDelta(budgetSelectionSummary.currentObjectBudgetDelta, projectCurrency)}
+            {/* Compact one-line summary: spend / budget + scope chips */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm font-semibold text-slate-900">
+                  {formatMoney(budgetSelectionSummary.currentSelectedTotal, projectCurrency)}
                 </span>
-              </p>
-              <p>
-                Room remaining:{" "}
-                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentRoomRemaining, projectCurrency)}</span>
-              </p>
-              <p>
-                House remaining:{" "}
-                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentHouseRemaining, projectCurrency)}</span>
-              </p>
-              <p>
-                Project remaining:{" "}
-                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentProjectRemaining, projectCurrency)}</span>
-              </p>
+                {budgetSelectionSummary.objectBudget !== null ? (
+                  <span className="text-xs text-slate-500">
+                    of {formatMoney(budgetSelectionSummary.objectBudget, projectCurrency)}
+                  </span>
+                ) : null}
+                <span className="text-[11px] text-slate-400">· Qty {budgetSelectionSummary.quantity}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                <Badge variant={getObjectBudgetFitVariant(budgetSelectionSummary.objectBudgetStatus)} title="Object budget fit">
+                  Obj · {getObjectBudgetFitLabel(budgetSelectionSummary.objectBudgetStatus)}
+                </Badge>
+                <Badge variant={getBudgetHealthVariant(budgetSelectionSummary.currentRoomHealth)} title="Room plan health">
+                  Room · {getBudgetHealthLabel(budgetSelectionSummary.currentRoomHealth)}
+                </Badge>
+              </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
+
+            {/* Progress bar — object budget fill */}
+            {budgetSelectionSummary.objectBudget !== null && budgetSelectionSummary.objectBudget > 0 ? (
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    (budgetSelectionSummary.currentObjectBudgetDelta ?? 0) >= 0 ? "bg-emerald-500" : "bg-red-500"
+                  )}
+                  style={{
+                    width: `${Math.min(100, Math.max(0, (budgetSelectionSummary.currentSelectedTotal / budgetSelectionSummary.objectBudget) * 100))}%`,
+                  }}
+                />
+              </div>
+            ) : null}
+
+            {/* Scope remaining — single row, three cells */}
+            <div
+              className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-slate-500"
+              title="Remaining budget at each scope"
+            >
+              <div>
+                <span className="block uppercase tracking-wide text-[10px]">Room left</span>
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentRoomRemaining, projectCurrency)}</span>
+              </div>
+              <div>
+                <span className="block uppercase tracking-wide text-[10px]">House left</span>
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentHouseRemaining, projectCurrency)}</span>
+              </div>
+              <div>
+                <span className="block uppercase tracking-wide text-[10px]">Project left</span>
+                <span className="font-medium text-slate-800">{formatMoney(budgetSelectionSummary.currentProjectRemaining, projectCurrency)}</span>
+              </div>
+            </div>
+
+            {/* Filters — short labels with tooltip explanation */}
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
               {([
-                ["recommended", "Recommended"],
-                ["object_budget", "Within object budget"],
-                ["room_plan", "Within room plan"],
-                ["all", "All"],
-              ] as const).map(([value, label]) => {
+                ["recommended", "Top picks", "Ranked by plan safety, object-budget fit, delta, lead time, and missing-price penalty."],
+                ["object_budget", "Fit", "Within this object's budget"],
+                ["room_plan", "Room", "Within the room's plan"],
+                ["all", "All", "Show all options"],
+              ] as const).map(([value, label, tip]) => {
                 const disabled =
                   (value === "object_budget" && budgetSelectionSummary.objectBudget === null) ||
                   (value === "room_plan" && budgetSelectionSummary.currentRoomHealth === "not_planned");
@@ -585,13 +580,14 @@ export function ProductOptionsPanel({
                     variant={budgetFilter === value ? "default" : "outline"}
                     disabled={disabled}
                     onClick={() => setBudgetFilter(value)}
+                    title={tip}
+                    className="h-7 px-2.5 text-[11px]"
                   >
                     {label}
                   </Button>
                 );
               })}
             </div>
-            <p className="mt-3 text-[11px] text-slate-500">Options are ranked by plan safety, object-budget fit, delta, lead time, and missing-price penalty.</p>
           </div>
         ) : null}
 
@@ -618,33 +614,21 @@ export function ProductOptionsPanel({
 
         {showSearchTools ? (
           <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add product</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">Search products or paste a link</p>
-              <p className="mt-1 text-xs text-slate-500">Search is the main path. Paste a link as a fast secondary option when you already know the product.</p>
-            </div>
-
             <form onSubmit={handleSearchSubmit} className="space-y-3">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium text-slate-700">Search products</p>
-                  <p className="text-[11px] text-slate-500">Primary: explore your saved materials</p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    ref={searchInputRef}
+                    value={catalogQuery}
+                    onChange={(event) => setCatalogQuery(event.target.value)}
+                    placeholder="Search products or paste a link…"
+                    className="h-10 border-slate-300 bg-slate-50 pl-8 text-sm text-slate-900 placeholder:text-slate-500 focus-visible:bg-white"
+                  />
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <div className="relative flex-1">
-                    <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                    <Input
-                      ref={searchInputRef}
-                      value={catalogQuery}
-                      onChange={(event) => setCatalogQuery(event.target.value)}
-                      placeholder="Search products or paste a link"
-                      className="h-10 border-slate-300 bg-slate-50 pl-8 text-sm text-slate-900 placeholder:text-slate-500 focus-visible:bg-white"
-                    />
-                  </div>
-                  <Button type="submit" className="h-10 px-3 text-sm font-medium sm:min-w-[140px]">
-                    Search Library
-                  </Button>
-                </div>
+                <Button type="submit" className="h-10 px-3 text-sm font-medium sm:min-w-[120px]">
+                  {/^https?:\/\//i.test(catalogQuery.trim()) ? "Fetch link" : "Search"}
+                </Button>
               </div>
               <div className="flex flex-wrap gap-2">
                 {suggestionChips.map((chip) => {
@@ -665,15 +649,12 @@ export function ProductOptionsPanel({
               </div>
             </form>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className={cn("rounded-xl border border-slate-200 bg-slate-50 p-3", !showLinkPreview && !linkUrl.trim() ? "hidden" : "")}>
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
-                    <LinkIcon className="h-4 w-4" />
-                    Paste product link
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">Secondary fast path: paste link, fetch product, and add it to this room item.</p>
-                </div>
+                <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <LinkIcon className="h-4 w-4" />
+                  Link preview
+                </p>
                 {hasPreviewPrice ? (
                   <Badge variant="outline">{formatMoney(parsedLinkPrice, projectCurrency)}</Badge>
                 ) : showMissingPriceWarning ? (
@@ -762,9 +743,7 @@ export function ProductOptionsPanel({
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <p className="text-xs text-slate-500">Paste link to quickly add from supplier / Lazada / Shopee.</p>
-                )}
+                ) : null}
 
                 {linkPreviewMessage ? <p className="text-xs text-emerald-700">{linkPreviewMessage}</p> : null}
                 {linkError ? <p className="text-xs text-red-600">{linkError}</p> : null}

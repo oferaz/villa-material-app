@@ -74,6 +74,7 @@ import { exportProjectToExcel } from "@/lib/export/project-excel";
 import { rankMaterialsForObject } from "@/lib/material-search";
 import { defaultUserPreferences, loadUserPreferences, USER_PREFERENCES_EVENT } from "@/lib/user-preferences";
 import { MoveDirection, moveListItem } from "@/lib/ordering";
+import { cn } from "@/lib/utils";
 import { loadWorkspaceSelection, resolveWorkspaceSelection, saveWorkspaceSelection } from "@/lib/workspace-selection";
 import {
   BudgetCategoryName,
@@ -1206,10 +1207,16 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
     }, {});
   }, [calculatedProjectBudget.rooms, project]);
 
-  const activeRoomFilters = useMemo(() => {
+  const activeRoomFilters = useMemo<Array<{ key: string; kind: "status" | "budget"; label: string }>>(() => {
     return [
-      ...(budgetFocusSelection ? [getBudgetFocusLabel(budgetFocusSelection)] : []),
-      ...workflowStageFilters.map((stage) => `Status: ${getWorkflowStageLabel(stage)}`),
+      ...(budgetFocusSelection
+        ? [{ key: "budget", kind: "budget" as const, label: getBudgetFocusLabel(budgetFocusSelection) }]
+        : []),
+      ...workflowStageFilters.map((stage) => ({
+        key: `status-${stage}`,
+        kind: "status" as const,
+        label: getWorkflowStageLabel(stage),
+      })),
     ];
   }, [budgetFocusSelection, workflowStageFilters]);
 
@@ -3052,28 +3059,38 @@ export function ProjectWorkspace({ initialProjectId }: ProjectWorkspaceProps) {
         onClearStageFilter={handleClearWorkflowStageFilters}
       />
       {activeRoomFilters.length > 0 ? (
-        <Card className="border-slate-200 bg-white shadow-sm">
-          <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-slate-800">Filtered object focus</p>
-              <div className="flex flex-wrap gap-2">
-                {activeRoomFilters.map((filterLabel) => (
-                  <Badge key={filterLabel} variant="outline">
-                    {filterLabel}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-            <Button type="button" variant="outline" onClick={handleClearRoomsFilters}>
-              Clear filters
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Filters</span>
+          {activeRoomFilters.map((filter) => {
+            const palette =
+              filter.kind === "status"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-amber-200 bg-amber-50 text-amber-700";
+            return (
+              <span
+                key={filter.key}
+                className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", palette)}
+                title={filter.kind === "status" ? "Workflow status" : "Budget focus"}
+              >
+                {filter.label}
+              </span>
+            );
+          })}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="ml-auto h-7 px-2 text-xs text-slate-600 hover:text-slate-900"
+            onClick={handleClearRoomsFilters}
+          >
+            Clear
+          </Button>
+        </div>
       ) : null}
       {activeRoomFilters.length > 0 && filteredHousesForRooms.length === 0 ? (
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="flex items-center justify-between gap-3 py-4">
-            <p className="text-sm text-slate-600">No objects match the current budget/workflow filters.</p>
+            <p className="text-sm text-slate-600">No matches.</p>
             <Button type="button" variant="outline" onClick={handleClearRoomsFilters}>
               Clear filters
             </Button>
