@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  BookOpen,
   ChevronDown,
   ChevronRight,
   Grid3x3,
@@ -12,22 +13,28 @@ import {
   Search,
   Share2,
   Sparkles,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
+  SAMPLE_LIBRARY,
   SAMPLE_PROJECT,
+  SAMPLE_SHORTLISTS,
   WORKFLOW_STAGE_META,
+  filterLibrary,
   formatMoney,
   houseTotals,
   projectTotals,
   roomTotals,
+  type LibraryProduct,
   type MockHouse,
   type MockObject,
   type MockProject,
   type MockRoom,
+  type ProductCategory,
 } from "./mockup-data";
 
 type Mode = "canvas" | "spreadsheet" | "client";
@@ -38,14 +45,23 @@ type Selection =
   | { kind: "room"; houseId: string; roomId: string }
   | { kind: "object"; houseId: string; roomId: string; objectId: string };
 
-export function CanvasWorkspace() {
-  const project = SAMPLE_PROJECT;
+export function CanvasWorkspace({ project: projectProp }: { project?: MockProject } = {}) {
+  const project = projectProp ?? SAMPLE_PROJECT;
   const [mode, setMode] = useState<Mode>("canvas");
   const [selection, setSelection] = useState<Selection>({ kind: "project" });
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState("");
+  const [libraryCategoryFilter, setLibraryCategoryFilter] = useState<ProductCategory | null>(null);
+  const [assignedProductId, setAssignedProductId] = useState<string | null>(null);
 
   function toggleHouse(houseId: string) {
     setCollapsed((prev) => ({ ...prev, [houseId]: !prev[houseId] }));
+  }
+
+  function handleAssign(productId: string) {
+    setAssignedProductId(productId);
+    setTimeout(() => setAssignedProductId(null), 2000);
   }
 
   return (
@@ -79,6 +95,15 @@ export function CanvasWorkspace() {
             <ModeButton active={mode === "spreadsheet"} onClick={() => setMode("spreadsheet")} icon={<Grid3x3 className="h-3.5 w-3.5" />} label="Sheet" />
             <ModeButton active={mode === "client"} onClick={() => setMode("client")} icon={<Share2 className="h-3.5 w-3.5" />} label="Client" />
           </div>
+          <Button
+            size="sm"
+            variant={isLibraryOpen ? "default" : "outline"}
+            onClick={() => setIsLibraryOpen((o) => !o)}
+            className="h-8 gap-1.5"
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            Library
+          </Button>
           <Button size="sm" className="h-8 bg-blue-600 hover:bg-blue-700">
             <Plus className="h-3.5 w-3.5" /> Add
           </Button>
@@ -107,8 +132,21 @@ export function CanvasWorkspace() {
           )}
         </main>
 
-        {/* Inspector */}
-        <Inspector project={project} selection={selection} />
+        {/* Right panel: Library drawer or Inspector */}
+        {isLibraryOpen ? (
+          <LibraryDrawer
+            selection={selection}
+            librarySearch={librarySearch}
+            onSearchChange={setLibrarySearch}
+            categoryFilter={libraryCategoryFilter}
+            onCategoryChange={setLibraryCategoryFilter}
+            assignedProductId={assignedProductId}
+            onAssign={handleAssign}
+            onClose={() => setIsLibraryOpen(false)}
+          />
+        ) : (
+          <Inspector project={project} selection={selection} />
+        )}
       </div>
     </div>
   );
@@ -626,6 +664,222 @@ function ModePlaceholder({ title, description }: { title: string; description: s
         <p className="text-sm font-semibold text-slate-900">{title}</p>
         <p className="mt-2 text-xs text-slate-500">{description}</p>
         <p className="mt-4 text-[11px] uppercase tracking-wide text-slate-400">Mockup placeholder</p>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Library Drawer ─────────────────────────── */
+
+const ALL_CATEGORIES: ProductCategory[] = [
+  "Flooring",
+  "Wall finish",
+  "Bathroom",
+  "Kitchen",
+  "Lighting",
+  "Furniture",
+  "Hardware",
+  "Outdoor",
+];
+
+interface LibraryDrawerProps {
+  selection: Selection;
+  librarySearch: string;
+  onSearchChange: (v: string) => void;
+  categoryFilter: ProductCategory | null;
+  onCategoryChange: (c: ProductCategory | null) => void;
+  assignedProductId: string | null;
+  onAssign: (productId: string) => void;
+  onClose: () => void;
+}
+
+function LibraryDrawer({
+  selection,
+  librarySearch,
+  onSearchChange,
+  categoryFilter,
+  onCategoryChange,
+  assignedProductId,
+  onAssign,
+  onClose,
+}: LibraryDrawerProps) {
+  const [autoFilterOverride, setAutoFilterOverride] = useState(false);
+
+  // Derive auto-filter label from selected object
+  const autoFilterName = useMemo(() => {
+    if (selection.kind !== "object") return null;
+    for (const h of SAMPLE_PROJECT.houses) {
+      for (const r of h.rooms) {
+        const obj = r.objects.find((o) => o.id === selection.objectId);
+        if (obj) return obj.name;
+      }
+    }
+    return null;
+  }, [selection]);
+
+  const showAutoFilter = autoFilterName !== null && !autoFilterOverride && librarySearch === "";
+
+  const products = useMemo(() => {
+    return filterLibrary(SAMPLE_LIBRARY, {
+      search: showAutoFilter ? autoFilterName ?? undefined : librarySearch || undefined,
+      category: categoryFilter,
+      shortlists: SAMPLE_SHORTLISTS,
+    });
+  }, [librarySearch, categoryFilter, showAutoFilter, autoFilterName]);
+
+  return (
+    <aside className="flex min-h-0 flex-col border-l border-slate-200 bg-white">
+      {/* Header */}
+      <div className="shrink-0 border-b border-slate-200 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-slate-900">Library</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {/* Search */}
+        <div className="relative mt-2">
+          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+          <input
+            type="text"
+            value={librarySearch}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search products…"
+            className="h-8 w-full rounded-md border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:bg-white"
+          />
+        </div>
+        {/* Category chips */}
+        <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button
+            type="button"
+            onClick={() => onCategoryChange(null)}
+            className={cn(
+              "shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition",
+              categoryFilter === null
+                ? "border-blue-300 bg-blue-50 text-blue-700"
+                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+            )}
+          >
+            All
+          </button>
+          {ALL_CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => onCategoryChange(categoryFilter === cat ? null : cat)}
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition",
+                categoryFilter === cat
+                  ? "border-blue-300 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+              )}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Auto-filter banner */}
+      {showAutoFilter && (
+        <div className="shrink-0 flex items-center justify-between gap-2 border-b border-slate-100 bg-blue-50 px-4 py-2">
+          <div className="flex items-center gap-1.5 text-[11px] text-blue-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+            Filtered for: <span className="font-semibold">{autoFilterName}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAutoFilterOverride(true)}
+            className="text-[11px] text-blue-600 underline hover:text-blue-800"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Product list */}
+      <div className="flex-1 overflow-y-auto">
+        {products.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+            <p className="text-xs font-medium text-slate-500">No products match your filters</p>
+            <button
+              type="button"
+              onClick={() => {
+                onSearchChange("");
+                onCategoryChange(null);
+                setAutoFilterOverride(true);
+              }}
+              className="text-[11px] text-blue-600 underline"
+            >
+              Clear all filters
+            </button>
+          </div>
+        ) : (
+          products.map((product) => (
+            <LibraryProductRow
+              key={product.id}
+              product={product}
+              isAssigned={assignedProductId === product.id}
+              onAssign={onAssign}
+            />
+          ))
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function LibraryProductRow({
+  product,
+  isAssigned,
+  onAssign,
+}: {
+  product: LibraryProduct;
+  isAssigned: boolean;
+  onAssign: (id: string) => void;
+}) {
+  return (
+    <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
+      {/* Thumbnail */}
+      <div
+        className={cn(
+          "flex h-14 w-14 shrink-0 items-center justify-center rounded-lg text-lg font-bold text-white/90",
+          product.imageColor
+        )}
+      >
+        {product.name.charAt(0)}
+      </div>
+
+      {/* Info */}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-semibold text-slate-900">{product.name}</p>
+        <p className="text-[11px] text-slate-500">
+          {product.supplier} · ${product.priceUsd.toLocaleString()}
+        </p>
+        <div className="mt-1 flex flex-wrap gap-1">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600">
+            {product.category}
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600">
+            {product.style}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => !isAssigned && onAssign(product.id)}
+          className={cn(
+            "mt-2 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium transition",
+            isAssigned
+              ? "border-emerald-300 bg-emerald-50 text-emerald-700 cursor-default"
+              : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+          )}
+        >
+          {isAssigned ? "✓ Assigned" : "+ Assign"}
+        </button>
       </div>
     </div>
   );
