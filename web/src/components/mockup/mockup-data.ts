@@ -240,7 +240,8 @@ export interface LibraryProduct {
   roomTypes: string[];
   style: ProductStyle;
   priceUsd: number;
-  imageColor: string;
+  imageColor: string;   // Tailwind bg class — shown when imageUrl is absent
+  imageUrl?: string;    // Real photo URL from material_images table
   tags: string[];
   inShortlists?: string[];
 }

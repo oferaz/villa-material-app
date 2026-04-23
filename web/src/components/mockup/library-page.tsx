@@ -399,10 +399,19 @@ function ProductCard({ product, isStarred, onToggleStar }: ProductCardProps) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm hover:shadow-md transition-shadow">
       {/* Thumbnail */}
-      <div className={cn("relative h-40 flex items-center justify-center", product.imageColor)}>
-        <span className="text-white text-2xl font-bold select-none">
-          {product.name.charAt(0).toUpperCase()}
-        </span>
+      <div className={cn("relative h-40 flex items-center justify-center overflow-hidden", product.imageColor)}>
+        {product.imageUrl ? (
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            className="h-full w-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <span className="text-white text-2xl font-bold select-none">
+            {product.name.charAt(0).toUpperCase()}
+          </span>
+        )}
         <button
           onClick={onToggleStar}
           aria-label={isStarred ? "Remove from starred" : "Add to starred"}

@@ -57,6 +57,7 @@ function adaptMaterialToLibraryProduct(material: UserMaterial): LibraryProduct {
     style: "Modern",
     priceUsd: material.price ?? 0,
     imageColor: pickImageColor(material.id),
+    imageUrl: material.imageUrl ?? undefined,   // ← real photo from material_images
     tags: material.tags ?? [],
   };
 }
