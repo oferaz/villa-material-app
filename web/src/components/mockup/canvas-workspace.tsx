@@ -1,24 +1,30 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   BookOpen,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Grid3x3,
   Home,
   LayoutGrid,
   Link as LinkIcon,
+  PieChart,
   Plus,
   Search,
   Share2,
-  Sparkles,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { SpreadsheetView } from "@/components/projects/spreadsheet-view";
+import { ClientViewBuilder } from "@/components/client-view/client-view-builder";
+import type { Project, ProjectBudget } from "@/types";
+import type { UserMaterial } from "@/lib/supabase/materials-repository";
 import {
   SAMPLE_LIBRARY,
   SAMPLE_PROJECT,
@@ -37,7 +43,7 @@ import {
   type ProductCategory,
 } from "./mockup-data";
 
-type Mode = "canvas" | "spreadsheet" | "client";
+type Mode = "canvas" | "spreadsheet" | "client" | "budget";
 
 type Selection =
   | { kind: "project" }
@@ -45,7 +51,14 @@ type Selection =
   | { kind: "room"; houseId: string; roomId: string }
   | { kind: "object"; houseId: string; roomId: string; objectId: string };
 
-export function CanvasWorkspace({ project: projectProp }: { project?: MockProject } = {}) {
+interface CanvasWorkspaceProps {
+  project?: MockProject;
+  realProject?: Project;
+  budget?: ProjectBudget;
+  materials?: UserMaterial[];
+}
+
+export function CanvasWorkspace({ project: projectProp, realProject, budget, materials }: CanvasWorkspaceProps = {}) {
   const project = projectProp ?? SAMPLE_PROJECT;
   const [mode, setMode] = useState<Mode>("canvas");
   const [selection, setSelection] = useState<Selection>({ kind: "project" });
@@ -69,16 +82,19 @@ export function CanvasWorkspace({ project: projectProp }: { project?: MockProjec
       {/* ───── Top Bar ───── */}
       <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-5 py-3 backdrop-blur">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-blue-600 to-violet-600 text-white">
-            <Sparkles className="h-4 w-4" />
-          </div>
+          <Link href="/dashboard" className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900">
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Dashboard
+          </Link>
+          <div className="h-4 w-px bg-slate-200" />
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Mockup — Canvas + Inspector</p>
             <p className="text-sm font-semibold text-slate-900">
               {project.name}
-              <span className="ml-2 text-xs font-normal text-slate-500">
-                · {project.client} · {project.location}
-              </span>
+              {(project.client || project.location) ? (
+                <span className="ml-2 text-xs font-normal text-slate-500">
+                  {[project.client, project.location].filter(Boolean).join(" · ")}
+                </span>
+              ) : null}
             </p>
           </div>
         </div>
@@ -89,10 +105,11 @@ export function CanvasWorkspace({ project: projectProp }: { project?: MockProjec
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Mode toggle replaces tabs */}
+          {/* Mode toggle */}
           <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
             <ModeButton active={mode === "canvas"} onClick={() => setMode("canvas")} icon={<LayoutGrid className="h-3.5 w-3.5" />} label="Canvas" />
             <ModeButton active={mode === "spreadsheet"} onClick={() => setMode("spreadsheet")} icon={<Grid3x3 className="h-3.5 w-3.5" />} label="Sheet" />
+            <ModeButton active={mode === "budget"} onClick={() => setMode("budget")} icon={<PieChart className="h-3.5 w-3.5" />} label="Budget" />
             <ModeButton active={mode === "client"} onClick={() => setMode("client")} icon={<Share2 className="h-3.5 w-3.5" />} label="Client" />
           </div>
           <Button
@@ -110,44 +127,57 @@ export function CanvasWorkspace({ project: projectProp }: { project?: MockProjec
         </div>
       </header>
 
-      {/* ───── 3-pane body ───── */}
-      <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_360px]">
-        {/* Outline */}
-        <Outline
-          project={project}
-          selection={selection}
-          collapsed={collapsed}
-          onToggleHouse={toggleHouse}
-          onSelect={setSelection}
-        />
-
-        {/* Canvas */}
-        <main className="min-w-0 overflow-y-auto">
-          {mode === "canvas" ? (
-            <Canvas project={project} selection={selection} onSelect={setSelection} />
-          ) : mode === "spreadsheet" ? (
-            <ModePlaceholder title="Spreadsheet mode" description="Tabular view of every object across the project — edit in-place, sort, and bulk-assign." />
-          ) : (
-            <ModePlaceholder title="Client view mode" description="Same project, presented as a curated read-only share for the client. Price visibility is togglable." />
-          )}
-        </main>
-
-        {/* Right panel: Library drawer or Inspector */}
-        {isLibraryOpen ? (
-          <LibraryDrawer
-            selection={selection}
-            librarySearch={librarySearch}
-            onSearchChange={setLibrarySearch}
-            categoryFilter={libraryCategoryFilter}
-            onCategoryChange={setLibraryCategoryFilter}
-            assignedProductId={assignedProductId}
-            onAssign={handleAssign}
-            onClose={() => setIsLibraryOpen(false)}
+      {/* ───── Body ───── */}
+      {/* Full-width modes: Sheet and Client take over the entire content area */}
+      {mode === "spreadsheet" && realProject && budget ? (
+        <div className="min-h-0 flex-1 overflow-auto p-6">
+          <SpreadsheetView project={realProject} budget={budget} />
+        </div>
+      ) : mode === "client" && realProject ? (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <ClientViewBuilder
+            project={realProject}
+            materials={materials ?? []}
           />
-        ) : (
-          <Inspector project={project} selection={selection} />
-        )}
-      </div>
+        </div>
+      ) : mode === "budget" ? (
+        <div className="min-h-0 flex-1 overflow-auto p-6">
+          <BudgetSummary project={project} />
+        </div>
+      ) : (
+        /* 3-pane canvas layout */
+        <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_360px]">
+          {/* Outline */}
+          <Outline
+            project={project}
+            selection={selection}
+            collapsed={collapsed}
+            onToggleHouse={toggleHouse}
+            onSelect={setSelection}
+          />
+
+          {/* Canvas center */}
+          <main className="min-w-0 overflow-y-auto">
+            <Canvas project={project} selection={selection} onSelect={setSelection} />
+          </main>
+
+          {/* Right panel: Library drawer or Inspector */}
+          {isLibraryOpen ? (
+            <LibraryDrawer
+              selection={selection}
+              librarySearch={librarySearch}
+              onSearchChange={setLibrarySearch}
+              categoryFilter={libraryCategoryFilter}
+              onCategoryChange={setLibraryCategoryFilter}
+              assignedProductId={assignedProductId}
+              onAssign={handleAssign}
+              onClose={() => setIsLibraryOpen(false)}
+            />
+          ) : (
+            <Inspector project={project} selection={selection} />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -653,6 +683,54 @@ function Stat({ label, value }: { label: string; value: number | string }) {
     <div>
       <p className="text-base font-semibold text-slate-900">{value}</p>
       <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
+    </div>
+  );
+}
+
+function BudgetSummary({ project }: { project: MockProject }) {
+  const totals = projectTotals(project);
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">Budget overview</h2>
+        <p className="mt-0.5 text-xs text-slate-500">{totals.houseCount} houses · {totals.roomCount} rooms · {totals.objectCount} objects</p>
+        <div className="mt-4">
+          <div className="mb-1 flex items-baseline justify-between text-xs">
+            <span className="font-medium text-slate-700">{formatMoney(totals.spent, project.currency)} spent</span>
+            <span className="text-slate-400">{totals.pct}% of {formatMoney(totals.budget, project.currency)}</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className={cn("h-full", totals.pct < 85 ? "bg-emerald-500" : totals.pct < 100 ? "bg-amber-500" : "bg-red-500")} style={{ width: `${totals.pct}%` }} />
+          </div>
+        </div>
+      </div>
+      {project.houses.map((house) => {
+        const ht = houseTotals(house);
+        return (
+          <div key={house.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+              <h3 className="text-sm font-semibold text-slate-800">{house.name}</h3>
+              <span className="text-xs text-slate-500">{formatMoney(ht.spent, project.currency)} / {formatMoney(ht.budget, project.currency)}</span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {house.rooms.map((room) => {
+                const rt = roomTotals(room);
+                return (
+                  <div key={room.id} className="flex items-center gap-4 px-5 py-3">
+                    <span className="w-40 truncate text-sm text-slate-700">{room.name}</span>
+                    <div className="flex-1">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className={cn("h-full", rt.health === "ok" ? "bg-emerald-500" : rt.health === "warn" ? "bg-amber-500" : "bg-red-500")} style={{ width: `${rt.pct}%` }} />
+                      </div>
+                    </div>
+                    <span className="w-32 text-right text-xs text-slate-500 tabular-nums">{formatMoney(rt.spent, project.currency)} / {formatMoney(rt.budget, project.currency)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

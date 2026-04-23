@@ -4,63 +4,57 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
-import { loadProjectsForWorkspace } from "@/lib/supabase/projects-repository";
+import {
+  loadProjectBudgetsByProjectIds,
+  loadProjectsForWorkspace,
+} from "@/lib/supabase/projects-repository";
+import { listMaterialsForCurrentUser, UserMaterial } from "@/lib/supabase/materials-repository";
+import { calculateProjectBudget, createMockProjectBudget } from "@/lib/mock/budget";
 import { getObjectWorkflowStage } from "@/types";
-import type { Project, RoomObject } from "@/types";
+import type { Project, ProjectBudget, RoomObject } from "@/types";
 import { CanvasWorkspace } from "./canvas-workspace";
 import type { MockHouse, MockObject, MockProject, MockRoom, WorkflowStage } from "./mockup-data";
 
-// ── Adapter ────────────────────────────────────────────────────────────────
+// ── Adapter: real Project → MockProject ───────────────────────────────────
 
 function adaptWorkflowStage(obj: RoomObject): WorkflowStage {
   const stage = getObjectWorkflowStage(obj);
   switch (stage) {
-    case "material_missing":
-      return "planned";
-    case "material_assigned":
-      return "sourcing";
-    case "po_approved":
-      return "selected";
-    case "ordered":
-      return "ordered";
-    case "installed":
-      return "installed";
-    default:
-      return "planned";
+    case "material_missing":  return "planned";
+    case "material_assigned": return "sourcing";
+    case "po_approved":       return "selected";
+    case "ordered":           return "ordered";
+    case "installed":         return "installed";
+    default:                  return "planned";
   }
 }
 
 function adaptObject(obj: RoomObject): MockObject {
-  const selectedProduct = obj.productOptions[0];
+  const selectedProduct = obj.productOptions.find((o) => o.id === obj.selectedProductId) ?? obj.productOptions[0];
   return {
     id: obj.id,
     name: obj.name,
     qty: obj.quantity,
     budget: obj.budgetAllowance ?? null,
-    spent: selectedProduct ? selectedProduct.price : null,
+    spent: selectedProduct?.price ?? null,
     stage: adaptWorkflowStage(obj),
     selectedProduct: selectedProduct
-      ? {
-          name: selectedProduct.name,
-          supplier: selectedProduct.supplier,
-          price: selectedProduct.price,
-        }
+      ? { name: selectedProduct.name, supplier: selectedProduct.supplier, price: selectedProduct.price }
       : undefined,
   };
 }
 
-function adaptRoom(room: { id: string; name: string; objects: RoomObject[] }): MockRoom {
+function adaptRoom(room: Project["houses"][number]["rooms"][number]): MockRoom {
   const objects = room.objects.map(adaptObject);
-  const plannedBudget = objects.reduce((sum, o) => sum + (o.budget ?? 0), 0);
   return {
     id: room.id,
     name: room.name,
     objects,
-    plannedBudget,
+    plannedBudget: objects.reduce((sum, o) => sum + (o.budget ?? 0), 0),
   };
 }
 
-function adaptHouse(house: { id: string; name: string; sizeSqm?: number; rooms: Array<{ id: string; name: string; objects: RoomObject[] }> }): MockHouse {
+function adaptHouse(house: Project["houses"][number]): MockHouse {
   return {
     id: house.id,
     name: house.name,
@@ -71,17 +65,16 @@ function adaptHouse(house: { id: string; name: string; sizeSqm?: number; rooms: 
 
 export function adaptProjectToMock(project: Project): MockProject {
   const houses = project.houses.map(adaptHouse);
-  const totalBudget = houses.reduce(
-    (sum, h) => sum + h.rooms.reduce((rSum, r) => rSum + r.plannedBudget, 0),
-    0
-  );
   return {
     id: project.id,
     name: project.name,
     client: project.customer,
     location: project.location,
     currency: project.currency,
-    totalBudget,
+    totalBudget: houses.reduce(
+      (sum, h) => sum + h.rooms.reduce((rs, r) => rs + r.plannedBudget, 0),
+      0
+    ),
     houses,
   };
 }
@@ -94,9 +87,14 @@ interface RealCanvasWorkspaceProps {
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "unauthenticated" }
   | { kind: "not_found" }
-  | { kind: "ready"; mockProject: MockProject };
+  | {
+      kind: "ready";
+      mockProject: MockProject;
+      realProject: Project;
+      budget: ProjectBudget;
+      materials: UserMaterial[];
+    };
 
 export function RealCanvasWorkspace({ projectId }: RealCanvasWorkspaceProps) {
   const router = useRouter();
@@ -107,33 +105,50 @@ export function RealCanvasWorkspace({ projectId }: RealCanvasWorkspaceProps) {
 
     async function load() {
       if (isSupabaseConfigured) {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
+        const { data: { session } } = await supabase.auth.getSession();
         if (cancelled) return;
-
-        if (!session) {
-          router.replace("/login");
-          return;
-        }
+        if (!session) { router.replace("/login"); return; }
       }
 
-      const projects = await loadProjectsForWorkspace();
+      const [projects, materials] = await Promise.all([
+        loadProjectsForWorkspace(),
+        listMaterialsForCurrentUser(),
+      ]);
       if (cancelled) return;
 
       const project = projects.find((p) => p.id === projectId);
-      if (!project) {
-        setState({ kind: "not_found" });
-        return;
+      if (!project) { setState({ kind: "not_found" }); return; }
+
+      // Load budget (same pattern as ProjectWorkspace)
+      let budget: ProjectBudget;
+      if (isSupabaseConfigured) {
+        const persistedBudgets = await loadProjectBudgetsByProjectIds([project]);
+        if (cancelled) return;
+        const base = persistedBudgets[project.id] ?? createMockProjectBudget(project);
+        budget = calculateProjectBudget(base, project);
+      } else {
+        budget = calculateProjectBudget(createMockProjectBudget(project), project);
       }
 
-      setState({ kind: "ready", mockProject: adaptProjectToMock(project) });
+      setState({
+        kind: "ready",
+        mockProject: adaptProjectToMock(project),
+        realProject: project,
+        budget,
+        materials,
+      });
     }
 
     void load();
+
+    // Re-load on auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT") void load();
+    });
+
     return () => {
       cancelled = true;
+      subscription.unsubscribe();
     };
   }, [projectId, router]);
 
@@ -148,10 +163,6 @@ export function RealCanvasWorkspace({ projectId }: RealCanvasWorkspaceProps) {
     );
   }
 
-  if (state.kind === "unauthenticated") {
-    return null;
-  }
-
   if (state.kind === "not_found") {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
@@ -160,5 +171,12 @@ export function RealCanvasWorkspace({ projectId }: RealCanvasWorkspaceProps) {
     );
   }
 
-  return <CanvasWorkspace project={state.mockProject} />;
+  return (
+    <CanvasWorkspace
+      project={state.mockProject}
+      realProject={state.realProject}
+      budget={state.budget}
+      materials={state.materials}
+    />
+  );
 }
