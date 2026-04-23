@@ -402,7 +402,7 @@ export function TopNav({
               disabled={!onCreateProject}
             >
               <Plus className="h-4 w-4" />
-              New Project
+              <span className="hidden sm:inline">New Project</span>
             </Button>
           </DialogTrigger>
           <DialogContent>

@@ -1,10 +1,9 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
-import { Check, Download, History, Pencil, RotateCcw, Save, Table2, Trash2, UserPlus, X } from "lucide-react";
+import { Check, Download, History, MoreHorizontal, Pencil, RotateCcw, Save, Table2, Trash2, UserPlus, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,6 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface WorkspaceShellProps {
   projectId: string;
@@ -380,7 +386,59 @@ export function WorkspaceShell({
                     </Button>
                   ) : null}
                 </div>
-                <div className="flex w-full flex-wrap items-stretch gap-2 sm:w-auto sm:justify-end">
+                {/* Mobile: collapse all actions into a single dropdown */}
+                <div className="flex sm:hidden">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" variant="outline" size="icon" aria-label="Project actions">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      {onInviteCollaborator ? (
+                        <DropdownMenuItem onSelect={() => setIsInviteDialogOpen(true)}>
+                          <UserPlus className="h-4 w-4" />
+                          Invite collaborator
+                        </DropdownMenuItem>
+                      ) : null}
+                      {onSaveSnapshot || onRestoreSnapshot ? (
+                        <DropdownMenuItem onSelect={() => handleSnapshotsDialogOpenChange(true)}>
+                          <History className="h-4 w-4" />
+                          Saved states
+                        </DropdownMenuItem>
+                      ) : null}
+                      {onExportProject ? (
+                        <DropdownMenuItem
+                          onSelect={() => void handleExportProject()}
+                          disabled={isExportingProject}
+                        >
+                          <Download className="h-4 w-4" />
+                          {isExportingProject ? "Exporting..." : "Export Excel"}
+                        </DropdownMenuItem>
+                      ) : null}
+                      <DropdownMenuItem onSelect={() => onTabChange("spreadsheet")}>
+                        <Table2 className="h-4 w-4" />
+                        Spreadsheet
+                      </DropdownMenuItem>
+                      {onDeleteProject ? (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => void handleDeleteProject()}
+                            disabled={isDeletingProject}
+                            className="text-rose-700 focus:text-rose-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            {isDeletingProject ? "Deleting..." : "Delete project"}
+                          </DropdownMenuItem>
+                        </>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Desktop sm+: full-text button row */}
+                <div className="hidden w-full flex-wrap items-stretch gap-2 sm:flex sm:w-auto sm:justify-end">
                   {onInviteCollaborator ? (
                     <Button
                       type="button"
@@ -444,11 +502,11 @@ export function WorkspaceShell({
             {customer} - {location}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+        <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
           <span>{housesCount} houses</span>
-          <Separator orientation="vertical" className="h-4" />
+          <span aria-hidden="true" className="text-slate-300">·</span>
           <span>{roomsCount} rooms</span>
-          <Separator orientation="vertical" className="h-4" />
+          <span aria-hidden="true" className="text-slate-300">·</span>
           <span>{objectsCount} objects</span>
         </CardContent>
       </Card>
@@ -457,11 +515,11 @@ export function WorkspaceShell({
         <CardContent className="pt-5">
           <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as "rooms" | "materials" | "budget" | "client" | "spreadsheet")}>
             <TabsList className="z-20 w-full justify-start overflow-x-auto border border-slate-200 bg-white/95 shadow-sm backdrop-blur md:sticky md:top-[72px]">
-              <TabsTrigger value="rooms">Rooms</TabsTrigger>
-              <TabsTrigger value="materials">Materials</TabsTrigger>
-              <TabsTrigger value="budget">Budget</TabsTrigger>
-              <TabsTrigger value="client" className="gap-2">Client View <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-700">Beta</span></TabsTrigger>
-              <TabsTrigger value="spreadsheet">Spreadsheet</TabsTrigger>
+              <TabsTrigger value="rooms" className="shrink-0">Rooms</TabsTrigger>
+              <TabsTrigger value="materials" className="shrink-0">Materials</TabsTrigger>
+              <TabsTrigger value="budget" className="shrink-0">Budget</TabsTrigger>
+              <TabsTrigger value="client" className="shrink-0 gap-2">Client View <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-700">Beta</span></TabsTrigger>
+              <TabsTrigger value="spreadsheet" className="shrink-0">Spreadsheet</TabsTrigger>
             </TabsList>
 
             <TabsContent value="rooms">{roomsContent}</TabsContent>

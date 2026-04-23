@@ -475,7 +475,7 @@ export function PublicClientView({ token }: PublicClientViewProps) {
         ) : null}
 
         <Card className="border-slate-200">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-5">
+          <CardContent className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1 text-sm text-slate-600">
               <p>{isSignedIn ? `Signed in as ${context?.userEmail ?? "an invited account"}` : "You are viewing as a guest."}</p>
               <p>
@@ -612,7 +612,7 @@ export function PublicClientView({ token }: PublicClientViewProps) {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-xs text-slate-500">
                       {response ? `Last saved ${new Date(response.updatedAt).toLocaleString()}` : isContextLoading ? "Checking response access..." : "No saved response yet."}
                     </p>
